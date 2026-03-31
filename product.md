@@ -3,7 +3,6 @@
 **Version:** 1.1.0
 **Status:** Draft (Revised)
 **Last Updated:** March 31, 2026
-**Author:** [Your Name]
 
 > *"Vox Populi, Vox Dei."* -- The voice of the people is the voice of God.
 
