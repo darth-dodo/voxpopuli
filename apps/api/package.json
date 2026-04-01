@@ -49,6 +49,16 @@
           "buildTarget": "build"
         }
       },
+      "test": {
+        "executor": "@nx/jest:jest",
+        "outputs": [
+          "{projectRoot}/test-output/jest/coverage"
+        ],
+        "options": {
+          "jestConfig": "apps/api/jest.config.cts",
+          "passWithNoTests": true
+        }
+      },
       "prune": {
         "dependsOn": [
           "prune-lockfile",

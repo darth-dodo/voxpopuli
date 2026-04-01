@@ -1,0 +1,8 @@
+node_modules
+dist
+.nx
+.angular
+.git
+*.md
+docs
+evals

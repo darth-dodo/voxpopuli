@@ -6,10 +6,11 @@
     "rootDir": "../../",
     "module": "commonjs",
     "moduleResolution": "node",
+    "esModuleInterop": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "target": "es2021"
   },
   "include": ["src/**/*.ts"],
-  "exclude": []
+  "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"]
 }
