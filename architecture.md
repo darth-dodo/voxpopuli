@@ -281,41 +281,55 @@ Epic (Linear Project or Cycle)
 
 #### Epic 1.1: Project Bootstrap
 
-- **Story: Initialize Nx monorepo**
+- **Story: Initialize Nx monorepo** (AI-101)
   - Create Nx workspace with `apps/api` (NestJS) and `apps/web` (Angular)
   - Create `libs/shared-types` library
   - Configure `tsconfig.base.json` path aliases
   - Add `.env.example` with all config keys
   - Verify `nx serve api` and `nx serve web` both start
 
-- **Story: Define shared types**
+- **Story: Define shared types** (AI-102)
   - Define `RagQuery`, `AgentResponse`, `AgentStep`, `AgentSource`
   - Define `StoryChunk`, `CommentChunk`, `ContextWindow`
   - Define `ToolDefinition`, `LlmMessage`, `LlmResponse`
   - Define `TtsRequest`
   - Export all from `@voxpopuli/shared-types`
 
+- **Story: Configure .gitignore** (AI-137)
+- **Story: Configure ESLint + Prettier** (AI-138)
+- **Story: Set up GitHub Actions CI** (AI-139)
+- **Story: Add pre-commit hooks** (AI-140)
+- **Story: Add structured JSON logging** (AI-141)
+- **Story: Configure graceful shutdown + port binding** (AI-142)
+- **Story: Verify nx serve + build + test end-to-end** (AI-143)
+- **Story: Create health check endpoint with integration test** (AI-151)
+- **Story: Create project Makefile** (AI-152)
+- **Story: Configure CORS for Angular dev server** (AI-156)
+- **Story: Add Dockerfile and docker-compose** (AI-155)
+
 #### Epic 1.2: HN Data Service
 
-- **Story: Implement CacheModule**
+- **Story: Implement CacheModule** (AI-103)
   - Install `node-cache`
   - Implement `CacheService` with typed `getOrSet<T>()` pattern
   - Configure TTLs per data type
   - Add cache stats method (hits, misses, keys)
 
-- **Story: Implement HnService (Algolia)**
+- **Story: Implement HnService (Algolia)** (AI-104)
   - HTTP client for `hn.algolia.com/api/v1`
   - `search(query, options)` with sort, min_points, max_results
   - `searchByDate(query, options)` for date-sorted results
   - Wrap all calls with CacheService (15 min TTL)
   - Type responses into shared types
 
-- **Story: Implement HnService (Firebase)**
+- **Story: Implement HnService (Firebase)** (AI-105)
   - HTTP client for `hacker-news.firebaseio.com/v0`
   - `getItem(id)` with 1-hour cache
   - `getCommentTree(storyId, maxDepth)` with 30-comment cap
   - Parallel batching (10 concurrent), skip deleted/dead
   - 30 min cache per comment item
+
+- **Story: Write HnService integration tests** (AI-147)
 
 ---
 
@@ -325,46 +339,27 @@ Epic (Linear Project or Cycle)
 
 #### Epic 2.1: Content Chunker
 
-- **Story: Implement ChunkerService**
+- **Story: ADR: Chunker strategy and token budget design** (AI-144)
+- **Story: Implement ChunkerService** (AI-108)
   - `chunkStories()` -- extract metadata, strip HTML, count tokens
   - `chunkComments()` -- flatten tree, assign depth, strip HTML
   - `buildContext()` -- fit chunks into per-provider token budget
   - `formatForPrompt()` -- render context as LLM-ready string
   - Token counting utility (tiktoken or character-based estimate)
+- **Story: Write ChunkerService unit tests** (AI-148)
 
 #### Epic 2.2: LLM Provider Stack
 
-- **Story: Define LlmProviderInterface**
+- **Story: ADR: LLM provider architecture and tool protocol design** (AI-145)
+- **Story: Define LlmProviderInterface** (AI-109)
   - `chat()`, `formatTools()`, `buildToolResultMessage()`
   - Internal `LlmMessage` and `LlmResponse` types
   - `ChatOptions` type (temperature, maxTokens, tools)
 
-- **Story: Implement GroqProvider**
-  - OpenAI-compatible SDK setup
-  - `chat()` with tool calling support
-  - `formatTools()` -- OpenAI function format
-  - `buildToolResultMessage()` -- `role: "tool"` messages
-  - Env: `GROQ_API_KEY`
-
-- **Story: Implement ClaudeProvider**
-  - Anthropic SDK setup
-  - `chat()` with tool_use content blocks
-  - `formatTools()` -- Anthropic tool format
-  - `buildToolResultMessage()` -- `tool_result` content blocks
-  - Env: `ANTHROPIC_API_KEY`
-
-- **Story: Implement MistralProvider**
-  - Mistral SDK setup
-  - `chat()` with tool calling support
-  - `formatTools()` -- OpenAI-compatible function format
-  - `buildToolResultMessage()` -- `role: "tool"` messages
-  - Env: `MISTRAL_API_KEY`
-
-- **Story: Implement LlmService facade**
-  - Read `LLM_PROVIDER` from env at startup
-  - Instantiate correct provider
-  - Delegate all calls to active provider
-  - Support per-request provider override
+- **Story: Implement GroqProvider** (AI-110)
+- **Story: Implement ClaudeProvider** (AI-111)
+- **Story: Implement MistralProvider** (AI-112)
+- **Story: Implement LlmService facade** (AI-113)
 
 ---
 
@@ -374,19 +369,10 @@ Epic (Linear Project or Cycle)
 
 #### Epic 3.1: ReAct Agent
 
-- **Story: Define agent tools**
-  - `search_hn` tool definition (params, description, JSON schema)
-  - `get_story` tool definition
-  - `get_comments` tool definition
-  - Export as `ToolDefinition[]`
-
-- **Story: Write system prompt**
-  - Role: HN research agent
-  - Instructions: search strategically, read comments for signal, cite sources
-  - Output format: synthesized answer with attributions
-  - Constraints: max steps, no hallucination, say "I couldn't find" when empty
-
-- **Story: Implement AgentService.run()**
+- **Story: ADR: ReAct agent design and tool selection strategy** (AI-146)
+- **Story: Define agent tools** (AI-116)
+- **Story: Write system prompt** (AI-117)
+- **Story: Implement AgentService.run()** (AI-118)
   - ReAct loop: think -> act -> observe -> repeat
   - Tool dispatch to HnService via `executeTool()`
   - Chunk tool results via ChunkerService
@@ -394,16 +380,19 @@ Epic (Linear Project or Cycle)
   - Max 7 steps, 60s timeout
   - Concurrent run semaphore (max 5)
   - Return `AgentResponse` with steps, sources, meta
+- **Story: Write AgentService integration tests** (AI-149)
 
 #### Epic 3.2: RAG Endpoints
 
-- **Story: Implement RagController**
+- **Story: Implement RagController** (AI-119)
   - `POST /api/rag/query` -- blocking, returns full AgentResponse
   - `GET /api/rag/stream` -- SSE with thought/action/observation/answer/error events
   - `GET /api/health` -- provider, cache stats, uptime
   - Rate limiting middleware (10/min per IP, 60/min global)
   - Query result caching (10 min TTL)
   - Input validation (query required, max 500 chars)
+- **Story: Implement global exception filter** (AI-154)
+- **Story: Write RagController integration tests** (AI-150)
 
 ---
 
@@ -413,38 +402,12 @@ Epic (Linear Project or Cycle)
 
 #### Epic 4.1: Core UI
 
-- **Story: Implement ChatComponent**
-  - Query input with submit button
-  - Answer display with markdown rendering
-  - Conversation-style layout (query bubble, answer bubble)
-  - Loading state while agent runs
-
-- **Story: Implement AgentStepsComponent**
-  - Real-time step timeline fed by SSE
-  - Step type icons (thought, action, observation)
-  - Expandable raw results per step
-  - Auto-scroll as steps arrive
-
-- **Story: Implement SourceCardComponent**
-  - Story title, author, point count
-  - Direct link to HN thread
-  - Compact card layout
-  - Deduplicated source list below answer
-
-- **Story: Implement ProviderSelectorComponent**
-  - Dropdown: Groq / Mistral / Claude
-  - Passes `provider` param to query
-  - Shows active provider in meta bar
-
-- **Story: Implement RagService**
-  - `query(params)` -- POST to `/api/rag/query`
-  - `stream(params)` -- EventSource to `/api/rag/stream`
-  - Parse SSE events into typed observables
-  - Error handling and retry
-
-- **Story: Implement meta bar**
-  - Provider used, tokens consumed, latency, cached status
-  - Displayed below each answer
+- **Story: Set up Tailwind CSS** (AI-153)
+- **Story: Implement ChatComponent** (AI-121)
+- **Story: Implement AgentStepsComponent** (AI-122)
+- **Story: Implement SourceCardComponent** (AI-123)
+- **Story: Implement ProviderSelectorComponent + meta bar** (AI-124)
+- **Story: Implement RagService (HTTP + EventSource)** (AI-125)
 
 ---
 
@@ -547,18 +510,18 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone | Est. Stories | Depends On |
-|-------|-----------|-------------|------------|
-| 1 | M1: Scaffold & Data Layer | 5 | -- |
-| 2 | M2: LLM & Chunker | 6 | M1 |
-| 3 | M3: Agent Core | 4 | M2 |
+| Order | Milestone | Stories | Depends On |
+|-------|-----------|---------|------------|
+| 1 | M1: Scaffold & Data Layer | 16 | -- |
+| 2 | M2: LLM & Chunker | 8 | M1 |
+| 3 | M3: Agent Core | 8 | M2 |
 | 4 | M6: Eval Harness | 3 | M3 |
 | 5 | M4: Frontend | 6 | M3 |
 | 6 | M5: Voice Output | 5 | M3, M4 |
 
 **Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
 
-**Total: 6 milestones, 29 stories.**
+**Total: 6 milestones, 12 epics, 46 stories.**
 
 ---
 
@@ -606,7 +569,25 @@ PORT=3000
 
 ---
 
-## 8. Cross-References to product.md
+## 8. Definition of Done
+
+A story is **not done** until all of the following are met:
+
+| Criterion | Description |
+|-----------|-------------|
+| **Code complete** | Implementation matches the story description |
+| **Tests pass** | Unit/integration tests written and passing for the story's scope |
+| **CI green** | `nx affected:lint` and `nx affected:test` pass |
+| **Types safe** | No `any` types. Strict mode. No TypeScript errors |
+| **JSDoc** | Public methods have JSDoc comments |
+| **No TODOs** | No `TODO` or `FIXME` left in committed code for core functionality |
+| **Works E2E** | The milestone's demo scenario still works after the story is merged |
+
+**Per-milestone gate:** Before moving to the next milestone, run the milestone's demo scenario end-to-end and confirm it works. For M3+, also run the eval harness and confirm no regressions.
+
+---
+
+## 9. Cross-References to product.md
 
 | This Document | product.md |
 |--------------|------------|

@@ -1026,31 +1026,13 @@ npx tsx evals/run-eval.ts
 
 ---
 
-## 18. Voice Output (ElevenLabs TTS)
+## 18. Voice Output -- Implementation Details
 
-### 18.1 Overview
+> For the product overview of voice output (how it works, why it exists, model choices, cost per answer), see **Section 3.8**.
+> For the module spec and API endpoints, see [architecture.md](architecture.md) **Section 2.8**.
+> This section covers implementation details not covered elsewhere.
 
-When the agent finishes an answer, users can press a **Listen** button to hear it narrated in a podcast-style voice. The answer is rewritten into conversational speech, sent to ElevenLabs TTS, and streamed back as audio.
-
-### 18.2 Pipeline
-
-```
-1. Agent produces answer (markdown text with citations)
-2. User clicks "Listen"
-3. POST /api/tts/narrate { text, sources }
-4. TtsService:
-   a) Podcast Rewrite (LLM call):
-      - Strip markdown, links, code blocks
-      - Convert citations to spoken references
-      - Add opening hook + sign-off ("That's the signal from HN. I'm VoxPopuli.")
-      - Cap at 2500 characters
-   b) ElevenLabs Streaming TTS:
-      - POST /v1/text-to-speech/{voice_id}/stream
-      - Returns chunked MP3 audio
-5. Frontend: HTML5 <audio> plays as chunks arrive
-```
-
-### 18.3 Signature Voice
+### 18.1 Signature Voice
 
 **Primary: "Brian"** (voice ID: `nPczCjzI2devNBz1zQrb`)
 - Calm, steady, news-reader pacing
@@ -1074,22 +1056,7 @@ When the agent finishes an answer, users can press a **Listen** button to hear i
 
 Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [ElevenLabs > Streaming](https://elevenlabs.io/docs/api-reference/streaming)
 
-### 18.4 API Endpoints
-
-**POST `/api/tts/narrate`**
-
-Request:
-```typescript
-{ text: string; sources?: AgentSource[]; format?: string; }
-```
-
-Response: `Content-Type: audio/mpeg` (chunked MP3 stream)
-
-Errors: 400 (empty/too long text), 429 (credit exhaustion), 502 (ElevenLabs failure)
-
-**GET `/api/tts/voices`** -- Returns active narrator info.
-
-### 18.5 Podcast Rewrite Example
+### 18.2 Podcast Rewrite Example
 
 **Raw agent answer:**
 ```
@@ -1109,17 +1076,13 @@ tptacek argued that utility-first CSS creates maintenance debt at scale.
 That's the signal from Hacker News. I'm VoxPopuli.
 ```
 
-### 18.6 Frontend: Audio Player
+### 18.3 Frontend: Audio Player
 
 States: IDLE (Listen button) -> LOADING -> STREAMING (playing) -> PAUSED -> COMPLETE (listen again + download)
 
 Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download MP3.
 
-### 18.7 Module & Config
-
-For the full TtsModule specification, methods, and endpoints, see [architecture.md](architecture.md) Section 2.8. For environment configuration, see [architecture.md](architecture.md) Section 6.
-
-### 18.9 Cost Impact
+### 18.4 Cost Impact
 
 Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 
@@ -1129,7 +1092,7 @@ Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 | 50 queries/day, 15 narrations/day | Creator ($22/mo) | $22/mo |
 | 100 queries/day, 30 narrations/day | Pro ($99/mo) | $99/mo |
 
-### 18.10 Risks
+### 18.5 Risks
 
 | Risk | Mitigation |
 |------|-----------|
