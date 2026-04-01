@@ -1,10 +1,11 @@
 # VoxPopuli — Product Specification
 
-**Version:** 1.1.0
-**Status:** Draft (Revised)
+**Version:** 1.2.0
+**Status:** Final Draft
 **Last Updated:** March 31, 2026
 
-> *"Vox Populi, Vox Dei."* -- The voice of the people is the voice of God.
+
+> *"Sapientiam persequere."* - Pursue wisdom.
 
 ---
 
@@ -12,6 +13,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2.0 | 2026-03-31 | Voice output (ElevenLabs TTS) with podcast-style narration, listen button, signature narrator voice, TTS service + endpoint, podcast script rewriter |
 | 1.1.0 | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq) |
 | 1.0.0 | 2026-03-31 | Initial draft |
 
@@ -51,6 +53,48 @@ LLMs can now reason over retrieved context. Combine that with HN's structured AP
 | **Researchers** tracking discourse | "How has sentiment on LLM agents changed over the past year?" |
 | **Job seekers** | "What companies is HN excited about hiring at right now?" |
 | **Curious humans** | "What's the most controversial HN post about remote work?" |
+
+<details>
+<summary><strong>Sample Use Cases (20)</strong></summary>
+
+#### Engineers Making Decisions
+
+1. "Bun vs Deno vs Node for a new backend in 2026" -- Agent searches 3-4 threads, pulls comment opinions from practitioners who actually migrated, synthesizes tradeoffs.
+2. "Is Drizzle ORM production-ready?" -- Finds Show HN launch threads, digs into comments about edge cases, surfaces fans and critics.
+3. "What database should I use for time-series IoT data?" -- Cross-references threads on TimescaleDB, InfluxDB, QuestDB with benchmarks from comments.
+4. "What's the HN consensus on monorepos vs polyrepos at scale?" -- Extracts the strongest arguments from both sides of the recurring holy war.
+
+#### Founders and Product People
+
+5. "Has anyone built a competitor to Notion? What was the reaction?" -- Surfaces Show HN launches and the brutal honesty HN is known for.
+6. "What do developers actually hate about Stripe?" -- Categorizes gripes (pricing, docs, support), notes what Stripe responded to.
+7. "Is there demand for an open-source alternative to Figma?" -- Searches Penpot and Figma acquisition threads, gauges sentiment.
+8. "What startup ideas has HN consistently said 'someone should build this'?" -- Deep dive into Ask HN threads about missing tools and unmet needs.
+
+#### Researchers and Trend Watchers
+
+9. "How has HN sentiment on AI agents changed over the past 12 months?" -- Date-sorted search, compares tone of early threads vs recent.
+10. "What are the emerging programming languages HN is excited about?" -- Surfaces Zig, Gleam, Roc, Unison mentions, ranks by engagement.
+11. "What do HN users think about the future of remote work post-2025?" -- Pulls from multiple heated threads, presents the full spectrum.
+12. "Track the HN reaction to every major OpenAI announcement" -- Story-by-story breakdown of community trust over time.
+
+#### Job Seekers and Career
+
+13. "What companies is HN most positive about working at right now?" -- Surfaces "Who is hiring" threads and comments praising specific teams.
+14. "Is it worth learning Rust in 2026 for career purposes?" -- Hiring trends, career advice threads, and Rust adoption stories.
+15. "What do senior engineers on HN say about moving into management?" -- Deep comment mining on a question that generates long, personal responses.
+
+#### Curiosity and Deep Dives
+
+16. "What's the most controversial HN post of all time?" -- Searches by comment count + point ratio, finds the flamewars.
+17. "Best books recommended on HN for system design" -- Mines Ask HN book threads, deduplicates, ranks by mention count.
+18. "What side projects on Show HN actually turned into real businesses?" -- Cross-references Show HN history with later success stories.
+19. "What do HN users think about college degrees in CS?" -- Synthesizes the self-taught vs degree camps.
+20. "ELI5 the drama around the Node.js fork to io.js" -- Historical deep dive from original threads.
+
+**The Podcast Angle:** Every use case becomes a listenable 2-3 minute segment with the voice layer. Daily routine: open VoxPopuli, type "What's interesting on HN today?", hit Listen, pour your coffee.
+
+</details>
 
 ---
 
@@ -159,6 +203,73 @@ The API is rate-limited from day one to prevent accidental cost blowouts and abu
 
 Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-limit)
 
+### 3.8 Voice Output (Podcast Mode)
+
+**New in v1.2.**
+
+VoxPopuli can read its answers aloud using ElevenLabs TTS. The name means "voice of the people" -- it should literally have a voice.
+
+**How it works:**
+
+1. Agent finishes and returns a text answer.
+2. User clicks the **Listen** button on the answer bubble.
+3. Backend rewrites the answer into a **podcast-style script** (conversational tone, no markdown, no raw URLs, natural transitions).
+4. Backend streams the script to ElevenLabs TTS API.
+5. Frontend receives audio chunks and plays them through an `<audio>` element.
+
+**Podcast Script Rewriting:**
+
+Raw agent output is optimized for reading, not listening. Before TTS, a lightweight LLM call rewrites it:
+
+```
+INPUT (agent answer):
+"Based on HN discussions, Tailwind v4 has been well-received.
+[Story 39482731] by @dhh (423 points) praises the new..."
+
+OUTPUT (podcast script):
+"So here's what the Hacker News crowd thinks about Tailwind v4.
+The reception has been largely positive. One highly upvoted post
+by DHH, with over 400 points, praised the new oxide engine..."
+```
+
+Rules for the rewrite:
+- Strip all markdown formatting, links, and brackets.
+- Convert usernames to spoken form ("at DHH" becomes "DHH").
+- Replace "Story 39482731" with natural references ("one popular thread").
+- Add conversational transitions ("So here's the thing...", "Now interestingly...").
+- Keep it concise. Target 60-90 seconds of audio (roughly 800-1200 characters).
+- Preserve all factual claims and attributions.
+
+**Signature Voice:**
+
+VoxPopuli uses a single, fixed narrator voice. This gives the project a recognizable identity, like a podcast host. The voice ID is configured in `.env`:
+
+```env
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # Rachel (stock, warm/professional)
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2   # Best for long-form narration
+```
+
+The voice should be: warm, clear, authoritative but not stiff, slightly conversational. Think "tech podcast host who respects your time."
+
+**ElevenLabs Model Choice:**
+
+| Model | Use Case | Latency | Credits/char |
+|-------|----------|---------|-------------|
+| Multilingual v2 | Default. Best quality for narration. | ~300ms to first byte | 1.0 |
+| Flash v2.5 | Fallback if latency is critical. | ~75ms to first byte | 0.5 |
+| Eleven v3 | Stretch goal. Maximum expressiveness. | ~300ms | ~1.0 |
+
+**Cost per voiced answer:**
+
+| Answer Length | Characters | Credits (Multilingual v2) | Cost (Starter $5/mo) |
+|--------------|-----------|--------------------------|---------------------|
+| Short | ~500 | 500 | ~30k credits = 60 answers/mo |
+| Medium | ~1000 | 1,000 | ~30 answers/mo |
+| Long | ~1500 | 1,500 | ~20 answers/mo |
+
+Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/text-to-speech), [ElevenLabs Streaming](https://elevenlabs.io/docs/api-reference/streaming), [ElevenLabs Pricing](https://elevenlabs.io/pricing)
+
 ---
 
 ## 4. Architecture
@@ -173,10 +284,13 @@ Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-lim
 |  | Chat UI |  | Agent Steps  |  | Source Cards    |     |
 |  |         |  | (live viz)   |  |                 |     |
 |  +----+----+  +------+-------+  +-------+--------+     |
-+-------+--------------+------------------+---------------+
+|  |  [Listen]  |      |                  |               |
+|  |  Audio     |      |                  |               |
+|  |  Player    |      |                  |               |
++--+----+-------+------+------------------+---------------+
         |              |                  |
         +--------------+------------------+
-                       | SSE / HTTP
+                       | SSE / HTTP / Audio Stream
 +----------------------+--------------------------------------+
 |                   NestJS (api)                               |
 |                                                              |
@@ -184,30 +298,23 @@ Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-lim
 |  |              RAG Controller                           |   |
 |  |   POST /api/rag/query    (full response)              |   |
 |  |   GET  /api/rag/stream   (SSE streaming)              |   |
+|  |   POST /api/tts/speak    (audio stream)               |   |
 |  +---------------------------+---------------------------+   |
 |                              |                               |
 |  +---------------------------+---------------------------+   |
 |  |              Agent Service (ReAct Loop)                |  |
-|  |                                                        |  |
-|  |   +----------+  +----------+  +--------------+        |  |
-|  |   |  THINK   |->|  ACT     |->|  OBSERVE     |       |  |
-|  |   |          |  | (tool)   |  | (parse)      |       |  |
-|  |   +----------+  +----------+  +--------------+        |  |
-|  |        ^                            |                  |  |
-|  |        +----------------------------+                  |  |
-|  |              Loop until done (max 7)                   |  |
 |  +--------------------------------------------------------+  |
 |                     |                                        |
-|     +---------------+---------------+                        |
-|     v               v               v                        |
-|  +--------+  +----------+  +------------------+             |
-|  |HN API  |  | Chunker  |  | LLM Provider     |            |
-|  |Service |  | Service  |  | (interface)       |            |
-|  |+ Cache |  |          |  |                   |            |
-|  +---+----+  +----------+  +--+-----+-----+---+            |
-|      |                        |     |     |                  |
-|      |                  Claude  Mistral  Groq                |
-+------+-------------------------------------------------------+
+|     +---------------+---------------+-----------+            |
+|     v               v               v           v            |
+|  +--------+  +----------+  +----------+  +-----------+      |
+|  |HN API  |  | Chunker  |  | LLM      |  | TTS       |     |
+|  |Service |  | Service  |  | Provider |  | Service   |     |
+|  |+ Cache |  |          |  |          |  |           |     |
+|  +---+----+  +----------+  +--+--+--+-+  +-----+-----+     |
+|      |                        |  |  |          |            |
+|      |                  Claude Mistral Groq  ElevenLabs     |
++------+------------------------------------------------------+
        |
        +-->  HN Algolia API (search)
        +-->  HN Firebase API (items + comments)
@@ -223,6 +330,7 @@ Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-lim
 | **LLM (production)** | Claude (Anthropic API) | Best synthesis quality, 200k context |
 | **LLM (cost-optimized)** | Mistral Large 3 | 262k context, $0.50/$1.50 per M tokens |
 | **LLM (speed/dev)** | Groq (Llama 3.3 70B) | 300+ t/s inference, free tier for dev |
+| **TTS** | ElevenLabs (Multilingual v2) | Best-in-class voice quality, streaming API, TypeScript SDK |
 | **Caching** | node-cache (in-memory) | Zero-infrastructure, sufficient for single-node v1 |
 | **Shared Types** | TypeScript library | Single source of truth for API contracts |
 | **Data Sources** | HN Algolia + Firebase APIs | Full-text search + structured item/comment data |
@@ -251,6 +359,15 @@ AppModule
 |   +-- MistralProvider (implements LlmProviderInterface)
 |   +-- GroqProvider (implements LlmProviderInterface)
 |   +-- LlmService (facade, delegates to active provider)
++-- TtsModule
+|   +-- TtsService
+|       +-- narrate(text, sources) -> ReadableStream<Buffer>
+|       +-- rewriteForSpeech(text, sources) -> string (LLM call)
+|       +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
+|   +-- TtsController
+|       +-- POST /api/tts/narrate
+|       +-- GET  /api/tts/voices
+|       +-- imports: LlmModule
 +-- AgentModule
 |   +-- AgentService
 |       +-- run()          -> AgentResponse
@@ -509,7 +626,58 @@ Server-Sent Events endpoint. Streams reasoning steps in real time.
 | `answer` | `AgentResponse` | Final answer ready |
 | `error` | `string` | Something broke |
 
-### 7.3 GET `/api/health`
+### 7.3 POST `/api/tts/speak`
+
+**New in v1.2.** Converts an agent answer into podcast-style audio.
+
+**Request:**
+
+```typescript
+{
+  text: string;               // Required. The agent's answer text.
+  rewrite?: boolean;          // Optional. Default: true. Rewrite to podcast script first.
+  voiceId?: string;           // Optional. Override signature voice.
+}
+```
+
+**Response:** Streaming audio (`Content-Type: audio/mpeg`). MP3 chunks sent via chunked transfer encoding. The client can begin playback before the full response is received.
+
+**Headers:**
+
+```
+Content-Type: audio/mpeg
+Transfer-Encoding: chunked
+X-TTS-Characters: 1042          // Characters sent to ElevenLabs (for cost tracking)
+X-TTS-Model: eleven_multilingual_v2
+```
+
+**Error Responses:**
+
+| Status | Condition |
+|--------|-----------|
+| 400 | Empty or missing `text` |
+| 429 | Rate limit exceeded or ElevenLabs quota exhausted |
+| 502 | ElevenLabs API error |
+
+**Podcast Rewrite Flow:**
+
+When `rewrite: true` (default), the text is first sent through a lightweight LLM call that reformats it for spoken delivery. The system prompt for this rewrite:
+
+```
+You are a podcast script writer. Rewrite the following text for spoken narration.
+
+Rules:
+- Remove all markdown, links, brackets, and formatting.
+- Convert "@username" to just the name spoken naturally.
+- Replace story IDs with natural references ("one popular thread", "a highly upvoted post").
+- Add brief conversational transitions between points.
+- Keep all factual claims and attributions intact.
+- Target 800-1200 characters (60-90 seconds of speech).
+- Sound like a knowledgeable tech podcast host: warm, clear, concise.
+- Do NOT add intro/outro music cues or "[pause]" markers.
+```
+
+### 7.4 GET `/api/health`
 
 Health check endpoint. Returns provider status and cache stats.
 
@@ -658,6 +826,11 @@ voxpopuli/
 |   |       |       +-- claude.provider.ts
 |   |       |       +-- mistral.provider.ts
 |   |       |       +-- groq.provider.ts
+|   |       +-- tts/
+|   |       |   +-- tts.module.ts
+|   |       |   +-- tts.controller.ts     # POST /api/tts/narrate + GET /api/tts/voices
+|   |       |   +-- tts.service.ts        # ElevenLabs streaming + podcast rewrite
+|   |       |   +-- podcast-rewrite.prompt.ts
 |   |       +-- rag/
 |   |       |   +-- rag.module.ts
 |   |       |   +-- rag.controller.ts     # POST + SSE endpoints
@@ -672,9 +845,11 @@ voxpopuli/
 |               |   +-- chat/
 |               |   +-- agent-steps/
 |               |   +-- source-card/
+|               |   +-- audio-player/      # Listen button + playback controls
 |               |   +-- provider-selector/ # Switch providers in UI
 |               +-- services/
 |               |   +-- rag.service.ts
+|               |   +-- tts.service.ts     # POST to /api/tts/narrate, play audio
 |               +-- app.component.ts
 |
 +-- libs/
@@ -895,6 +1070,10 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 - [ ] Source cards with HN links
 - [ ] Provider selector in UI
 - [ ] Meta bar (provider, tokens, latency, cached)
+- [ ] ElevenLabs TTS integration (TtsService + streaming endpoint)
+- [ ] Podcast script rewriter (LLM-powered text-to-speech preprocessing)
+- [ ] Listen button + audio player component
+- [ ] Signature narrator voice configuration
 
 ### v1.1 -- Polish
 
@@ -904,6 +1083,10 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 - [ ] Error boundary components
 - [ ] Provider auto-fallback
 - [ ] Query history (local storage)
+- [ ] Voice: waveform visualization on audio player
+- [ ] Voice: audio caching (same narration if answer unchanged)
+- [ ] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
+- [ ] Voice: downloadable MP3 of narrated answer
 
 ### v2.0 -- Intelligence Upgrade
 
@@ -912,6 +1095,9 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 - [ ] Follow-up suggestions
 - [ ] WebSocket upgrade
 - [ ] Scheduled digests
+- [ ] Voice: auto-play podcast mode (toggle in settings)
+- [ ] Voice: user-selectable voice library
+- [ ] Voice: RSS podcast feed (subscribe in podcast apps)
 
 ### v3.0 -- Platform
 
@@ -999,11 +1185,147 @@ npx tsx evals/run-eval.ts
 
 ---
 
-## 18. License
+## 18. Voice Output (ElevenLabs TTS)
+
+### 18.1 Overview
+
+When the agent finishes an answer, users can press a **Listen** button to hear it narrated in a podcast-style voice. The answer is rewritten into conversational speech, sent to ElevenLabs TTS, and streamed back as audio.
+
+### 18.2 Pipeline
+
+```
+1. Agent produces answer (markdown text with citations)
+2. User clicks "Listen"
+3. POST /api/tts/narrate { text, sources }
+4. TtsService:
+   a) Podcast Rewrite (LLM call):
+      - Strip markdown, links, code blocks
+      - Convert citations to spoken references
+      - Add opening hook + sign-off ("That's the signal from HN. I'm VoxPopuli.")
+      - Cap at 2500 characters
+   b) ElevenLabs Streaming TTS:
+      - POST /v1/text-to-speech/{voice_id}/stream
+      - Returns chunked MP3 audio
+5. Frontend: HTML5 <audio> plays as chunks arrive
+```
+
+### 18.3 Signature Voice
+
+**Primary: "Brian"** (voice ID: `nPczCjzI2devNBz1zQrb`)
+- Calm, steady, news-reader pacing
+- Stock voice, available on all ElevenLabs tiers (including free)
+
+**Backup: "Mattie"** (warm, conversational podcast style)
+
+**Voice settings:**
+
+```typescript
+{
+  model_id: "eleven_multilingual_v2",
+  voice_settings: {
+    stability: 0.65,
+    similarity_boost: 0.75,
+    style: 0.35,
+    use_speaker_boost: true
+  }
+}
+```
+
+Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [ElevenLabs > Streaming](https://elevenlabs.io/docs/api-reference/streaming)
+
+### 18.4 API Endpoints
+
+**POST `/api/tts/narrate`**
+
+Request:
+```typescript
+{ text: string; sources?: AgentSource[]; format?: string; }
+```
+
+Response: `Content-Type: audio/mpeg` (chunked MP3 stream)
+
+Errors: 400 (empty/too long text), 429 (credit exhaustion), 502 (ElevenLabs failure)
+
+**GET `/api/tts/voices`** -- Returns active narrator info.
+
+### 18.5 Podcast Rewrite Example
+
+**Raw agent answer:**
+```
+Based on HN discussions, **Tailwind v4** has been broadly well-received.
+A [highly upvoted story](https://...) by user `swyx` (340 points) praised
+the new Oxide engine. However, `tptacek` argued that utility-first CSS
+creates maintenance debt at scale (127 upvotes).
+```
+
+**After podcast rewrite:**
+```
+So, here's what the Hacker News crowd has to say about Tailwind v4.
+The reception has been broadly positive. A highly upvoted post by swyx,
+with over 340 points, praised the new Oxide engine for some serious
+speed improvements. But not everyone's on board. A commenter named
+tptacek argued that utility-first CSS creates maintenance debt at scale.
+That's the signal from Hacker News. I'm VoxPopuli.
+```
+
+### 18.6 Frontend: Audio Player
+
+States: IDLE (Listen button) -> LOADING -> STREAMING (playing) -> PAUSED -> COMPLETE (listen again + download)
+
+Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download MP3.
+
+### 18.7 New Module
+
+```
+TtsModule
++-- TtsService
+|   +-- narrate(text, sources) -> ReadableStream<Buffer>
+|   +-- rewriteForSpeech(text, sources) -> string (LLM call)
+|   +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
++-- TtsController
+    +-- POST /api/tts/narrate
+    +-- GET  /api/tts/voices
+```
+
+### 18.8 New Dependencies and Config
+
+```bash
+npm install elevenlabs
+```
+
+```env
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=nPczCjzI2devNBz1zQrb
+ELEVENLABS_MODEL=eleven_multilingual_v2
+```
+
+### 18.9 Cost Impact
+
+Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
+
+| Usage (assuming 30% of queries use Listen) | Plan Needed | Monthly Cost |
+|--------------------------------------------|-------------|-------------|
+| 20 queries/day, 6 narrations/day | Starter ($5/mo) | $5/mo |
+| 50 queries/day, 15 narrations/day | Creator ($22/mo) | $22/mo |
+| 100 queries/day, 30 narrations/day | Pro ($99/mo) | $99/mo |
+
+### 18.10 Risks
+
+| Risk | Mitigation |
+|------|-----------|
+| ElevenLabs cold start (2-4s) | Show "Preparing narration..." loading state |
+| Credit exhaustion | Disable Listen button, show "Voice credits used up" |
+| Rewrite hallucination | Eval check: compare rewrite against original answer |
+| Long answers (>3000 chars) | Chunk with `previous_request_id` for prosody continuity |
+| Voice removed from library | Fallback voice in config (Mattie) |
+
+---
+
+## 19. License
 
 MIT
 
 ---
 
-> *"Three dealers at one table. The house doesn't stand a chance."*
+> *"Three dealers, one voice, and twenty ways to play. Now stop reading and start building."*
 > -- Doug "Double-Down" Donovan
