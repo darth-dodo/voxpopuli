@@ -274,51 +274,11 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 
 ## 4. Architecture
 
-### 4.1 High-Level Overview
+### 4.1 Overview
 
-```
-+---------------------------------------------------------+
-|                   Angular (web)                          |
-|                                                          |
-|  +---------+  +--------------+  +----------------+      |
-|  | Chat UI |  | Agent Steps  |  | Source Cards    |     |
-|  |         |  | (live viz)   |  |                 |     |
-|  +----+----+  +------+-------+  +-------+--------+     |
-|  |  [Listen]  |      |                  |               |
-|  |  Audio     |      |                  |               |
-|  |  Player    |      |                  |               |
-+--+----+-------+------+------------------+---------------+
-        |              |                  |
-        +--------------+------------------+
-                       | SSE / HTTP / Audio Stream
-+----------------------+--------------------------------------+
-|                   NestJS (api)                               |
-|                                                              |
-|  +------------------------------------------------------+   |
-|  |              RAG Controller                           |   |
-|  |   POST /api/rag/query    (full response)              |   |
-|  |   GET  /api/rag/stream   (SSE streaming)              |   |
-|  |   POST /api/tts/speak    (audio stream)               |   |
-|  +---------------------------+---------------------------+   |
-|                              |                               |
-|  +---------------------------+---------------------------+   |
-|  |              Agent Service (ReAct Loop)                |  |
-|  +--------------------------------------------------------+  |
-|                     |                                        |
-|     +---------------+---------------+-----------+            |
-|     v               v               v           v            |
-|  +--------+  +----------+  +----------+  +-----------+      |
-|  |HN API  |  | Chunker  |  | LLM      |  | TTS       |     |
-|  |Service |  | Service  |  | Provider |  | Service   |     |
-|  |+ Cache |  |          |  |          |  |           |     |
-|  +---+----+  +----------+  +--+--+--+-+  +-----+-----+     |
-|      |                        |  |  |          |            |
-|      |                  Claude Mistral Groq  ElevenLabs     |
-+------+------------------------------------------------------+
-       |
-       +-->  HN Algolia API (search)
-       +-->  HN Firebase API (items + comments)
-```
+Nx monorepo with two apps (`api` + `web`), a shared types library, and an eval harness. The backend is modular NestJS with separate modules for HN data, caching, content chunking, LLM providers, the ReAct agent, TTS, and the RAG controller.
+
+For the full system diagram, module dependency graph, and project structure, see [architecture.md](architecture.md) Sections 1 and 2.
 
 ### 4.2 Tech Stack
 
@@ -334,51 +294,6 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 | **Caching** | node-cache (in-memory) | Zero-infrastructure, sufficient for single-node v1 |
 | **Shared Types** | TypeScript library | Single source of truth for API contracts |
 | **Data Sources** | HN Algolia + Firebase APIs | Full-text search + structured item/comment data |
-
-### 4.3 Module Dependency Graph
-
-```
-AppModule
-+-- ConfigModule (global)
-+-- CacheModule
-|   +-- CacheService (node-cache wrapper, TTL management)
-+-- HnModule
-|   +-- HnService
-|       +-- Algolia HTTP client (search, search_by_date)
-|       +-- Firebase HTTP client (getItem, getCommentTree, getTopStoryIds)
-|       +-- CacheService (injected, wraps all external calls)
-+-- ChunkerModule
-|   +-- ChunkerService
-|       +-- chunkStories()     -> StoryChunk[]
-|       +-- chunkComments()    -> CommentChunk[]
-|       +-- buildContext()     -> ContextWindow (token-budgeted)
-|       +-- formatForPrompt()  -> string
-+-- LlmModule
-|   +-- LlmProviderInterface (abstract)
-|   +-- ClaudeProvider (implements LlmProviderInterface)
-|   +-- MistralProvider (implements LlmProviderInterface)
-|   +-- GroqProvider (implements LlmProviderInterface)
-|   +-- LlmService (facade, delegates to active provider)
-+-- TtsModule
-|   +-- TtsService
-|       +-- narrate(text, sources) -> ReadableStream<Buffer>
-|       +-- rewriteForSpeech(text, sources) -> string (LLM call)
-|       +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
-|   +-- TtsController
-|       +-- POST /api/tts/narrate
-|       +-- GET  /api/tts/voices
-|       +-- imports: LlmModule
-+-- AgentModule
-|   +-- AgentService
-|       +-- run()          -> AgentResponse
-|       +-- executeTool()  -> tool results
-|       +-- imports: HnModule, ChunkerModule, LlmModule
-+-- RagModule
-    +-- RagController
-        +-- POST /api/rag/query
-        +-- GET  /api/rag/stream (SSE)
-        +-- imports: AgentModule
-```
 
 ---
 
@@ -799,76 +714,9 @@ Using native protocols gives the model clear separation between its own reasonin
 
 ## 10. Project Structure
 
-```
-voxpopuli/
-+-- apps/
-|   +-- api/                              # NestJS backend
-|   |   +-- src/
-|   |       +-- agent/
-|   |       |   +-- agent.module.ts
-|   |       |   +-- agent.service.ts      # ReAct loop
-|   |       |   +-- tools.ts              # Tool definitions
-|   |       |   +-- system-prompt.ts      # Agent instructions
-|   |       +-- cache/
-|   |       |   +-- cache.module.ts
-|   |       |   +-- cache.service.ts      # node-cache wrapper
-|   |       +-- chunker/
-|   |       |   +-- chunker.module.ts
-|   |       |   +-- chunker.service.ts    # HTML cleanup, token budgeting
-|   |       +-- hn/
-|   |       |   +-- hn.module.ts
-|   |       |   +-- hn.service.ts         # Algolia + Firebase + caching
-|   |       +-- llm/
-|   |       |   +-- llm.module.ts
-|   |       |   +-- llm.service.ts        # Facade (delegates to provider)
-|   |       |   +-- llm-provider.interface.ts
-|   |       |   +-- providers/
-|   |       |       +-- claude.provider.ts
-|   |       |       +-- mistral.provider.ts
-|   |       |       +-- groq.provider.ts
-|   |       +-- tts/
-|   |       |   +-- tts.module.ts
-|   |       |   +-- tts.controller.ts     # POST /api/tts/narrate + GET /api/tts/voices
-|   |       |   +-- tts.service.ts        # ElevenLabs streaming + podcast rewrite
-|   |       |   +-- podcast-rewrite.prompt.ts
-|   |       +-- rag/
-|   |       |   +-- rag.module.ts
-|   |       |   +-- rag.controller.ts     # POST + SSE endpoints
-|   |       +-- app/
-|   |       |   +-- app.module.ts         # Root module
-|   |       +-- main.ts
-|   |
-|   +-- web/                              # Angular frontend
-|       +-- src/
-|           +-- app/
-|               +-- components/
-|               |   +-- chat/
-|               |   +-- agent-steps/
-|               |   +-- source-card/
-|               |   +-- audio-player/      # Listen button + playback controls
-|               |   +-- provider-selector/ # Switch providers in UI
-|               +-- services/
-|               |   +-- rag.service.ts
-|               |   +-- tts.service.ts     # POST to /api/tts/narrate, play audio
-|               +-- app.component.ts
-|
-+-- libs/
-|   +-- shared-types/                     # Shared TypeScript interfaces
-|       +-- src/
-|           +-- index.ts
-|
-+-- evals/                                # Evaluation harness
-|   +-- queries.json                      # Test queries + expected qualities
-|   +-- run-eval.ts                       # Runner script
-|   +-- score.ts                          # Scoring logic
-|   +-- results/                          # Timestamped eval results
-|
-+-- nx.json
-+-- tsconfig.base.json
-+-- package.json
-+-- .env
-+-- .env.example
-```
+See [architecture.md](architecture.md) Section 1.4 for the full file tree.
+
+Summary: Nx monorepo with `apps/api` (NestJS, 7 modules), `apps/web` (Angular, 5 components + 2 services), `libs/shared-types`, and `evals/`.
 
 ---
 
@@ -1057,23 +905,16 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 ### v1.0 -- Foundation (Current Scope)
 
-- [ ] Nx monorepo scaffold
-- [ ] HN API service (Algolia + Firebase)
-- [ ] In-memory caching layer (node-cache)
-- [ ] Content chunker with per-provider token budgeting
-- [ ] LLM provider interface + triple-stack (Claude, Mistral, Groq)
-- [ ] Native tool_result protocol per provider
-- [ ] ReAct agent loop (plan, act, observe, respond)
-- [ ] RAG endpoints (POST + SSE) with rate limiting
-- [ ] Evaluation harness (20 test queries)
-- [ ] Angular chat UI with live agent step visualization
-- [ ] Source cards with HN links
-- [ ] Provider selector in UI
-- [ ] Meta bar (provider, tokens, latency, cached)
-- [ ] ElevenLabs TTS integration (TtsService + streaming endpoint)
-- [ ] Podcast script rewriter (LLM-powered text-to-speech preprocessing)
-- [ ] Listen button + audio player component
-- [ ] Signature narrator voice configuration
+The v1.0 implementation is broken into 6 milestones with 29 stories. See [architecture.md](architecture.md) Section 3 for the full Linear-ready task breakdown.
+
+| Milestone | Goal |
+|-----------|------|
+| M1: Scaffold & Data Layer | Nx monorepo, shared types, HN data flowing with caching |
+| M2: LLM & Chunker | Triple-stack providers working, content fits token budgets |
+| M3: Agent Core | ReAct loop end-to-end, sourced answers via API |
+| M4: Frontend | Chat UI with live reasoning viz, source cards, provider selector |
+| M5: Voice Output | ElevenLabs TTS with podcast-style narration |
+| M6: Eval Harness | 20 test queries, automated scoring, regression detection |
 
 ### v1.1 -- Polish
 
@@ -1274,30 +1115,9 @@ States: IDLE (Listen button) -> LOADING -> STREAMING (playing) -> PAUSED -> COMP
 
 Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download MP3.
 
-### 18.7 New Module
+### 18.7 Module & Config
 
-```
-TtsModule
-+-- TtsService
-|   +-- narrate(text, sources) -> ReadableStream<Buffer>
-|   +-- rewriteForSpeech(text, sources) -> string (LLM call)
-|   +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
-+-- TtsController
-    +-- POST /api/tts/narrate
-    +-- GET  /api/tts/voices
-```
-
-### 18.8 New Dependencies and Config
-
-```bash
-npm install elevenlabs
-```
-
-```env
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=nPczCjzI2devNBz1zQrb
-ELEVENLABS_MODEL=eleven_multilingual_v2
-```
+For the full TtsModule specification, methods, and endpoints, see [architecture.md](architecture.md) Section 2.8. For environment configuration, see [architecture.md](architecture.md) Section 6.
 
 ### 18.9 Cost Impact
 
@@ -1327,5 +1147,3 @@ MIT
 
 ---
 
-> *"Three dealers, one voice, and twenty ways to play. Now stop reading and start building."*
-> -- Doug "Double-Down" Donovan

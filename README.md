@@ -242,7 +242,7 @@ graph TB
 | Data | HN Algolia API (search) + Firebase API (items/comments) |
 | Streaming | Server-Sent Events |
 
-See [product.md](product.md) for the full technical specification, API docs, and design decisions.
+See [product.md](product.md) for the full product specification and [architecture.md](architecture.md) for the technical blueprint and implementation plan.
 
 ## License
 
