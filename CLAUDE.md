@@ -33,11 +33,13 @@ npx tsx evals/run-eval.ts # Run eval harness
 ## Code Conventions
 
 ### TypeScript
+
 - **Strict mode enabled.** No `any` types without explicit justification.
 - All shared interfaces live in `@voxpopuli/shared-types`. Import from there, not local copies.
 - JSDoc on all public methods.
 
 ### NestJS Backend
+
 - **One module per domain:** agent, cache, chunker, hn, llm, rag, tts.
 - **Stateless services.** No mutable state outside CacheService.
 - **Dependency injection** for all service dependencies. No direct imports between modules.
@@ -46,12 +48,14 @@ npx tsx evals/run-eval.ts # Run eval harness
 - Use native tool_result protocol per provider (see product.md Section 9). Do not string-hack tool results into messages.
 
 ### Angular Frontend
+
 - **Standalone components** (no NgModules).
 - **Signals** for reactive state where applicable.
 - **Tailwind CSS** for styling. Utility-first, no component CSS files unless necessary.
 - SSE via native `EventSource`, not libraries.
 
 ### Testing
+
 - Tests live alongside source files (NestJS convention) or in `__tests__/` directories.
 - Mock external HTTP calls (HN APIs, LLM providers, ElevenLabs). Never hit real APIs in tests.
 - CacheService can be tested with real in-memory cache behavior.
@@ -59,16 +63,16 @@ npx tsx evals/run-eval.ts # Run eval harness
 
 ## Key Constraints
 
-| Constraint | Value |
-|-----------|-------|
-| Max agent steps | 7 |
-| Agent timeout | 60s |
-| Concurrent agents | 5 (semaphore) |
-| Comment cap per story | 30 |
-| Query max length | 500 chars |
-| Rate limit (per IP) | 10 req/min |
-| Token budget: Claude | 80k, Mistral 100k, Groq 50k |
-| TTS max chars | 2500 |
+| Constraint            | Value                       |
+| --------------------- | --------------------------- |
+| Max agent steps       | 7                           |
+| Agent timeout         | 60s                         |
+| Concurrent agents     | 5 (semaphore)               |
+| Comment cap per story | 30                          |
+| Query max length      | 500 chars                   |
+| Rate limit (per IP)   | 10 req/min                  |
+| Token budget: Claude  | 80k, Mistral 100k, Groq 50k |
+| TTS max chars         | 2500                        |
 
 ## Environment Variables
 
