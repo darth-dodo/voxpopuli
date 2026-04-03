@@ -55,6 +55,20 @@ clean:
 install:
 	pnpm install
 
+# ── Try It (temporary M1 test endpoints) ────────────────────
+
+search: ## Search HN stories. Usage: make search q="rust vs go"
+	curl -s "http://localhost:3000/api/hn/search?q=$(q)&limit=5" | jq .
+
+item: ## Get a story by ID. Usage: make item id=38543832
+	curl -s "http://localhost:3000/api/hn/item/$(id)" | jq .
+
+comments: ## Get comments for a story. Usage: make comments id=38543832
+	curl -s "http://localhost:3000/api/hn/comments/$(id)" | jq .
+
+health: ## Health check
+	curl -s http://localhost:3000/api/health | jq .
+
 # ── Eval (placeholder for M6) ────────────────────────────────
 
 eval:
