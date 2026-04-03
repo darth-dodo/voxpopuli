@@ -1,24 +1,73 @@
-# Nestjs specific
-/dist
-/node_modules
-/build
-/tmp
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+tmp/
+out-tsc/
+
+# Nx
+.nx/cache
+.nx/workspace-data
+.nx/polygraph
+
+# Angular
+.angular/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage/
+
+# Cache
+.cache/
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.cursor/rules/nx-rules.mdc
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+testem.log
 
-# dotenv environment variable files
-.env
-.env.development
-.env.test
-.env.production
+# Temp
+.temp/
+.tmp/
 
-# temp directory
-.temp
-.tmp
+# Misc
+/.sass-cache
+/connect.lock
+/libpeerconnection.log
+/typings
+
+# Generated
+.github/instructions/nx.instructions.md
+.claude/worktrees
+.claude/settings.local.json
+__screenshots__/
+test-output/

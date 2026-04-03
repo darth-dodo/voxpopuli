@@ -1,0 +1,15 @@
+echo "🔍 Pre-push checks..."
+
+echo "→ Lint"
+npx nx affected:lint --base=main 2>/dev/null || npx nx run-many -t lint || exit 1
+
+echo "→ Typecheck"
+npx nx affected --target=typecheck --base=main 2>/dev/null || npx nx run-many -t typecheck || exit 1
+
+echo "→ Test"
+npx nx affected:test --base=main 2>/dev/null || npx nx run-many -t test || exit 1
+
+echo "→ Format"
+pnpm exec prettier --check "**/*.{ts,tsx,json,md,yml,yaml,css,html}" || exit 1
+
+echo "✅ All checks passed"

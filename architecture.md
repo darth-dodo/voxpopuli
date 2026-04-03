@@ -7,11 +7,11 @@
 
 ## Document Map
 
-| Document | Purpose |
-|----------|---------|
-| [product.md](product.md) | Product vision, capabilities, API contracts, design decisions |
+| Document                   | Purpose                                                                  |
+| -------------------------- | ------------------------------------------------------------------------ |
+| [product.md](product.md)   | Product vision, capabilities, API contracts, design decisions            |
 | **architecture.md** (this) | Technical architecture, module design, milestones, Linear task breakdown |
-| [README.md](README.md) | Public-facing overview for users and contributors |
+| [README.md](README.md)     | Public-facing overview for users and contributors                        |
 
 ---
 
@@ -102,17 +102,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| Monorepo | Nx | Latest |
-| Backend | NestJS | 10+ |
-| Frontend | Angular | 17+ |
-| LLM (quality) | Claude Sonnet 4 | Anthropic SDK |
-| LLM (cost) | Mistral Large 3 | Mistral SDK |
-| LLM (speed/dev) | Groq Llama 3.3 70B | OpenAI-compat |
-| TTS | ElevenLabs | elevenlabs SDK |
-| Cache | node-cache | Latest |
-| Shared Types | TypeScript lib | `@voxpopuli/shared-types` |
+| Layer           | Technology         | Version                   |
+| --------------- | ------------------ | ------------------------- |
+| Monorepo        | Nx                 | Latest                    |
+| Backend         | NestJS             | 10+                       |
+| Frontend        | Angular            | 17+                       |
+| LLM (quality)   | Claude Sonnet 4    | Anthropic SDK             |
+| LLM (cost)      | Mistral Large 3    | Mistral SDK               |
+| LLM (speed/dev) | Groq Llama 3.3 70B | OpenAI-compat             |
+| TTS             | ElevenLabs         | elevenlabs SDK            |
+| Cache           | node-cache         | Latest                    |
+| Shared Types    | TypeScript lib     | `@voxpopuli/shared-types` |
 
 ### 1.4 Project Structure
 
@@ -146,38 +146,38 @@ Single source of truth for all API contracts. Both apps import from `@voxpopuli/
 
 **Key interfaces:**
 
-| Interface | Purpose |
-|-----------|---------|
-| `RagQuery` | Query request shape |
-| `AgentResponse` | Full response: answer + steps + sources + meta |
-| `AgentStep` | Single reasoning step (thought/action/observation) |
-| `AgentSource` | Story metadata with HN link |
-| `StoryChunk` | Chunked story for context window |
-| `CommentChunk` | Chunked comment for context window |
+| Interface        | Purpose                                                |
+| ---------------- | ------------------------------------------------------ |
+| `RagQuery`       | Query request shape                                    |
+| `AgentResponse`  | Full response: answer + steps + sources + meta         |
+| `AgentStep`      | Single reasoning step (thought/action/observation)     |
+| `AgentSource`    | Story metadata with HN link                            |
+| `StoryChunk`     | Chunked story for context window                       |
+| `CommentChunk`   | Chunked comment for context window                     |
 | `ToolDefinition` | Agent tool schema (search_hn, get_story, get_comments) |
-| `LlmMessage` | Provider-agnostic message format |
-| `LlmResponse` | Provider-agnostic response format |
-| `TtsRequest` | TTS narration request shape |
+| `LlmMessage`     | Provider-agnostic message format                       |
+| `LlmResponse`    | Provider-agnostic response format                      |
+| `TtsRequest`     | TTS narration request shape                            |
 
 ### 2.2 CacheModule
 
 Wraps `node-cache` with typed get/set and TTL management.
 
-| Method | TTL | Description |
-|--------|-----|-------------|
-| `getOrSet<T>(key, fetcher, ttl)` | varies | Cache-aside pattern |
-| Search results | 15 min | Algolia responses |
-| Stories | 1 hour | Firebase item data |
-| Comments | 30 min | Firebase comment data |
-| Query results | 10 min | Full AgentResponse by query hash |
+| Method                           | TTL    | Description                      |
+| -------------------------------- | ------ | -------------------------------- |
+| `getOrSet<T>(key, fetcher, ttl)` | varies | Cache-aside pattern              |
+| Search results                   | 15 min | Algolia responses                |
+| Stories                          | 1 hour | Firebase item data               |
+| Comments                         | 30 min | Firebase comment data            |
+| Query results                    | 10 min | Full AgentResponse by query hash |
 
 ### 2.3 HnModule
 
 Two HTTP clients behind one service, all calls wrapped with CacheService.
 
-| Client | Base URL | Methods |
-|--------|----------|---------|
-| Algolia | `hn.algolia.com/api/v1` | `search()`, `searchByDate()` |
+| Client   | Base URL                        | Methods                         |
+| -------- | ------------------------------- | ------------------------------- |
+| Algolia  | `hn.algolia.com/api/v1`         | `search()`, `searchByDate()`    |
 | Firebase | `hacker-news.firebaseio.com/v0` | `getItem()`, `getCommentTree()` |
 
 **Comment tree fetching:** Parallel batches of 10, hard cap 30 comments, skip deleted/dead. See product.md Section 6.3.
@@ -186,12 +186,12 @@ Two HTTP clients behind one service, all calls wrapped with CacheService.
 
 Transforms raw HN data into token-budgeted context for the LLM.
 
-| Method | Input | Output |
-|--------|-------|--------|
-| `chunkStories(hits[])` | Algolia search hits | `StoryChunk[]` |
-| `chunkComments(items[])` | Firebase comment tree | `CommentChunk[]` |
-| `buildContext(chunks[], budget)` | Mixed chunks | `ContextWindow` (fits budget) |
-| `formatForPrompt(context)` | ContextWindow | String (ready for LLM) |
+| Method                           | Input                 | Output                        |
+| -------------------------------- | --------------------- | ----------------------------- |
+| `chunkStories(hits[])`           | Algolia search hits   | `StoryChunk[]`                |
+| `chunkComments(items[])`         | Firebase comment tree | `CommentChunk[]`              |
+| `buildContext(chunks[], budget)` | Mixed chunks          | `ContextWindow` (fits budget) |
+| `formatForPrompt(context)`       | ContextWindow         | String (ready for LLM)        |
 
 **Token budgets:** Claude 80k, Mistral 100k, Groq 50k. Priority: metadata > story text > top-level comments > nested comments.
 
@@ -199,21 +199,21 @@ Transforms raw HN data into token-budgeted context for the LLM.
 
 Provider interface + facade pattern. See product.md Section 5 for full interface definition and native tool protocol details.
 
-| Component | Responsibility |
-|-----------|---------------|
-| `LlmProviderInterface` | Abstract contract (chat, formatTools, buildToolResultMessage) |
-| `ClaudeProvider` | Anthropic SDK, tool_use/tool_result content blocks |
-| `MistralProvider` | Mistral SDK, OpenAI-compatible tool calls |
-| `GroqProvider` | OpenAI-compatible SDK, tool role messages |
-| `LlmService` | Facade: reads `LLM_PROVIDER` env, delegates to active provider |
+| Component              | Responsibility                                                 |
+| ---------------------- | -------------------------------------------------------------- |
+| `LlmProviderInterface` | Abstract contract (chat, formatTools, buildToolResultMessage)  |
+| `ClaudeProvider`       | Anthropic SDK, tool_use/tool_result content blocks             |
+| `MistralProvider`      | Mistral SDK, OpenAI-compatible tool calls                      |
+| `GroqProvider`         | OpenAI-compatible SDK, tool role messages                      |
+| `LlmService`           | Facade: reads `LLM_PROVIDER` env, delegates to active provider |
 
 ### 2.6 AgentModule
 
 The ReAct loop. See product.md Section 3.3 for the pattern and Section 8 for tool specs.
 
-| Method | Description |
-|--------|-------------|
-| `run(query, options)` | Execute full ReAct loop, return AgentResponse |
+| Method                      | Description                                   |
+| --------------------------- | --------------------------------------------- |
+| `run(query, options)`       | Execute full ReAct loop, return AgentResponse |
 | `executeTool(name, params)` | Dispatch to HnService, return chunked results |
 
 **Constraints:** Max 7 steps, 60s global timeout, 5 concurrent runs (semaphore).
@@ -224,11 +224,11 @@ The ReAct loop. See product.md Section 3.3 for the pattern and Section 8 for too
 
 Thin controller layer. No business logic.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/rag/query` | POST | Full blocking response |
-| `/api/rag/stream` | GET | SSE streaming of reasoning steps |
-| `/api/health` | GET | Provider status + cache stats |
+| Endpoint          | Method | Description                      |
+| ----------------- | ------ | -------------------------------- |
+| `/api/rag/query`  | POST   | Full blocking response           |
+| `/api/rag/stream` | GET    | SSE streaming of reasoning steps |
+| `/api/health`     | GET    | Provider status + cache stats    |
 
 **Middleware:** Rate limiting (10/min per IP, 60/min global) via `express-rate-limit`.
 
@@ -236,28 +236,28 @@ Thin controller layer. No business logic.
 
 See product.md Section 18 for full pipeline, voice config, and cost analysis.
 
-| Method | Description |
-|--------|-------------|
-| `TtsService.narrate(text, sources)` | Full pipeline: rewrite + stream audio |
+| Method                              | Description                                    |
+| ----------------------------------- | ---------------------------------------------- |
+| `TtsService.narrate(text, sources)` | Full pipeline: rewrite + stream audio          |
 | `TtsService.rewriteForSpeech(text)` | LLM call to convert markdown to podcast script |
-| `TtsService.streamAudio(script)` | ElevenLabs streaming TTS |
+| `TtsService.streamAudio(script)`    | ElevenLabs streaming TTS                       |
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/tts/narrate` | POST | Streaming MP3 audio response |
-| `/api/tts/voices` | GET | Active narrator info |
+| Endpoint           | Method | Description                  |
+| ------------------ | ------ | ---------------------------- |
+| `/api/tts/narrate` | POST   | Streaming MP3 audio response |
+| `/api/tts/voices`  | GET    | Active narrator info         |
 
 ### 2.9 Frontend Components
 
-| Component | Responsibility |
-|-----------|---------------|
-| `ChatComponent` | Query input, answer display, conversation layout |
-| `AgentStepsComponent` | Real-time step timeline (expandable) |
-| `SourceCardComponent` | Story card with title, author, points, HN link |
-| `AudioPlayerComponent` | Listen button, play/pause, progress, speed, download |
-| `ProviderSelectorComponent` | LLM provider dropdown |
-| `RagService` | HTTP + EventSource client for RAG endpoints |
-| `TtsService` | HTTP client for TTS endpoint, audio blob management |
+| Component                   | Responsibility                                       |
+| --------------------------- | ---------------------------------------------------- |
+| `ChatComponent`             | Query input, answer display, conversation layout     |
+| `AgentStepsComponent`       | Real-time step timeline (expandable)                 |
+| `SourceCardComponent`       | Story card with title, author, points, HN link       |
+| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download |
+| `ProviderSelectorComponent` | LLM provider dropdown                                |
+| `RagService`                | HTTP + EventSource client for RAG endpoints          |
+| `TtsService`                | HTTP client for TTS endpoint, audio blob management  |
 
 ---
 
@@ -276,12 +276,14 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 1: Scaffold & Data Layer
+
 **Goal:** Nx monorepo running, shared types defined, HN data flowing with caching.
 **Demo:** `curl` an internal endpoint that returns cached HN search results.
 
 #### Epic 1.1: Project Bootstrap
 
 - **Story: Initialize Nx monorepo** (AI-101)
+
   - Create Nx workspace with `apps/api` (NestJS) and `apps/web` (Angular)
   - Create `libs/shared-types` library
   - Configure `tsconfig.base.json` path aliases
@@ -289,6 +291,7 @@ Epic (Linear Project or Cycle)
   - Verify `nx serve api` and `nx serve web` both start
 
 - **Story: Define shared types** (AI-102)
+
   - Define `RagQuery`, `AgentResponse`, `AgentStep`, `AgentSource`
   - Define `StoryChunk`, `CommentChunk`, `ContextWindow`
   - Define `ToolDefinition`, `LlmMessage`, `LlmResponse`
@@ -310,12 +313,14 @@ Epic (Linear Project or Cycle)
 #### Epic 1.2: HN Data Service
 
 - **Story: Implement CacheModule** (AI-103)
+
   - Install `node-cache`
   - Implement `CacheService` with typed `getOrSet<T>()` pattern
   - Configure TTLs per data type
   - Add cache stats method (hits, misses, keys)
 
 - **Story: Implement HnService (Algolia)** (AI-104)
+
   - HTTP client for `hn.algolia.com/api/v1`
   - `search(query, options)` with sort, min_points, max_results
   - `searchByDate(query, options)` for date-sorted results
@@ -323,6 +328,7 @@ Epic (Linear Project or Cycle)
   - Type responses into shared types
 
 - **Story: Implement HnService (Firebase)** (AI-105)
+
   - HTTP client for `hacker-news.firebaseio.com/v0`
   - `getItem(id)` with 1-hour cache
   - `getCommentTree(storyId, maxDepth)` with 30-comment cap
@@ -334,6 +340,7 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 2: LLM & Chunker
+
 **Goal:** Any of the 3 LLM providers can receive a prompt and return a response. Content fits token budgets.
 **Demo:** A script sends an HN search result through the chunker and gets an LLM summary.
 
@@ -352,6 +359,7 @@ Epic (Linear Project or Cycle)
 
 - **Story: ADR: LLM provider architecture and tool protocol design** (AI-145)
 - **Story: Define LlmProviderInterface** (AI-109)
+
   - `chat()`, `formatTools()`, `buildToolResultMessage()`
   - Internal `LlmMessage` and `LlmResponse` types
   - `ChatOptions` type (temperature, maxTokens, tools)
@@ -364,6 +372,7 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 3: Agent Core
+
 **Goal:** The ReAct loop works end-to-end. Ask a question, get a sourced answer.
 **Demo:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
 
@@ -397,6 +406,7 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 4: Frontend
+
 **Goal:** Working chat UI with live reasoning visualization and source cards.
 **Demo:** Open browser, ask a question, see the agent think in real time, get a sourced answer.
 
@@ -412,12 +422,14 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 5: Voice Output
+
 **Goal:** Click Listen on any answer and hear it narrated as a podcast.
 **Demo:** Ask a question, get an answer, click Listen, hear the podcast-style narration.
 
 #### Epic 5.1: TTS Backend
 
 - **Story: Implement TtsService**
+
   - Install `elevenlabs` SDK
   - `rewriteForSpeech()` -- LLM call with podcast rewrite prompt
   - `streamAudio()` -- ElevenLabs streaming TTS API
@@ -426,6 +438,7 @@ Epic (Linear Project or Cycle)
   - Character count header for cost tracking
 
 - **Story: Implement TtsController**
+
   - `POST /api/tts/narrate` -- streaming MP3 response
   - `GET /api/tts/voices` -- active narrator info
   - Input validation (text required, max length)
@@ -440,6 +453,7 @@ Epic (Linear Project or Cycle)
 #### Epic 5.2: TTS Frontend
 
 - **Story: Implement AudioPlayerComponent**
+
   - Listen button on answer bubble
   - States: idle -> loading -> streaming -> paused -> complete
   - Play/pause, progress bar
@@ -455,17 +469,20 @@ Epic (Linear Project or Cycle)
 ---
 
 ### Milestone 6: Eval Harness
+
 **Goal:** Automated quality checks catch regressions in agent behavior.
 **Demo:** Run `npx tsx evals/run-eval.ts` and get a scored report.
 
 #### Epic 6.1: Evaluation System
 
 - **Story: Create eval test queries**
+
   - Write 20 queries in `evals/queries.json`
   - 5 categories: tool comparisons, opinion, specific projects, recent events, edge cases
   - Each with `expectedQualities`, `expectedMinSources`, `maxAcceptableSteps`
 
 - **Story: Implement eval runner**
+
   - `evals/run-eval.ts` -- run each query through the agent
   - Collect AgentResponse + timing + token usage
   - Support `--compare` flag for multi-provider comparison
@@ -510,14 +527,14 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone | Stories | Depends On |
-|-------|-----------|---------|------------|
-| 1 | M1: Scaffold & Data Layer | 16 | -- |
-| 2 | M2: LLM & Chunker | 8 | M1 |
-| 3 | M3: Agent Core | 8 | M2 |
-| 4 | M6: Eval Harness | 3 | M3 |
-| 5 | M4: Frontend | 6 | M3 |
-| 6 | M5: Voice Output | 5 | M3, M4 |
+| Order | Milestone                 | Stories | Depends On |
+| ----- | ------------------------- | ------- | ---------- |
+| 1     | M1: Scaffold & Data Layer | 16      | --         |
+| 2     | M2: LLM & Chunker         | 8       | M1         |
+| 3     | M3: Agent Core            | 8       | M2         |
+| 4     | M6: Eval Harness          | 3       | M3         |
+| 5     | M4: Frontend              | 6       | M3         |
+| 6     | M5: Voice Output          | 5       | M3, M4     |
 
 **Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
 
@@ -549,23 +566,23 @@ PORT=3000
 
 ## 7. Key Technical Constraints
 
-| Constraint | Value | Rationale |
-|-----------|-------|-----------|
-| Max agent steps | 7 | Cost + latency cap |
-| Agent timeout | 60s | Prevent runaway loops |
-| Concurrent agents | 5 | Prevent cost blowout |
-| Comment cap | 30 per story | Firebase API latency |
-| Query max length | 500 chars | Input sanity |
-| Rate limit (per IP) | 10 req/min | Abuse prevention |
-| Rate limit (global) | 60 req/min | Cost protection |
-| Cache TTL (search) | 15 min | Freshness vs cost |
-| Cache TTL (stories) | 1 hour | Stable data |
-| Cache TTL (comments) | 30 min | Semi-stable data |
-| Cache TTL (query result) | 10 min | Token savings |
-| Token budget (Claude) | 80k of 200k | Conservative headroom |
-| Token budget (Mistral) | 100k of 262k | Conservative headroom |
-| Token budget (Groq) | 50k of 128k | Conservative headroom |
-| TTS max chars | 2500 | ElevenLabs streaming limit |
+| Constraint               | Value        | Rationale                  |
+| ------------------------ | ------------ | -------------------------- |
+| Max agent steps          | 7            | Cost + latency cap         |
+| Agent timeout            | 60s          | Prevent runaway loops      |
+| Concurrent agents        | 5            | Prevent cost blowout       |
+| Comment cap              | 30 per story | Firebase API latency       |
+| Query max length         | 500 chars    | Input sanity               |
+| Rate limit (per IP)      | 10 req/min   | Abuse prevention           |
+| Rate limit (global)      | 60 req/min   | Cost protection            |
+| Cache TTL (search)       | 15 min       | Freshness vs cost          |
+| Cache TTL (stories)      | 1 hour       | Stable data                |
+| Cache TTL (comments)     | 30 min       | Semi-stable data           |
+| Cache TTL (query result) | 10 min       | Token savings              |
+| Token budget (Claude)    | 80k of 200k  | Conservative headroom      |
+| Token budget (Mistral)   | 100k of 262k | Conservative headroom      |
+| Token budget (Groq)      | 50k of 128k  | Conservative headroom      |
+| TTS max chars            | 2500         | ElevenLabs streaming limit |
 
 ---
 
@@ -573,15 +590,15 @@ PORT=3000
 
 A story is **not done** until all of the following are met:
 
-| Criterion | Description |
-|-----------|-------------|
-| **Code complete** | Implementation matches the story description |
-| **Tests pass** | Unit/integration tests written and passing for the story's scope |
-| **CI green** | `nx affected:lint` and `nx affected:test` pass |
-| **Types safe** | No `any` types. Strict mode. No TypeScript errors |
-| **JSDoc** | Public methods have JSDoc comments |
-| **No TODOs** | No `TODO` or `FIXME` left in committed code for core functionality |
-| **Works E2E** | The milestone's demo scenario still works after the story is merged |
+| Criterion         | Description                                                         |
+| ----------------- | ------------------------------------------------------------------- |
+| **Code complete** | Implementation matches the story description                        |
+| **Tests pass**    | Unit/integration tests written and passing for the story's scope    |
+| **CI green**      | `nx affected:lint` and `nx affected:test` pass                      |
+| **Types safe**    | No `any` types. Strict mode. No TypeScript errors                   |
+| **JSDoc**         | Public methods have JSDoc comments                                  |
+| **No TODOs**      | No `TODO` or `FIXME` left in committed code for core functionality  |
+| **Works E2E**     | The milestone's demo scenario still works after the story is merged |
 
 **Per-milestone gate:** Before moving to the next milestone, run the milestone's demo scenario end-to-end and confirm it works. For M3+, also run the eval harness and confirm no regressions.
 
@@ -589,11 +606,11 @@ A story is **not done** until all of the following are met:
 
 ## 9. Cross-References to product.md
 
-| This Document | product.md |
-|--------------|------------|
-| Module specs (Section 2) | API contracts (Section 7), Tool specs (Section 8) |
+| This Document               | product.md                                                          |
+| --------------------------- | ------------------------------------------------------------------- |
+| Module specs (Section 2)    | API contracts (Section 7), Tool specs (Section 8)                   |
 | LLM providers (Section 2.5) | Provider architecture (Section 5), Native tool protocol (Section 9) |
-| Token budgets (Section 2.4) | Data flow (Section 6.2) |
-| TTS module (Section 2.8) | Voice output (Sections 3.8, 18) |
-| Constraints (Section 7) | NFRs (Section 13), Rate limiting (Section 3.7) |
-| Milestones (Section 3) | Roadmap (Section 14) |
+| Token budgets (Section 2.4) | Data flow (Section 6.2)                                             |
+| TTS module (Section 2.8)    | Voice output (Sections 3.8, 18)                                     |
+| Constraints (Section 7)     | NFRs (Section 13), Rate limiting (Section 3.7)                      |
+| Milestones (Section 3)      | Roadmap (Section 14)                                                |

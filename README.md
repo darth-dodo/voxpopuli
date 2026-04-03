@@ -1,6 +1,6 @@
 # VoxPopuli
 
-> *"Sapientiam persequere."* - Pursue wisdom.
+> _"Sapientiam persequere."_ - Pursue wisdom.
 
 **Ask anything. Get the internet's smartest crowd-sourced answer, with receipts.**
 
@@ -12,17 +12,17 @@ VoxPopuli turns 18+ years of [Hacker News](https://news.ycombinator.com) discuss
 
 Hacker News is one of the richest knowledge bases on the internet. Engineers, founders, and researchers have spent nearly two decades debating tools, sharing war stories, and dissecting technical decisions. But that knowledge is effectively locked:
 
-| What you want | What you get today |
-|--------------|-------------------|
-| "Best database for time-series data" | Keyword results that miss threads about "storing sensor data efficiently" |
-| The practitioner take on SQLite in production | A 400-comment thread where the best insight is at comment #247 |
-| A synthesized view across 5 relevant threads | Five browser tabs and an hour of reading |
+| What you want                                 | What you get today                                                        |
+| --------------------------------------------- | ------------------------------------------------------------------------- |
+| "Best database for time-series data"          | Keyword results that miss threads about "storing sensor data efficiently" |
+| The practitioner take on SQLite in production | A 400-comment thread where the best insight is at comment #247            |
+| A synthesized view across 5 relevant threads  | Five browser tabs and an hour of reading                                  |
 
 **The knowledge exists. The retrieval doesn't.**
 
 ## The Solution
 
-VoxPopuli is an autonomous research agent. It doesn't just search -- it *reasons*.
+VoxPopuli is an autonomous research agent. It doesn't just search -- it _reasons_.
 
 ```
 You:   "Is SQLite good enough for production web apps?"
@@ -49,7 +49,7 @@ sequenceDiagram
 
     User->>UI: "Is SQLite good for production?"
     UI->>API: POST /api/rag/query
-    
+
     loop ReAct Loop (max 7 steps)
         API->>LLM: What should I do next?
         LLM-->>API: search_hn("SQLite production")
@@ -69,13 +69,13 @@ sequenceDiagram
 
 ## Who Is This For?
 
-| You are... | You ask... |
-|-----------|-----------|
-| An **engineer** choosing tools | "What does HN think about Bun vs Deno in 2026?" |
-| A **founder** validating an idea | "Has anyone built a competitor to Notion? What was the reception?" |
-| A **researcher** tracking discourse | "How has sentiment on LLM agents changed over the past year?" |
-| A **job seeker** | "What companies is HN excited about right now?" |
-| Just **curious** | "What's the most controversial HN post about remote work?" |
+| You are...                          | You ask...                                                         |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| An **engineer** choosing tools      | "What does HN think about Bun vs Deno in 2026?"                    |
+| A **founder** validating an idea    | "Has anyone built a competitor to Notion? What was the reception?" |
+| A **researcher** tracking discourse | "How has sentiment on LLM agents changed over the past year?"      |
+| A **job seeker**                    | "What companies is HN excited about right now?"                    |
+| Just **curious**                    | "What's the most controversial HN post about remote work?"         |
 
 ## What Makes It Different
 
@@ -95,11 +95,11 @@ Story titles, authors, point counts, direct HN links, and commenter usernames fo
 
 Pick your tradeoff:
 
-| Provider | Best for | Cost/query |
-|----------|---------|-----------|
-| **Groq** (Llama 3.3 70B) | Speed + free dev tier | $0 - $0.016 |
-| **Mistral** Large 3 | Cost-optimized production | $0.003 - $0.015 |
-| **Claude** Sonnet 4 | Best synthesis quality | $0.02 - $0.08 |
+| Provider                 | Best for                  | Cost/query      |
+| ------------------------ | ------------------------- | --------------- |
+| **Groq** (Llama 3.3 70B) | Speed + free dev tier     | $0 - $0.016     |
+| **Mistral** Large 3      | Cost-optimized production | $0.003 - $0.015 |
+| **Claude** Sonnet 4      | Best synthesis quality    | $0.02 - $0.08   |
 
 Switch with a single environment variable. No code changes.
 
@@ -171,9 +171,7 @@ curl -X POST http://localhost:3000/api/rag/query \
 {
   "answer": "HN is broadly positive on Tailwind v4, with...",
   "steps": ["searched 'Tailwind v4'", "read 28 comments", "..."],
-  "sources": [
-    { "title": "Tailwind CSS v4.0", "points": 842, "url": "https://..." }
-  ],
+  "sources": [{ "title": "Tailwind CSS v4.0", "points": 842, "url": "https://..." }],
   "meta": {
     "provider": "groq",
     "totalTokens": 24500,
@@ -184,7 +182,6 @@ curl -X POST http://localhost:3000/api/rag/query \
 ```
 
 Every response includes the full reasoning chain, deduplicated sources with HN links, and metadata showing which provider was used, how many tokens were consumed, and whether the result was cached.
-
 
 ## Under the Hood
 
@@ -232,15 +229,15 @@ graph TB
     style External fill:#ede9fe,stroke:#5b21b6,color:#5b21b6
 ```
 
-| Layer | Technology |
-|-------|-----------|
-| Monorepo | Nx |
-| Backend | NestJS (TypeScript) |
-| Frontend | Angular 17+ (standalone components, signals) |
-| LLM | Claude / Mistral / Groq via provider interface |
-| Caching | node-cache (in-memory, TTL-based) |
-| Data | HN Algolia API (search) + Firebase API (items/comments) |
-| Streaming | Server-Sent Events |
+| Layer     | Technology                                              |
+| --------- | ------------------------------------------------------- |
+| Monorepo  | Nx                                                      |
+| Backend   | NestJS (TypeScript)                                     |
+| Frontend  | Angular 17+ (standalone components, signals)            |
+| LLM       | Claude / Mistral / Groq via provider interface          |
+| Caching   | node-cache (in-memory, TTL-based)                       |
+| Data      | HN Algolia API (search) + Firebase API (items/comments) |
+| Streaming | Server-Sent Events                                      |
 
 See [product.md](product.md) for the full product specification and [architecture.md](architecture.md) for the technical blueprint and implementation plan.
 

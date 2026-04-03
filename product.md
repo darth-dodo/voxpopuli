@@ -4,18 +4,17 @@
 **Status:** Final Draft
 **Last Updated:** March 31, 2026
 
-
-> *"Sapientiam persequere."* - Pursue wisdom.
+> _"Sapientiam persequere."_ - Pursue wisdom.
 
 ---
 
 ## Revision Log
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.2.0 | 2026-03-31 | Voice output (ElevenLabs TTS) with podcast-style narration, listen button, signature narrator voice, TTS service + endpoint, podcast script rewriter |
-| 1.1.0 | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq) |
-| 1.0.0 | 2026-03-31 | Initial draft |
+| Version | Date       | Changes                                                                                                                                                                                            |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.2.0   | 2026-03-31 | Voice output (ElevenLabs TTS) with podcast-style narration, listen button, signature narrator voice, TTS service + endpoint, podcast script rewriter                                               |
+| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq) |
+| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                      |
 
 ---
 
@@ -46,13 +45,13 @@ LLMs can now reason over retrieved context. Combine that with HN's structured AP
 
 ### Who Is This For?
 
-| Persona | Use Case |
-|---------|----------|
-| **Engineers** choosing tools | "What does HN think about Bun vs Deno in 2026?" |
-| **Founders** validating ideas | "Has anyone built a competitor to X? What was the reception?" |
+| Persona                            | Use Case                                                      |
+| ---------------------------------- | ------------------------------------------------------------- |
+| **Engineers** choosing tools       | "What does HN think about Bun vs Deno in 2026?"               |
+| **Founders** validating ideas      | "Has anyone built a competitor to X? What was the reception?" |
 | **Researchers** tracking discourse | "How has sentiment on LLM agents changed over the past year?" |
-| **Job seekers** | "What companies is HN excited about hiring at right now?" |
-| **Curious humans** | "What's the most controversial HN post about remote work?" |
+| **Job seekers**                    | "What companies is HN excited about hiring at right now?"     |
+| **Curious humans**                 | "What's the most controversial HN post about remote work?"    |
 
 <details>
 <summary><strong>Sample Use Cases (20)</strong></summary>
@@ -173,16 +172,16 @@ Every query hits both external APIs and the LLM. Without caching, identical quer
 
 **Layer 1: HN Data Cache (node-cache, in-memory)**
 
-| Data | TTL | Reason |
-|------|-----|--------|
-| Algolia search results | 15 minutes | Stories don't change fast, but new ones appear |
-| Firebase items (stories) | 1 hour | Story metadata is stable |
-| Firebase items (comments) | 30 minutes | Comments are semi-stable, but new ones arrive |
+| Data                      | TTL        | Reason                                         |
+| ------------------------- | ---------- | ---------------------------------------------- |
+| Algolia search results    | 15 minutes | Stories don't change fast, but new ones appear |
+| Firebase items (stories)  | 1 hour     | Story metadata is stable                       |
+| Firebase items (comments) | 30 minutes | Comments are semi-stable, but new ones arrive  |
 
 **Layer 2: Query Result Cache**
 
-| Data | TTL | Reason |
-|------|-----|--------|
+| Data                             | TTL        | Reason                                                      |
+| -------------------------------- | ---------- | ----------------------------------------------------------- |
 | Full AgentResponse by query hash | 10 minutes | Identical queries within a short window get instant results |
 
 Cache keys are deterministic hashes of the query + options. Cache is invalidated on TTL expiry only (no manual invalidation in v1).
@@ -195,11 +194,11 @@ Source: [node-cache docs](https://www.npmjs.com/package/node-cache)
 
 The API is rate-limited from day one to prevent accidental cost blowouts and abuse.
 
-| Scope | Limit | Implementation |
-|-------|-------|----------------|
-| Per-IP query rate | 10 requests/minute | express-rate-limit middleware |
-| Global query rate | 60 requests/minute | In-memory counter |
-| Max concurrent agent runs | 5 | Semaphore in AgentService |
+| Scope                     | Limit              | Implementation                |
+| ------------------------- | ------------------ | ----------------------------- |
+| Per-IP query rate         | 10 requests/minute | express-rate-limit middleware |
+| Global query rate         | 60 requests/minute | In-memory counter             |
+| Max concurrent agent runs | 5                  | Semaphore in AgentService     |
 
 Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-limit)
 
@@ -233,6 +232,7 @@ by DHH, with over 400 points, praised the new oxide engine..."
 ```
 
 Rules for the rewrite:
+
 - Strip all markdown formatting, links, and brackets.
 - Convert usernames to spoken form ("at DHH" becomes "DHH").
 - Replace "Story 39482731" with natural references ("one popular thread").
@@ -254,19 +254,19 @@ The voice should be: warm, clear, authoritative but not stiff, slightly conversa
 
 **ElevenLabs Model Choice:**
 
-| Model | Use Case | Latency | Credits/char |
-|-------|----------|---------|-------------|
-| Multilingual v2 | Default. Best quality for narration. | ~300ms to first byte | 1.0 |
-| Flash v2.5 | Fallback if latency is critical. | ~75ms to first byte | 0.5 |
-| Eleven v3 | Stretch goal. Maximum expressiveness. | ~300ms | ~1.0 |
+| Model           | Use Case                              | Latency              | Credits/char |
+| --------------- | ------------------------------------- | -------------------- | ------------ |
+| Multilingual v2 | Default. Best quality for narration.  | ~300ms to first byte | 1.0          |
+| Flash v2.5      | Fallback if latency is critical.      | ~75ms to first byte  | 0.5          |
+| Eleven v3       | Stretch goal. Maximum expressiveness. | ~300ms               | ~1.0         |
 
 **Cost per voiced answer:**
 
-| Answer Length | Characters | Credits (Multilingual v2) | Cost (Starter $5/mo) |
-|--------------|-----------|--------------------------|---------------------|
-| Short | ~500 | 500 | ~30k credits = 60 answers/mo |
-| Medium | ~1000 | 1,000 | ~30 answers/mo |
-| Long | ~1500 | 1,500 | ~20 answers/mo |
+| Answer Length | Characters | Credits (Multilingual v2) | Cost (Starter $5/mo)         |
+| ------------- | ---------- | ------------------------- | ---------------------------- |
+| Short         | ~500       | 500                       | ~30k credits = 60 answers/mo |
+| Medium        | ~1000      | 1,000                     | ~30 answers/mo               |
+| Long          | ~1500      | 1,500                     | ~20 answers/mo               |
 
 Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/text-to-speech), [ElevenLabs Streaming](https://elevenlabs.io/docs/api-reference/streaming), [ElevenLabs Pricing](https://elevenlabs.io/pricing)
 
@@ -282,18 +282,18 @@ For the full system diagram, module dependency graph, and project structure, see
 
 ### 4.2 Tech Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Monorepo** | Nx | Shared types, unified builds, dependency graph |
-| **Backend** | NestJS (Node.js) | Modular DI, first-class TypeScript, SSE support |
-| **Frontend** | Angular 17+ | Standalone components, signals, SSE via EventSource |
-| **LLM (production)** | Claude (Anthropic API) | Best synthesis quality, 200k context |
-| **LLM (cost-optimized)** | Mistral Large 3 | 262k context, $0.50/$1.50 per M tokens |
-| **LLM (speed/dev)** | Groq (Llama 3.3 70B) | 300+ t/s inference, free tier for dev |
-| **TTS** | ElevenLabs (Multilingual v2) | Best-in-class voice quality, streaming API, TypeScript SDK |
-| **Caching** | node-cache (in-memory) | Zero-infrastructure, sufficient for single-node v1 |
-| **Shared Types** | TypeScript library | Single source of truth for API contracts |
-| **Data Sources** | HN Algolia + Firebase APIs | Full-text search + structured item/comment data |
+| Layer                    | Technology                   | Why                                                        |
+| ------------------------ | ---------------------------- | ---------------------------------------------------------- |
+| **Monorepo**             | Nx                           | Shared types, unified builds, dependency graph             |
+| **Backend**              | NestJS (Node.js)             | Modular DI, first-class TypeScript, SSE support            |
+| **Frontend**             | Angular 17+                  | Standalone components, signals, SSE via EventSource        |
+| **LLM (production)**     | Claude (Anthropic API)       | Best synthesis quality, 200k context                       |
+| **LLM (cost-optimized)** | Mistral Large 3              | 262k context, $0.50/$1.50 per M tokens                     |
+| **LLM (speed/dev)**      | Groq (Llama 3.3 70B)         | 300+ t/s inference, free tier for dev                      |
+| **TTS**                  | ElevenLabs (Multilingual v2) | Best-in-class voice quality, streaming API, TypeScript SDK |
+| **Caching**              | node-cache (in-memory)       | Zero-infrastructure, sufficient for single-node v1         |
+| **Shared Types**         | TypeScript library           | Single source of truth for API contracts                   |
+| **Data Sources**         | HN Algolia + Firebase APIs   | Full-text search + structured item/comment data            |
 
 ---
 
@@ -303,27 +303,27 @@ For the full system diagram, module dependency graph, and project structure, see
 
 No single LLM wins on every axis. Different stages of the project need different things:
 
-| Stage | Best Provider | Why |
-|-------|--------------|-----|
-| **Development** | Groq (Llama 3.3 70B) | Free tier, 300+ t/s speed, instant feedback loops |
-| **Testing/CI** | Groq or Mistral | Cheap, fast, good enough for regression detection |
-| **Cost-optimized prod** | Mistral Large 3 | Best quality-per-dollar, 262k context |
-| **Quality-optimized prod** | Claude (Sonnet 4) | Best multi-source synthesis, strongest agent reasoning |
+| Stage                      | Best Provider        | Why                                                    |
+| -------------------------- | -------------------- | ------------------------------------------------------ |
+| **Development**            | Groq (Llama 3.3 70B) | Free tier, 300+ t/s speed, instant feedback loops      |
+| **Testing/CI**             | Groq or Mistral      | Cheap, fast, good enough for regression detection      |
+| **Cost-optimized prod**    | Mistral Large 3      | Best quality-per-dollar, 262k context                  |
+| **Quality-optimized prod** | Claude (Sonnet 4)    | Best multi-source synthesis, strongest agent reasoning |
 
 ### 5.2 Provider Comparison
 
-| Factor | Claude (Sonnet 4) | Mistral Large 3 | Groq (Llama 3.3 70B) |
-|--------|-------------------|------------------|-----------------------|
-| **Context window** | 200k | 262k | 128k |
-| **Output speed** | ~50 t/s | ~80 t/s | 300+ t/s |
-| **Input pricing** | ~$3.00/M | $0.50/M | ~$0.59/M |
-| **Output pricing** | ~$15.00/M | $1.50/M | ~$0.79/M |
-| **Est. cost/query** | $0.02-0.08 | $0.003-0.015 | $0.004-0.016 |
-| **Tool calling** | Native (tool_use blocks) | Native (OpenAI-compatible) | Native (OpenAI-compatible) |
-| **Free tier** | No | Limited | Yes (1,000 req/day for Llama 3.3) |
-| **Synthesis quality** | Excellent | Strong | Good |
-| **Agent reasoning** | Excellent | Strong | Adequate |
-| **API format** | Anthropic SDK | Mistral SDK / OpenAI-compat | OpenAI-compatible |
+| Factor                | Claude (Sonnet 4)        | Mistral Large 3             | Groq (Llama 3.3 70B)              |
+| --------------------- | ------------------------ | --------------------------- | --------------------------------- |
+| **Context window**    | 200k                     | 262k                        | 128k                              |
+| **Output speed**      | ~50 t/s                  | ~80 t/s                     | 300+ t/s                          |
+| **Input pricing**     | ~$3.00/M                 | $0.50/M                     | ~$0.59/M                          |
+| **Output pricing**    | ~$15.00/M                | $1.50/M                     | ~$0.79/M                          |
+| **Est. cost/query**   | $0.02-0.08               | $0.003-0.015                | $0.004-0.016                      |
+| **Tool calling**      | Native (tool_use blocks) | Native (OpenAI-compatible)  | Native (OpenAI-compatible)        |
+| **Free tier**         | No                       | Limited                     | Yes (1,000 req/day for Llama 3.3) |
+| **Synthesis quality** | Excellent                | Strong                      | Good                              |
+| **Agent reasoning**   | Excellent                | Strong                      | Adequate                          |
+| **API format**        | Anthropic SDK            | Mistral SDK / OpenAI-compat | OpenAI-compatible                 |
 
 ### 5.3 Provider Interface
 
@@ -334,10 +334,7 @@ export interface LlmProviderInterface {
   readonly name: string;
   readonly maxContextTokens: number;
 
-  chat(
-    messages: LlmMessage[],
-    options: ChatOptions
-  ): Promise<LlmResponse>;
+  chat(messages: LlmMessage[], options: ChatOptions): Promise<LlmResponse>;
 
   /**
    * Convert tool definitions from our internal format
@@ -350,20 +347,17 @@ export interface LlmProviderInterface {
    * Claude uses tool_use/tool_result content blocks.
    * Mistral/Groq use OpenAI-style tool role messages.
    */
-  buildToolResultMessage(
-    toolCallId: string,
-    result: string
-  ): LlmMessage;
+  buildToolResultMessage(toolCallId: string, result: string): LlmMessage;
 }
 ```
 
 **Key design choice:** The `buildToolResultMessage` method ensures each provider uses its **native tool result protocol** instead of string-hacking results into assistant messages. This was a critical revision from v1.0.
 
-| Provider | Tool Result Format |
-|----------|-------------------|
-| **Claude** | `tool_result` content block with `tool_use_id` reference |
+| Provider    | Tool Result Format                                             |
+| ----------- | -------------------------------------------------------------- |
+| **Claude**  | `tool_result` content block with `tool_use_id` reference       |
 | **Mistral** | `role: "tool"` message with `tool_call_id` (OpenAI-compatible) |
-| **Groq** | `role: "tool"` message with `tool_call_id` (OpenAI-compatible) |
+| **Groq**    | `role: "tool"` message with `tool_call_id` (OpenAI-compatible) |
 
 Source: [Anthropic > Tool Use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use), [Mistral > Function Calling](https://docs.mistral.ai/capabilities/function_calling), [Groq > Local Tool Calling](https://console.groq.com/docs/tool-use/local-tool-calling)
 
@@ -515,11 +509,11 @@ Standard request-response. Blocks until the agent completes all steps.
 
 **Error Responses:**
 
-| Status | Condition |
-|--------|-----------|
-| 400 | Empty or missing `query` |
-| 429 | Rate limit exceeded |
-| 500 | Agent execution failure (LLM error, API timeout) |
+| Status | Condition                                        |
+| ------ | ------------------------------------------------ |
+| 400    | Empty or missing `query`                         |
+| 429    | Rate limit exceeded                              |
+| 500    | Agent execution failure (LLM error, API timeout) |
 
 ### 7.2 GET `/api/rag/stream`
 
@@ -533,13 +527,13 @@ Server-Sent Events endpoint. Streams reasoning steps in real time.
 
 **Event Types:**
 
-| Event | Payload | When |
-|-------|---------|------|
-| `thought` | `AgentStep` | Agent is reasoning |
-| `action` | `AgentStep` (with tool call) | Agent is calling a tool |
-| `observation` | `AgentStep` (with result) | Tool returned data |
-| `answer` | `AgentResponse` | Final answer ready |
-| `error` | `string` | Something broke |
+| Event         | Payload                      | When                    |
+| ------------- | ---------------------------- | ----------------------- |
+| `thought`     | `AgentStep`                  | Agent is reasoning      |
+| `action`      | `AgentStep` (with tool call) | Agent is calling a tool |
+| `observation` | `AgentStep` (with result)    | Tool returned data      |
+| `answer`      | `AgentResponse`              | Final answer ready      |
+| `error`       | `string`                     | Something broke         |
 
 ### 7.3 POST `/api/tts/speak`
 
@@ -568,11 +562,11 @@ X-TTS-Model: eleven_multilingual_v2
 
 **Error Responses:**
 
-| Status | Condition |
-|--------|-----------|
-| 400 | Empty or missing `text` |
-| 429 | Rate limit exceeded or ElevenLabs quota exhausted |
-| 502 | ElevenLabs API error |
+| Status | Condition                                         |
+| ------ | ------------------------------------------------- |
+| 400    | Empty or missing `text`                           |
+| 429    | Rate limit exceeded or ElevenLabs quota exhausted |
+| 502    | ElevenLabs API error                              |
 
 **Podcast Rewrite Flow:**
 
@@ -598,9 +592,13 @@ Health check endpoint. Returns provider status and cache stats.
 
 ```typescript
 {
-  status: "ok";
+  status: 'ok';
   provider: string;
-  cacheStats: { hits: number; misses: number; keys: number };
+  cacheStats: {
+    hits: number;
+    misses: number;
+    keys: number;
+  }
   uptime: number;
 }
 ```
@@ -613,29 +611,29 @@ The agent has access to three tools. The LLM decides which to call and in what o
 
 ### 8.1 `search_hn`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | Yes | Search keywords |
-| `sort_by` | `"relevance"` \| `"date"` | No | Default: relevance |
-| `min_points` | number | No | Filter low-quality stories |
-| `max_results` | number | No | 1-20, default 10 |
+| Parameter     | Type                      | Required | Description                |
+| ------------- | ------------------------- | -------- | -------------------------- |
+| `query`       | string                    | Yes      | Search keywords            |
+| `sort_by`     | `"relevance"` \| `"date"` | No       | Default: relevance         |
+| `min_points`  | number                    | No       | Filter low-quality stories |
+| `max_results` | number                    | No       | 1-20, default 10           |
 
 **Behavior:** Calls HN Algolia `/search` or `/search_by_date`. Results pass through CacheService (TTL: 15 min), then are chunked and token-counted before returning to the agent.
 
 ### 8.2 `get_story`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `story_id` | number | Yes | HN item ID |
+| Parameter  | Type   | Required | Description |
+| ---------- | ------ | -------- | ----------- |
+| `story_id` | number | Yes      | HN item ID  |
 
 **Behavior:** Calls HN Firebase `/item/{id}.json`. Cached for 1 hour. Returns full item data.
 
 ### 8.3 `get_comments`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `story_id` | number | Yes | Parent story ID |
-| `max_depth` | number | No | 1-5, default 3 |
+| Parameter   | Type   | Required | Description     |
+| ----------- | ------ | -------- | --------------- |
+| `story_id`  | number | Yes      | Parent story ID |
+| `max_depth` | number | No       | 1-5, default 3  |
 
 **Behavior:** Recursively fetches comment tree via Firebase. Individual items cached for 30 min. Strips HTML, assigns depth levels, **caps at 30 comments**. Fetches in parallel batches of 10.
 
@@ -811,13 +809,13 @@ Success metrics (Section 15) are aspirational without tooling to measure them. T
 
 ### 12.3 Scoring
 
-| Metric | How | Weight |
-|--------|-----|--------|
-| **Source accuracy** | Every `AgentSource.url` resolves (HTTP 200) | 30% |
-| **Quality checklist** | LLM-as-judge checks each `expectedQuality` | 30% |
-| **Efficiency** | Steps used vs `maxAcceptableSteps` | 15% |
-| **Latency** | Total duration vs target | 15% |
-| **Cost** | Total tokens vs $0.05 ceiling | 10% |
+| Metric                | How                                         | Weight |
+| --------------------- | ------------------------------------------- | ------ |
+| **Source accuracy**   | Every `AgentSource.url` resolves (HTTP 200) | 30%    |
+| **Quality checklist** | LLM-as-judge checks each `expectedQuality`  | 30%    |
+| **Efficiency**        | Steps used vs `maxAcceptableSteps`          | 15%    |
+| **Latency**           | Total duration vs target                    | 15%    |
+| **Cost**              | Total tokens vs $0.05 ceiling               | 10%    |
 
 **LLM-as-judge:** A separate cheap model call (Haiku or equivalent) evaluates the answer against expected qualities.
 
@@ -838,14 +836,14 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 ### 12.5 Initial Test Suite (20 queries)
 
-| Category | Count | Examples |
-|----------|-------|---------|
-| Tool comparisons | 5 | "Rust vs Go", "React vs Svelte" |
-| Opinion/sentiment | 4 | "What does HN think about remote work?" |
-| Specific projects | 3 | "Has anyone used Turso in production?" |
-| Recent events | 3 | "Latest AI agent frameworks" |
-| Deep-dive requests | 3 | "Best arguments against microservices" |
-| Edge cases | 2 | Gibberish input, non-HN questions |
+| Category           | Count | Examples                                |
+| ------------------ | ----- | --------------------------------------- |
+| Tool comparisons   | 5     | "Rust vs Go", "React vs Svelte"         |
+| Opinion/sentiment  | 4     | "What does HN think about remote work?" |
+| Specific projects  | 3     | "Has anyone used Turso in production?"  |
+| Recent events      | 3     | "Latest AI agent frameworks"            |
+| Deep-dive requests | 3     | "Best arguments against microservices"  |
+| Edge cases         | 2     | Gibberish input, non-HN questions       |
 
 ---
 
@@ -855,41 +853,41 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 **Revised in v1.1: Honest latency targets.**
 
-| Metric | Groq | Mistral | Claude |
-|--------|------|---------|--------|
-| Time to first SSE event | < 1s | < 1.5s | < 2s |
-| 3-step query | < 8s | < 12s | < 15s |
-| 5-step query | < 15s | < 20s | < 30s |
-| Cached query | < 100ms | < 100ms | < 100ms |
+| Metric                  | Groq    | Mistral | Claude  |
+| ----------------------- | ------- | ------- | ------- |
+| Time to first SSE event | < 1s    | < 1.5s  | < 2s    |
+| 3-step query            | < 8s    | < 12s   | < 15s   |
+| 5-step query            | < 15s   | < 20s   | < 30s   |
+| Cached query            | < 100ms | < 100ms | < 100ms |
 
 **P50/P95 estimates (realistic):**
 
 | Metric | Groq | Mistral | Claude |
-|--------|------|---------|--------|
-| P50 | ~6s | ~10s | ~13s |
-| P95 | ~12s | ~20s | ~28s |
+| ------ | ---- | ------- | ------ |
+| P50    | ~6s  | ~10s    | ~13s   |
+| P95    | ~12s | ~20s    | ~28s   |
 
 ### 13.2 Reliability
 
-| Concern | Mitigation |
-|---------|-----------|
-| HN API downtime | Retry with exponential backoff (3 attempts) |
-| LLM API errors | Return partial results with error flag |
-| LLM provider outage | Optional auto-fallback to next provider |
-| Runaway agent loop | Hard cap at 7 steps + 60s global timeout |
-| Token overflow | Per-provider budget in Chunker |
-| Cost blowout | Rate limiting + max 5 concurrent agent runs |
+| Concern             | Mitigation                                  |
+| ------------------- | ------------------------------------------- |
+| HN API downtime     | Retry with exponential backoff (3 attempts) |
+| LLM API errors      | Return partial results with error flag      |
+| LLM provider outage | Optional auto-fallback to next provider     |
+| Runaway agent loop  | Hard cap at 7 steps + 60s global timeout    |
+| Token overflow      | Per-provider budget in Chunker              |
+| Cost blowout        | Rate limiting + max 5 concurrent agent runs |
 
 ### 13.3 Cost
 
-| Provider | Est. Cost/Query | Monthly (100 queries/day) |
-|----------|----------------|--------------------------|
-| Claude | $0.02-0.08 | $60-240 |
-| Mistral | $0.003-0.015 | $9-45 |
-| Groq | $0.004-0.016 | $12-48 |
-| Groq (free tier) | $0 | $0 (capped ~200-300 queries/day) |
-| HN APIs | Free | Free |
-| Infrastructure | $0 (dev) | $5-20 (Railway/Fly) |
+| Provider         | Est. Cost/Query | Monthly (100 queries/day)        |
+| ---------------- | --------------- | -------------------------------- |
+| Claude           | $0.02-0.08      | $60-240                          |
+| Mistral          | $0.003-0.015    | $9-45                            |
+| Groq             | $0.004-0.016    | $12-48                           |
+| Groq (free tier) | $0              | $0 (capped ~200-300 queries/day) |
+| HN APIs          | Free            | Free                             |
+| Infrastructure   | $0 (dev)        | $5-20 (Railway/Fly)              |
 
 ### 13.4 Security
 
@@ -907,14 +905,14 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 The v1.0 implementation is broken into 6 milestones with 29 stories. See [architecture.md](architecture.md) Section 3 for the full Linear-ready task breakdown.
 
-| Milestone | Goal |
-|-----------|------|
-| M1: Scaffold & Data Layer | Nx monorepo, shared types, HN data flowing with caching |
-| M2: LLM & Chunker | Triple-stack providers working, content fits token budgets |
-| M3: Agent Core | ReAct loop end-to-end, sourced answers via API |
-| M4: Frontend | Chat UI with live reasoning viz, source cards, provider selector |
-| M5: Voice Output | ElevenLabs TTS with podcast-style narration |
-| M6: Eval Harness | 20 test queries, automated scoring, regression detection |
+| Milestone                 | Goal                                                             |
+| ------------------------- | ---------------------------------------------------------------- |
+| M1: Scaffold & Data Layer | Nx monorepo, shared types, HN data flowing with caching          |
+| M2: LLM & Chunker         | Triple-stack providers working, content fits token budgets       |
+| M3: Agent Core            | ReAct loop end-to-end, sourced answers via API                   |
+| M4: Frontend              | Chat UI with live reasoning viz, source cards, provider selector |
+| M5: Voice Output          | ElevenLabs TTS with podcast-style narration                      |
+| M6: Eval Harness          | 20 test queries, automated scoring, regression detection         |
 
 ### v1.1 -- Polish
 
@@ -952,17 +950,17 @@ The v1.0 implementation is broken into 6 milestones with 29 stories. See [archit
 
 ## 15. Success Metrics
 
-| Metric | Target | How to Measure |
-|--------|--------|----------------|
-| **Answer relevance** | 80%+ "helpful" | Thumbs up/down in UI |
-| **Source accuracy** | 0 hallucinated per 100 queries | Eval harness (automated) |
-| **Quality pass rate** | 75%+ across eval queries | Eval harness (LLM-as-judge) |
-| **Agent efficiency** | Avg 3.2 steps/query | Log analysis |
-| **P50 latency (Groq)** | < 6s | Timing middleware |
-| **P50 latency (Claude)** | < 13s | Timing middleware |
-| **P95 latency (all)** | < 30s | Timing middleware |
-| **Cost/query (Mistral)** | < $0.02 avg | Usage dashboard |
-| **Cache hit rate** | > 15% after week 1 | CacheService stats |
+| Metric                   | Target                         | How to Measure              |
+| ------------------------ | ------------------------------ | --------------------------- |
+| **Answer relevance**     | 80%+ "helpful"                 | Thumbs up/down in UI        |
+| **Source accuracy**      | 0 hallucinated per 100 queries | Eval harness (automated)    |
+| **Quality pass rate**    | 75%+ across eval queries       | Eval harness (LLM-as-judge) |
+| **Agent efficiency**     | Avg 3.2 steps/query            | Log analysis                |
+| **P50 latency (Groq)**   | < 6s                           | Timing middleware           |
+| **P50 latency (Claude)** | < 13s                          | Timing middleware           |
+| **P95 latency (all)**    | < 30s                          | Timing middleware           |
+| **Cost/query (Mistral)** | < $0.02 avg                    | Usage dashboard             |
+| **Cache hit rate**       | > 15% after week 1             | CacheService stats          |
 
 ---
 
@@ -1005,16 +1003,16 @@ npx tsx evals/run-eval.ts
 
 ### Areas Where Help Is Needed
 
-| Area | Difficulty | Impact |
-|------|-----------|--------|
-| Unit tests for ChunkerService | Easy | High |
-| Retry logic in HnService | Easy | Medium |
-| More eval test queries | Easy | High |
-| Fourth LLM provider (OpenAI) | Medium | Medium |
-| "Saved answers" feature | Medium | High |
-| Semantic search with embeddings | Hard | Very High |
-| Reddit as second data source | Medium | High |
-| Provider auto-fallback logic | Medium | High |
+| Area                            | Difficulty | Impact    |
+| ------------------------------- | ---------- | --------- |
+| Unit tests for ChunkerService   | Easy       | High      |
+| Retry logic in HnService        | Easy       | Medium    |
+| More eval test queries          | Easy       | High      |
+| Fourth LLM provider (OpenAI)    | Medium     | Medium    |
+| "Saved answers" feature         | Medium     | High      |
+| Semantic search with embeddings | Hard       | Very High |
+| Reddit as second data source    | Medium     | High      |
+| Provider auto-fallback logic    | Medium     | High      |
 
 ### Code Style
 
@@ -1035,6 +1033,7 @@ npx tsx evals/run-eval.ts
 ### 18.1 Signature Voice
 
 **Primary: "Brian"** (voice ID: `nPczCjzI2devNBz1zQrb`)
+
 - Calm, steady, news-reader pacing
 - Stock voice, available on all ElevenLabs tiers (including free)
 
@@ -1059,6 +1058,7 @@ Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-
 ### 18.2 Podcast Rewrite Example
 
 **Raw agent answer:**
+
 ```
 Based on HN discussions, **Tailwind v4** has been broadly well-received.
 A [highly upvoted story](https://...) by user `swyx` (340 points) praised
@@ -1067,6 +1067,7 @@ creates maintenance debt at scale (127 upvotes).
 ```
 
 **After podcast rewrite:**
+
 ```
 So, here's what the Hacker News crowd has to say about Tailwind v4.
 The reception has been broadly positive. A highly upvoted post by swyx,
@@ -1086,21 +1087,21 @@ Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download 
 
 Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 
-| Usage (assuming 30% of queries use Listen) | Plan Needed | Monthly Cost |
-|--------------------------------------------|-------------|-------------|
-| 20 queries/day, 6 narrations/day | Starter ($5/mo) | $5/mo |
-| 50 queries/day, 15 narrations/day | Creator ($22/mo) | $22/mo |
-| 100 queries/day, 30 narrations/day | Pro ($99/mo) | $99/mo |
+| Usage (assuming 30% of queries use Listen) | Plan Needed      | Monthly Cost |
+| ------------------------------------------ | ---------------- | ------------ |
+| 20 queries/day, 6 narrations/day           | Starter ($5/mo)  | $5/mo        |
+| 50 queries/day, 15 narrations/day          | Creator ($22/mo) | $22/mo       |
+| 100 queries/day, 30 narrations/day         | Pro ($99/mo)     | $99/mo       |
 
 ### 18.5 Risks
 
-| Risk | Mitigation |
-|------|-----------|
-| ElevenLabs cold start (2-4s) | Show "Preparing narration..." loading state |
-| Credit exhaustion | Disable Listen button, show "Voice credits used up" |
-| Rewrite hallucination | Eval check: compare rewrite against original answer |
-| Long answers (>3000 chars) | Chunk with `previous_request_id` for prosody continuity |
-| Voice removed from library | Fallback voice in config (Mattie) |
+| Risk                         | Mitigation                                              |
+| ---------------------------- | ------------------------------------------------------- |
+| ElevenLabs cold start (2-4s) | Show "Preparing narration..." loading state             |
+| Credit exhaustion            | Disable Listen button, show "Voice credits used up"     |
+| Rewrite hallucination        | Eval check: compare rewrite against original answer     |
+| Long answers (>3000 chars)   | Chunk with `previous_request_id` for prosody continuity |
+| Voice removed from library   | Fallback voice in config (Mattie)                       |
 
 ---
 
@@ -1109,4 +1110,3 @@ Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 MIT
 
 ---
-
