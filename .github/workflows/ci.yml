@@ -12,11 +12,8 @@ env:
   NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 jobs:
-  setup:
+  lint:
     runs-on: ubuntu-latest
-    outputs:
-      nx-base: ${{ steps.set-shas.outputs.base }}
-      nx-head: ${{ steps.set-shas.outputs.head }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,25 +25,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: nrwl/nx-set-shas@v4
-        id: set-shas
-
-  lint:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: npx nx affected:lint --base=${{ needs.setup.outputs.nx-base }} --head=${{ needs.setup.outputs.nx-head }}
+      - run: npx nx affected -t lint
 
   typecheck:
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,10 +39,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx nx affected --target=typecheck --base=${{ needs.setup.outputs.nx-base }} --head=${{ needs.setup.outputs.nx-head }}
+      - uses: nrwl/nx-set-shas@v4
+      - run: npx nx affected -t typecheck
 
   test:
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,10 +54,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx nx affected:test --base=${{ needs.setup.outputs.nx-base }} --head=${{ needs.setup.outputs.nx-head }}
+      - uses: nrwl/nx-set-shas@v4
+      - run: npx nx affected -t test
 
   format:
-    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,4 +84,5 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: npx nx affected:build --base=${{ needs.setup.outputs.nx-base }} --head=${{ needs.setup.outputs.nx-head }}
+      - uses: nrwl/nx-set-shas@v4
+      - run: npx nx affected -t build
