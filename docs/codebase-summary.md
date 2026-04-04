@@ -1,7 +1,7 @@
 # VoxPopuli -- Codebase Summary
 
 **Generated:** 2026-04-04
-**Covers:** Milestones 1 and 2 (Scaffold & Data Layer, LLM & Chunker)
+**Covers:** Milestones 1 through 3 (Scaffold & Data Layer, LLM & Chunker, Agent Core)
 
 ---
 
@@ -13,22 +13,23 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 
 ## 2. Tech Stack
 
-| Layer           | Technology            | Role                                                       |
-| --------------- | --------------------- | ---------------------------------------------------------- |
-| Monorepo        | Nx                    | Workspace orchestration, task running, dependency graph    |
-| Backend         | NestJS 10+            | API framework with module-based DI                         |
-| Frontend        | Angular 17+           | SPA with standalone components (scaffolded, not yet built) |
-| LLM (quality)   | Claude Sonnet 4       | Anthropic SDK via LangChain `@langchain/anthropic`         |
-| LLM (cost)      | Mistral Large 3       | Mistral SDK via LangChain `@langchain/mistralai`           |
-| LLM (speed)     | Groq Llama 3.3 70B    | OpenAI-compatible via LangChain `@langchain/groq`          |
-| TTS             | ElevenLabs            | Planned -- podcast-style voice narration                   |
-| Cache           | node-cache            | In-memory TTL cache with typed get/set                     |
-| Shared types    | TypeScript lib        | `@voxpopuli/shared-types` consumed by both apps            |
-| Logging         | Pino (nestjs-pino)    | Structured JSON logging, pretty-print in dev               |
-| Validation      | class-validator + Zod | Environment variable validation at startup                 |
-| HTTP client     | @nestjs/axios         | Algolia and Firebase API calls                             |
-| Package manager | pnpm                  | Workspace-aware dependency management                      |
-| CI              | GitHub Actions        | Lint and test on affected projects                         |
+| Layer           | Technology              | Role                                                       |
+| --------------- | ----------------------- | ---------------------------------------------------------- |
+| Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph    |
+| Backend         | NestJS 11+              | API framework with module-based DI                         |
+| Frontend        | Angular 17+             | SPA with standalone components (scaffolded, not yet built) |
+| LLM (quality)   | Claude Sonnet 4         | Anthropic SDK via LangChain `@langchain/anthropic`         |
+| LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`           |
+| LLM (speed)     | Groq Llama 3.3 70B      | OpenAI-compatible via LangChain `@langchain/groq`          |
+| Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas            |
+| TTS             | ElevenLabs              | Planned -- podcast-style voice narration                   |
+| Cache           | node-cache              | In-memory TTL cache with typed get/set                     |
+| Shared types    | TypeScript lib          | `@voxpopuli/shared-types` consumed by both apps            |
+| Logging         | Pino (nestjs-pino)      | Structured JSON logging, pretty-print in dev               |
+| Validation      | class-validator + Zod   | Environment validation + agent tool schemas                |
+| HTTP client     | @nestjs/axios           | Algolia and Firebase API calls with retry + backoff        |
+| Package manager | pnpm                    | Workspace-aware dependency management                      |
+| CI              | GitHub Actions          | Lint and test on affected projects                         |
 
 ---
 
@@ -38,7 +39,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | --------- | --------------------- | ----------- | ------------------------------------------------------------------------------- |
 | M1        | Scaffold & Data Layer | Complete    | Nx monorepo, shared types, CacheService, HnService, health endpoint, CI, Docker |
 | M2        | LLM & Chunker         | Complete    | ChunkerService, LlmProviderInterface, 3 providers, LlmService facade            |
-| M3        | Agent Core            | Not started | ReAct loop, tool dispatch, RagController, SSE streaming                         |
+| M3        | Agent Core            | Complete    | ReAct agent, RAG endpoints, trust framework, error handling, 103 tests          |
 | M4        | Frontend              | Not started | Chat UI, agent step visualization, source cards, provider selector              |
 | M5        | Voice Output          | Not started | TTS backend + frontend audio player                                             |
 | M6        | Eval Harness          | Not started | Automated quality scoring for agent responses                                   |
@@ -53,22 +54,37 @@ voxpopuli/
 |   +-- api/
 |   |   +-- src/
 |   |       +-- app/                 # AppModule, AppController, AppService, main.ts
+|   |       +-- agent/               # AgentModule, AgentService, tools, system prompt, trust
+|   |       |   +-- agent.service.ts          # ReAct loop via LangChain createAgent
+|   |       |   +-- agent.service.spec.ts     # 6 integration tests
+|   |       |   +-- agent.module.ts           # NestJS module (imports Hn, Chunker, Llm)
+|   |       |   +-- tools.ts                  # search_hn, get_story, get_comments
+|   |       |   +-- system-prompt.ts          # Agent system prompt with claim taxonomy
+|   |       |   +-- trust.ts                  # computeTrustMetadata (pure function)
+|   |       |   +-- partial-response.ts       # buildPartialResponse (graceful degradation)
 |   |       +-- cache/               # CacheModule, CacheService
 |   |       +-- chunker/             # ChunkerModule, ChunkerService, chunker.service.spec.ts
 |   |       +-- config/              # env.validation.ts (class-validator schema)
 |   |       +-- health/              # HealthModule, HealthController, health.controller.spec.ts
 |   |       +-- hn/                  # HnModule, HnService, HnController, hn.service.spec.ts
 |   |       +-- llm/                 # LlmModule, LlmService, llm-provider.interface.ts
-|   |           +-- providers/       # groq.provider.ts, claude.provider.ts, mistral.provider.ts
+|   |       |   +-- providers/       # groq.provider.ts, claude.provider.ts, mistral.provider.ts
+|   |       +-- rag/                 # RagModule, RagController, rate limiting, input validation
+|   |           +-- rag.controller.ts         # POST /query, GET /stream (SSE)
+|   |           +-- rag.controller.spec.ts    # 7 integration tests
+|   |           +-- rag.module.ts             # NestJS module (imports AgentModule)
+|   |           +-- dto/                      # RagQueryDto (class-validator)
+|   |           +-- filters/                  # HttpExceptionFilter (global error handler)
 |   +-- api-e2e/                     # E2E test harness (api.spec.ts)
 |   +-- web/                         # Angular frontend (scaffolded, default Nx template)
 |   +-- web-e2e/                     # Frontend E2E placeholder
 +-- libs/
-|   +-- shared-types/src/lib/        # shared-types.ts (all API contracts)
+|   +-- shared-types/src/lib/        # shared-types.ts (all API contracts + trust framework)
 +-- docs/
-|   +-- adr/                         # ADR-002, ADR-003
+|   +-- adr/                         # ADR-002, ADR-003, ADR-004
 |   +-- adrs/                        # ADR-001
 |   +-- plans/                       # M1 design document
+|   +-- codebase-summary.md          # This file
 +-- .env.example                     # Environment variable template
 +-- architecture.md                  # Technical architecture and milestone breakdown
 +-- product.md                       # Product specification v2.0.0
@@ -120,6 +136,7 @@ voxpopuli/
 | Dependencies | `@nestjs/axios` (HttpModule), `CacheService`, `@voxpopuli/shared-types`                                        |
 | Cache TTLs   | Search: 900s (15 min), Story: 3600s (1 hr), Comment: 1800s (30 min)                                            |
 | Constraints  | 30 comment cap, 15 top-level max, batch size 10, max depth 3                                                   |
+| Retry logic  | `retryWithBackoff()` -- 3 attempts, exponential backoff with jitter, retries on 5xx/network errors only        |
 
 ### 5.4 ChunkerModule (`apps/api/src/chunker/`)
 
@@ -153,7 +170,62 @@ voxpopuli/
 
 All providers implement `LlmProviderInterface` with three members: `name`, `maxContextTokens`, and `getModel()`. Each wraps a LangChain `BaseChatModel` instance that is lazily created on first access.
 
-### 5.6 ConfigModule (`apps/api/src/config/`)
+### 5.6 AgentModule (`apps/api/src/agent/`)
+
+| Attribute       | Value                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| Purpose         | ReAct reasoning agent that searches HN and synthesizes sourced answers                             |
+| Key class       | `AgentService`                                                                                     |
+| Key methods     | `run(query, options?)` -- executes the full agent loop, returns `AgentResponse`                    |
+| Test file       | `agent.service.spec.ts` (6 tests)                                                                  |
+| Dependencies    | `LlmService`, `HnService`, `ChunkerService`, `langchain` (createAgent), `zod`                      |
+| Agent framework | LangChain `createAgent` (v1.2+) with `tool()` helper and Zod schemas                               |
+| Constraints     | Max 7 steps (`recursionLimit`), 60s timeout (`AbortSignal`), 5 concurrent runs (counter semaphore) |
+
+**Tools** (defined in `tools.ts`):
+
+| Tool           | Wraps                           | Returns                                   |
+| -------------- | ------------------------------- | ----------------------------------------- |
+| `search_hn`    | `HnService.search/searchByDate` | Chunked story metadata via ChunkerService |
+| `get_story`    | `HnService.getItem`             | Formatted story details with posted date  |
+| `get_comments` | `HnService.getCommentTree`      | Chunked comment tree via ChunkerService   |
+
+**Supporting files:**
+
+| File                  | Purpose                                                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `system-prompt.ts`    | Agent role, search strategy, claim taxonomy (evidence/consensus/anecdote/opinion), honesty rules                |
+| `trust.ts`            | `computeTrustMetadata()` -- source verification, recency, viewpoint diversity, Show HN detection, honesty flags |
+| `partial-response.ts` | `buildPartialResponse()` -- returns collected data when LLM fails mid-loop                                      |
+
+### 5.7 RagModule (`apps/api/src/rag/`)
+
+| Attribute    | Value                                                                             |
+| ------------ | --------------------------------------------------------------------------------- |
+| Purpose      | HTTP API layer for RAG queries with caching, rate limiting, and structured errors |
+| Key class    | `RagController`                                                                   |
+| Test file    | `rag.controller.spec.ts` (7 tests)                                                |
+| Dependencies | `AgentService`, `CacheService`                                                    |
+
+**Endpoints:**
+
+| Endpoint          | Method | Description                                                    |
+| ----------------- | ------ | -------------------------------------------------------------- |
+| `/api/rag/query`  | POST   | Blocking full `AgentResponse`, cached 10 min                   |
+| `/api/rag/stream` | GET    | SSE streaming (thought/action/observation/answer/error events) |
+
+**Supporting files:**
+
+| File                               | Purpose                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `dto/rag-query.dto.ts`             | Input validation: query (required, max 500 chars), maxSteps (1-7), provider           |
+| `filters/http-exception.filter.ts` | Global exception filter: 400/429/502/500 mapping, structured JSON error body, logging |
+
+**Rate limiting:** Global 60 req/min via timestamp array (no per-IP tracking, no external dependency).
+
+**SSE model:** Post-completion replay -- agent runs to completion, then steps are replayed as SSE events. True mid-loop streaming is a v1.1 enhancement.
+
+### 5.8 ConfigModule (`apps/api/src/config/`)
 
 | Attribute          | Value                                                                                                                                                    |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -164,13 +236,13 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 | Required vars      | `LLM_PROVIDER` (default: `groq`)                                                                                                                         |
 | Optional vars      | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `PORT`, `LOG_LEVEL`, `NODE_ENV` |
 
-### 5.7 AppModule (`apps/api/src/app/`)
+### 5.9 AppModule (`apps/api/src/app/`)
 
-| Attribute | Value                                                                                                                   |
-| --------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Purpose   | Root NestJS module wiring all feature modules together                                                                  |
-| Imports   | `ConfigModule` (global), `LoggerModule` (pino), `CacheModule`, `HealthModule`, `HnModule`, `ChunkerModule`, `LlmModule` |
-| Bootstrap | `main.ts` configures global prefix (`/api`), CORS (localhost:4200), graceful shutdown, Pino logger                      |
+| Attribute | Value                                                                                                                                                     |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose   | Root NestJS module wiring all feature modules together                                                                                                    |
+| Imports   | `ConfigModule` (global), `LoggerModule` (pino), `CacheModule`, `HealthModule`, `HnModule`, `ChunkerModule`, `LlmModule`, `AgentModule`, `RagModule`       |
+| Bootstrap | `main.ts` configures global prefix (`/api`), CORS (localhost:4200), graceful shutdown, Pino logger, global `ValidationPipe`, global `HttpExceptionFilter` |
 
 ---
 
@@ -183,10 +255,18 @@ All interfaces live in `libs/shared-types/src/lib/shared-types.ts` and are impor
 | Interface       | Purpose                                                                                       |
 | --------------- | --------------------------------------------------------------------------------------------- |
 | `RagQuery`      | Inbound query shape: `query`, `maxSteps?`, `includeComments?`, `provider?`                    |
-| `AgentResponse` | Top-level response: `answer`, `steps[]`, `sources[]`, `meta`                                  |
+| `AgentResponse` | Top-level response: `answer`, `steps[]`, `sources[]`, `trust`, `meta`                         |
 | `AgentStep`     | Single reasoning step: type (`thought`/`action`/`observation`), content, tool info, timestamp |
 | `AgentSource`   | Referenced HN story: storyId, title, url, author, points, commentCount                        |
-| `AgentMeta`     | Run metadata: provider, token counts, duration, cached flag                                   |
+| `AgentMeta`     | Run metadata: provider, token counts, duration, cached flag, error flag                       |
+
+### Trust Framework
+
+| Interface              | Purpose                                                                                                              |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `TrustMetadata`        | Trust signals: sourcesVerified/Total, avgSourceAge, recentSourceRatio, viewpointDiversity, showHnCount, honestyFlags |
+| `RewriteTrustMetadata` | TTS rewrite trust: factPreservation, attributionsRetained, toneAlignment                                             |
+| `Claim`                | Extracted claim: text, type (evidence/anecdote/opinion/consensus), attribution, confidence                           |
 
 ### HN Data Types
 
@@ -261,6 +341,7 @@ Environment variables are validated at startup using `class-validator` in `apps/
 | ADR-001 | CI/CD Pipeline and Quality Gates                   | 2026-04-03 | Defines GitHub Actions CI pipeline and pre-commit hook strategy for lint/test quality gates                               |
 | ADR-002 | Chunker Strategy and Token Budget Design           | 2026-04-04 | Character-based token estimation (1 token ~ 4 chars), 4-phase priority budget allocation, HTML-to-markdown conversion     |
 | ADR-003 | LLM Provider Architecture and Tool Protocol Design | 2026-04-04 | LangChain-based provider interface with facade pattern, lazy instantiation, and native tool-calling protocol per provider |
+| ADR-004 | ReAct Agent Design and Tool Selection Strategy     | 2026-04-04 | LangChain `createAgent` (v1.2+), 3-tool design, chunked string output, safety constraints, SSE streaming integration      |
 
 ### Design Documents
 
@@ -272,45 +353,34 @@ Environment variables are validated at startup using `class-validator` in `apps/
 
 ## 9. Test Summary
 
-| Test Suite       | File                               | Tests                                                                                                   | Covers |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------- | ------ |
-| HealthController | `health/health.controller.spec.ts` | Health endpoint response shape and values                                                               |
-| HnService        | `hn/hn.service.spec.ts`            | Algolia search, Firebase item fetch, comment tree building, caching, error handling                     |
-| ChunkerService   | `chunker/chunker.service.spec.ts`  | Token estimation, HTML stripping, story chunking, comment chunking, context assembly, prompt formatting |
-| LlmService       | `llm/llm.service.spec.ts`          | Provider resolution, lazy instantiation, provider override, unknown provider errors                     |
+| Test Suite          | File                                        | Tests | Covers                                                                                     |
+| ------------------- | ------------------------------------------- | ----- | ------------------------------------------------------------------------------------------ |
+| HealthController    | `health/health.controller.spec.ts`          | 6     | Health endpoint response shape and values                                                  |
+| HnService           | `hn/hn.service.spec.ts`                     | 10    | Algolia search, Firebase fetch, comment tree, caching, error handling, retry logic         |
+| ChunkerService      | `chunker/chunker.service.spec.ts`           | 29    | Token estimation, HTML stripping, story/comment chunking, context assembly, formatting     |
+| LlmService          | `llm/llm.service.spec.ts`                   | 22    | Provider resolution, lazy instantiation, provider override, unknown provider errors        |
+| AgentService        | `agent/agent.service.spec.ts`               | 6     | Agent execution, concurrency limits, semaphore cleanup, prompt template, source extraction |
+| RagController       | `rag/rag.controller.spec.ts`                | 7     | POST cached/uncached, SSE events, error handling, input validation, rate limiting          |
+| HttpExceptionFilter | `rag/filters/http-exception.filter.spec.ts` | 9     | Status code mapping, error body structure, timestamp, 429/502 handling                     |
+| Web App             | `web/src/app/app.spec.ts`                   | 1     | Angular app component renders                                                              |
 
-**Totals:** 4 test suites, 77 tests, all passing. Test runner: Jest via Nx. All external HTTP calls are mocked. No tests hit real APIs.
+**Totals:** 8 test suites, 103 tests (API: 89, Web: 1, scaffolded defaults: 13), all passing. API test runner: Jest via Nx. Web test runner: Vitest via Nx. All external HTTP calls and LLM providers are mocked in tests.
 
-Additional test files exist but are scaffolded defaults:
-
-- `apps/api-e2e/src/api/api.spec.ts` -- E2E test harness (Nx default)
-- `apps/web/src/app/app.spec.ts` -- Angular app component test (Nx default)
-- `apps/web-e2e/src/example.spec.ts` -- Frontend E2E placeholder
+**Jest ESM note:** Test files that import `AgentService` or `LlmService` must mock the LLM provider modules to avoid `@langchain/*` ESM resolution failures. See `agent.service.spec.ts` for the pattern.
 
 ---
 
-## 10. What's Next -- M3: Agent Core
+## 10. What's Next -- M4: Frontend
 
-Milestone 3 builds the ReAct agent loop and the RAG API endpoints. Based on the architecture plan, it consists of two epics and approximately 8 stories:
+Milestone 4 builds the Angular chat UI with live reasoning visualization. Based on the architecture plan:
 
-**Epic 3.1: ReAct Agent**
+**Epic 4.1: Core UI**
 
-- Define agent tools (`search_hn`, `get_story`, `get_comments`) in `tools.ts`
-- Write the system prompt in `system-prompt.ts`
-- Implement `AgentService.run()` with the ReAct loop (think, act, observe, repeat)
-- Tool dispatch through `executeTool()` to HnService
-- Chunk tool results via ChunkerService, build native tool_result messages via the active LLM provider
-- Enforce constraints: max 7 steps, 60-second timeout, 5 concurrent runs via semaphore
-- Integration tests for AgentService
+- Set up Tailwind CSS
+- Implement `ChatComponent` -- query input, answer display, conversation layout
+- Implement `AgentStepsComponent` -- real-time step timeline (expandable)
+- Implement `SourceCardComponent` -- story card with title, author, points, HN link
+- Implement `ProviderSelectorComponent` -- LLM provider dropdown + meta bar
+- Implement `RagService` -- HTTP + EventSource client for RAG endpoints
 
-**Epic 3.2: RAG Endpoints**
-
-- `POST /api/rag/query` -- blocking full response
-- `GET /api/rag/stream` -- SSE streaming of reasoning steps (event types: thought, action, observation, answer, error)
-- Rate limiting middleware (10/min per IP, 60/min global)
-- Query result caching (10-minute TTL)
-- Input validation (query required, 500 char max)
-- Global exception filter
-- Integration tests for RagController
-
-**Demo target:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
+**Demo target:** Open browser, ask a question, see the agent think in real time, get a sourced answer with trust indicators.

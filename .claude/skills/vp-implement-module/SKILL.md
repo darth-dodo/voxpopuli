@@ -51,3 +51,10 @@ apps/api/src/{module-name}/
 - Forgetting to export service from module (other modules can't inject it)
 - Using `ConfigModule` import in module -- it's already global
 - Hitting real APIs in tests -- always mock HTTP and LLM calls
+- Using `vi.fn()` (Vitest) in API tests -- the API project uses **Jest**, use `jest.fn()`
+- Not mocking LLM providers in test files that transitively import `LlmService` or `AgentService` -- Jest can't resolve `@langchain/*` ESM packages. Add these mocks at the top of spec files:
+  ```typescript
+  jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+  jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
+  jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
+  ```

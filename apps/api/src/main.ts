@@ -1,14 +1,21 @@
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app/app.module';
+import { HttpExceptionFilter } from './rag/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
   // AI-141: Use structured Pino logger
   app.useLogger(app.get(PinoLogger));
+
+  // AI-154: Global exception filter for structured error responses
+  app.useGlobalFilters(new HttpExceptionFilter());
+
+  // AI-119: Global validation pipe for DTO validation
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);

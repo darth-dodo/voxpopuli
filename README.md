@@ -1,5 +1,12 @@
 # VoxPopuli
 
+[![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green)](https://nodejs.org)
+[![NestJS](https://img.shields.io/badge/NestJS-11-red)](https://nestjs.com)
+[![Angular](https://img.shields.io/badge/Angular-17%2B-dd0031)](https://angular.dev)
+
 > _"Voice of the People."_
 
 **Ask anything. Get the internet's smartest crowd-sourced answer, with receipts.**
@@ -224,8 +231,8 @@ See [product.md](product.md) for the full product specification and [architectur
 | ------------------------- | ------- | ------------------------------------------------------------------ |
 | M1: Scaffold & Data Layer | Done    | Nx monorepo, shared types, HN data flowing with caching            |
 | M2: LLM & Chunker         | Done    | Triple-stack LLM providers, chunker with token budgeting, 51 tests |
-| M3: Agent Core            | Up Next | ReAct reasoning loop, sourced answers via API                      |
-| M4: Frontend              | Planned | Chat UI with live reasoning visualization                          |
+| M3: Agent Core            | Done    | ReAct agent, RAG endpoints, trust framework, 103 tests             |
+| M4: Frontend              | Up Next | Chat UI with live reasoning visualization                          |
 | M5: Voice Output          | Planned | ElevenLabs TTS with podcast-style narration                        |
 | M6: Eval Harness          | Planned | 20 test queries, automated scoring                                 |
 

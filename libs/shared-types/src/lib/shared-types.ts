@@ -22,6 +22,7 @@ export interface AgentResponse {
   steps: AgentStep[];
   sources: AgentSource[];
   meta: AgentMeta;
+  trust: TrustMetadata;
 }
 
 /** A single reasoning / action step produced by the agent. */
@@ -51,6 +52,53 @@ export interface AgentMeta {
   totalOutputTokens: number;
   durationMs: number;
   cached: boolean;
+  error?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Trust framework
+// ---------------------------------------------------------------------------
+
+/** Trust signals computed for a single agent response. */
+export interface TrustMetadata {
+  /** Number of sources that were independently verified. */
+  sourcesVerified: number;
+  /** Total number of sources considered. */
+  sourcesTotal: number;
+  /** Average age of sources in days. */
+  avgSourceAge: number;
+  /** Ratio of sources from the last 12 months (0-1). */
+  recentSourceRatio: number;
+  /** Qualitative measure of viewpoint diversity across sources. */
+  viewpointDiversity: 'one-sided' | 'balanced' | 'contested';
+  /** Number of Show HN posts among the sources. */
+  showHnCount: number;
+  /** Honesty flags surfaced to the user (e.g. "no_results_found", "old_sources_noted"). */
+  honestyFlags: string[];
+}
+
+/** Trust metadata specific to the TTS rewrite step. */
+export interface RewriteTrustMetadata {
+  /** Whether factual claims were preserved during rewrite. */
+  factPreservation: boolean;
+  /** Percentage of attributions retained after rewrite (0-100). */
+  attributionsRetained: number;
+  /** Tone alignment score between original and rewrite (1-5). */
+  toneAlignment: number;
+}
+
+/** A single claim extracted from source material. */
+export interface Claim {
+  /** The claim text. */
+  text: string;
+  /** Classification of the claim. */
+  type: 'evidence' | 'anecdote' | 'opinion' | 'consensus';
+  /** Who or what the claim is attributed to. */
+  attribution: string;
+  /** Confidence score for the claim (0-1). */
+  confidence: number;
+  /** Optional supporting data or reference. */
+  supportingData?: string;
 }
 
 // ---------------------------------------------------------------------------
