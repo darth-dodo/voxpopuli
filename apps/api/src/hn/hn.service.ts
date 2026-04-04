@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { CacheService } from '../cache/cache.service';
 import type { HnSearchResult, HnSearchOptions, HnStory, HnComment } from '@voxpopuli/shared-types';
@@ -178,6 +179,66 @@ export class HnService {
   // Private helpers
   // ---------------------------------------------------------------------------
 
+  /** Retryable network/server error codes. */
+  private static readonly RETRYABLE_CODES = new Set([
+    'ECONNABORTED',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ECONNREFUSED',
+  ]);
+
+  /**
+   * Retry an async operation with exponential backoff and jitter.
+   *
+   * @param operation   - The async function to retry
+   * @param context     - Description for logging (e.g., "fetchAlgolia search")
+   * @param maxAttempts - Maximum retry attempts (default 3)
+   * @returns The operation result
+   * @throws The last error if all attempts fail
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    context: string,
+    maxAttempts = 3,
+  ): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (err) {
+        lastError = err;
+
+        // Don't retry on 4xx client errors
+        if (err instanceof AxiosError && err.response && err.response.status < 500) {
+          throw err;
+        }
+
+        // Only retry on retryable errors (network errors or 5xx)
+        const isRetryable =
+          err instanceof AxiosError &&
+          (HnService.RETRYABLE_CODES.has(err.code ?? '') ||
+            (err.response !== undefined && err.response.status >= 500));
+
+        if (!isRetryable) {
+          throw err;
+        }
+
+        if (attempt < maxAttempts) {
+          // Exponential backoff: 200ms, 800ms, 3200ms (base * 4^(attempt-1))
+          const baseDelay = 200 * Math.pow(4, attempt - 1);
+          const jitter = Math.random() * 100;
+          const delay = baseDelay + jitter;
+          this.logger.warn(`Retry ${attempt}/${maxAttempts} for ${context} after ${delay}ms`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
   /**
    * Fetch items from the Firebase API in parallel batches and return
    * only valid (non-deleted, non-dead) comments with the assigned depth.
@@ -211,6 +272,7 @@ export class HnService {
 
   /**
    * Fetch a single item from Firebase, caching individually.
+   * Retries transient failures before falling back to null.
    */
   private async fetchFirebaseItem(id: number): Promise<FirebaseItem | null> {
     const cacheKey = `hn:item:${id}`;
@@ -218,12 +280,14 @@ export class HnService {
       cacheKey,
       async () => {
         try {
-          const { data } = await firstValueFrom(
-            this.http.get<FirebaseItem>(`${FIREBASE_BASE}/item/${id}.json`),
-          );
-          return data;
+          return await this.retryWithBackoff(async () => {
+            const { data } = await firstValueFrom(
+              this.http.get<FirebaseItem>(`${FIREBASE_BASE}/item/${id}.json`),
+            );
+            return data;
+          }, `fetchFirebaseItem(${id})`);
         } catch (err) {
-          this.logger.warn(`Failed to fetch item ${id}: ${err}`);
+          this.logger.warn(`Failed to fetch item ${id} after retries: ${err}`);
           return null;
         }
       },
@@ -232,7 +296,7 @@ export class HnService {
   }
 
   /**
-   * Build and execute an Algolia search request.
+   * Build and execute an Algolia search request with retry on transient failures.
    */
   private async fetchAlgolia(
     endpoint: 'search' | 'search_by_date',
@@ -249,10 +313,11 @@ export class HnService {
       hitsPerPage: String(hitsPerPage),
     };
 
-    const { data } = await firstValueFrom(
-      this.http.get<HnSearchResult>(`${ALGOLIA_BASE}/${endpoint}`, { params }),
-    );
-
-    return data;
+    return this.retryWithBackoff(async () => {
+      const { data } = await firstValueFrom(
+        this.http.get<HnSearchResult>(`${ALGOLIA_BASE}/${endpoint}`, { params }),
+      );
+      return data;
+    }, `fetchAlgolia(${endpoint}, "${query}")`);
   }
 }
