@@ -11,7 +11,7 @@
    ═══════════════════════════════════════════════════ */
 
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Public+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ─── Tailwind v4 Theme Configuration ─── */
 @theme {
@@ -23,43 +23,43 @@
   /* ── Surface Colors (Dark OLED) ── */
   --color-surface-void: #000000;
   --color-surface-base: #020617;
-  --color-surface-raised: #0F172A;
-  --color-surface-overlay: #1E293B;
+  --color-surface-raised: #0f172a;
+  --color-surface-overlay: #1e293b;
   --color-surface-float: #334155;
 
   /* ── Accent Colors ── */
-  --color-accent-amber: #F59E0B;
-  --color-accent-amber-dim: #B45309;
-  --color-accent-amber-glow: #FBBF24;
-  --color-accent-blue: #3B82F6;
-  --color-accent-blue-dim: #1E40AF;
-  --color-accent-orange: #F97316;
+  --color-accent-amber: #f59e0b;
+  --color-accent-amber-dim: #b45309;
+  --color-accent-amber-glow: #fbbf24;
+  --color-accent-blue: #3b82f6;
+  --color-accent-blue-dim: #1e40af;
+  --color-accent-orange: #f97316;
 
   /* ── Semantic Colors ── */
-  --color-trust-verified: #22C55E;
+  --color-trust-verified: #22c55e;
   --color-trust-verified-dim: #166534;
-  --color-trust-caution: #EAB308;
-  --color-trust-warning: #F97316;
-  --color-trust-danger: #EF4444;
+  --color-trust-caution: #eab308;
+  --color-trust-warning: #f97316;
+  --color-trust-danger: #ef4444;
 
   /* ── Text Colors ── */
-  --color-text-primary: #F8FAFC;
-  --color-text-secondary: #94A3B8;
-  --color-text-muted: #64748B;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
   --color-text-faint: #475569;
-  --color-text-inverse: #0F172A;
+  --color-text-inverse: #0f172a;
 
   /* ── Border Colors ── */
-  --color-border-subtle: #1E293B;
+  --color-border-subtle: #1e293b;
   --color-border-default: #334155;
   --color-border-emphasis: #475569;
-  --color-border-accent: #F59E0B33;
+  --color-border-accent: #f59e0b33;
 
   /* ── Agent Step Colors ── */
-  --color-step-thought: #A78BFA;
-  --color-step-action: #38BDF8;
-  --color-step-observation: #34D399;
-  --color-step-error: #F87171;
+  --color-step-thought: #a78bfa;
+  --color-step-action: #38bdf8;
+  --color-step-observation: #34d399;
+  --color-step-error: #f87171;
 
   /* ── Spacing Scale ── */
   --spacing-xs: 0.25rem;
@@ -132,7 +132,9 @@
   }
 
   /* Editorial headings */
-  h1, h2, h3 {
+  h1,
+  h2,
+  h3 {
     font-family: var(--font-editorial);
     font-weight: 600;
     line-height: 1.25;
@@ -140,18 +142,29 @@
     color: var(--color-text-primary);
   }
 
-  h1 { font-size: 2.25rem; }
-  h2 { font-size: 1.75rem; }
-  h3 { font-size: 1.25rem; }
+  h1 {
+    font-size: 2.25rem;
+  }
+  h2 {
+    font-size: 1.75rem;
+  }
+  h3 {
+    font-size: 1.25rem;
+  }
 
-  h4, h5, h6 {
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-ui);
     font-weight: 600;
     line-height: 1.4;
   }
 
   /* Monospace for code/agent */
-  code, pre, kbd, samp {
+  code,
+  pre,
+  kbd,
+  samp {
     font-family: var(--font-mono);
     font-size: 0.875em;
   }
@@ -218,8 +231,7 @@
     background-color: var(--color-surface-raised);
     border: 1px solid var(--color-border-subtle);
     border-radius: var(--radius-lg);
-    transition: border-color var(--duration-fast) ease,
-                box-shadow var(--duration-normal) ease;
+    transition: border-color var(--duration-fast) ease, box-shadow var(--duration-normal) ease;
   }
 
   .vp-card:hover {
@@ -323,8 +335,7 @@
     font-family: var(--font-ui);
     font-size: 1rem;
     line-height: 1.5;
-    transition: border-color var(--duration-fast) ease,
-                box-shadow var(--duration-fast) ease;
+    transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
     outline: none;
   }
 
@@ -352,9 +363,8 @@
     border: none;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    transition: background-color var(--duration-fast) ease,
-                transform var(--duration-instant) ease,
-                box-shadow var(--duration-normal) ease;
+    transition: background-color var(--duration-fast) ease, transform var(--duration-instant) ease,
+      box-shadow var(--duration-normal) ease;
   }
 
   .vp-btn-primary:hover {
@@ -486,8 +496,12 @@
   }
 
   @keyframes vp-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   /* Pulse indicator for live/streaming */
@@ -509,8 +523,15 @@
   }
 
   @keyframes vp-pulse-ring {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
-    50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+    50% {
+      opacity: 0.8;
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+    }
   }
 
   /* Typewriter cursor for agent thinking */
@@ -522,8 +543,13 @@
   }
 
   @keyframes vp-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
   }
 
   /* Noise texture overlay */

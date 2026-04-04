@@ -1,13 +1,12 @@
 <!-- VoxPopuli Design System Showcase -->
 <div class="min-h-screen bg-surface-base text-text-primary">
-
   <!-- Header -->
   <header class="border-b border-border-subtle px-6 py-8 md:px-12 md:py-12">
     <div class="max-w-6xl mx-auto">
-      <p class="text-mono text-xs text-accent-amber tracking-[0.2em] uppercase mb-3">Design System</p>
-      <h1 class="text-editorial text-4xl md:text-5xl font-semibold tracking-tight">
-        VoxPopuli
-      </h1>
+      <p class="text-mono text-xs text-accent-amber tracking-[0.2em] uppercase mb-3">
+        Design System
+      </p>
+      <h1 class="text-editorial text-4xl md:text-5xl font-semibold tracking-tight">VoxPopuli</h1>
       <p class="text-text-secondary mt-3 max-w-lg text-lg">
         "Data Noir Editorial" — where raw terminal output meets investigative journalism.
       </p>
@@ -15,11 +14,12 @@
   </header>
 
   <main class="max-w-6xl mx-auto px-6 md:px-12 py-12 space-y-16">
-
     <!-- ═══ Typography ═══ -->
     <section>
       <h2 class="text-editorial text-2xl mb-1">Typography</h2>
-      <p class="text-text-muted text-sm mb-8">Three-font strategy: editorial gravitas, clean UI, raw code.</p>
+      <p class="text-text-muted text-sm mb-8">
+        Three-font strategy: editorial gravitas, clean UI, raw code.
+      </p>
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <!-- Newsreader -->
@@ -36,9 +36,7 @@
         <div class="vp-card p-6">
           <p class="text-mono text-xs text-accent-amber mb-4">font-ui</p>
           <p class="text-ui text-3xl font-semibold leading-tight mb-2">Public Sans</p>
-          <p class="text-ui text-lg text-text-secondary">
-            Clean, readable interface typography.
-          </p>
+          <p class="text-ui text-lg text-text-secondary">Clean, readable interface typography.</p>
           <p class="text-text-muted text-xs mt-4">Body text, labels, navigation, UI chrome</p>
         </div>
 
@@ -46,9 +44,7 @@
         <div class="vp-card p-6">
           <p class="text-mono text-xs text-accent-amber mb-4">font-mono</p>
           <p class="text-mono text-2xl font-semibold leading-tight mb-2">JetBrains Mono</p>
-          <p class="text-mono text-base text-text-secondary">
-            Agent reasoning &amp; data.
-          </p>
+          <p class="text-mono text-base text-text-secondary">Agent reasoning &amp; data.</p>
           <p class="text-text-muted text-xs mt-4">Agent steps, badges, metadata, code blocks</p>
         </div>
       </div>
@@ -72,7 +68,9 @@
     <!-- ═══ Color Palette ═══ -->
     <section>
       <h2 class="text-editorial text-2xl mb-1">Color Palette</h2>
-      <p class="text-text-muted text-sm mb-8">Dark OLED base with warm amber accents and semantic trust colors.</p>
+      <p class="text-text-muted text-sm mb-8">
+        Dark OLED base with warm amber accents and semantic trust colors.
+      </p>
 
       <!-- Surfaces -->
       <h3 class="text-editorial text-lg mb-4">Surfaces</h3>
@@ -219,7 +217,9 @@
     <!-- ═══ Components ═══ -->
     <section>
       <h2 class="text-editorial text-2xl mb-1">Components</h2>
-      <p class="text-text-muted text-sm mb-8">Reusable building blocks for the VoxPopuli interface.</p>
+      <p class="text-text-muted text-sm mb-8">
+        Reusable building blocks for the VoxPopuli interface.
+      </p>
 
       <!-- Badges -->
       <h3 class="text-editorial text-lg mb-4">Agent Step Badges</h3>
@@ -252,11 +252,7 @@
       <!-- Input -->
       <h3 class="text-editorial text-lg mb-4">Query Input</h3>
       <div class="max-w-2xl mb-8">
-        <input
-          type="text"
-          class="vp-input"
-          placeholder="What does Hacker News think about..."
-        />
+        <input type="text" class="vp-input" placeholder="What does Hacker News think about..." />
         <p class="text-mono text-xs text-text-muted mt-2 text-right">0 / 500</p>
       </div>
 
@@ -266,12 +262,16 @@
         <!-- Standard card -->
         <div class="vp-card p-5">
           <p class="text-mono text-xs text-text-muted mb-2">Standard Card</p>
-          <p class="text-text-primary">A raised surface for grouping related content. Subtle border, hover brightens.</p>
+          <p class="text-text-primary">
+            A raised surface for grouping related content. Subtle border, hover brightens.
+          </p>
         </div>
         <!-- Interactive card -->
         <div class="vp-card vp-card--interactive p-5">
           <p class="text-mono text-xs text-accent-amber mb-2">Interactive Card</p>
-          <p class="text-text-primary">Clickable card with amber glow on hover. Used for source cards and expandable sections.</p>
+          <p class="text-text-primary">
+            Clickable card with amber glow on hover. Used for source cards and expandable sections.
+          </p>
         </div>
       </div>
 
@@ -293,7 +293,15 @@
         <div class="vp-source-card">
           <div class="flex items-start justify-between gap-2 mb-2">
             <p class="vp-source-card__title">Show HN: I Built a CSS-in-Rust Compiler for Next.js</p>
-            <span class="vp-badge" style="background-color: rgba(234, 179, 8, 0.15); color: var(--color-trust-caution); border: 1px solid rgba(234, 179, 8, 0.25);">Show HN</span>
+            <span
+              class="vp-badge"
+              style="
+                background-color: rgba(234, 179, 8, 0.15);
+                color: var(--color-trust-caution);
+                border: 1px solid rgba(234, 179, 8, 0.25);
+              "
+              >Show HN</span
+            >
           </div>
           <div class="vp-source-card__meta flex items-center gap-3">
             <span>devfoo</span>
@@ -321,31 +329,45 @@
     <!-- ═══ Terminal / Agent Output ═══ -->
     <section>
       <h2 class="text-editorial text-2xl mb-1">Agent Reasoning</h2>
-      <p class="text-text-muted text-sm mb-8">Live terminal-style display of the ReAct agent's thinking process.</p>
+      <p class="text-text-muted text-sm mb-8">
+        Live terminal-style display of the ReAct agent's thinking process.
+      </p>
 
       <div class="vp-terminal">
         <div class="space-y-3">
           <div>
             <span class="vp-badge vp-badge--thought">thought</span>
-            <p class="mt-1.5 text-text-secondary">I need to find what Hacker News thinks about Tailwind v4. Let me search for recent discussions and top stories.</p>
+            <p class="mt-1.5 text-text-secondary">
+              I need to find what Hacker News thinks about Tailwind v4. Let me search for recent
+              discussions and top stories.
+            </p>
           </div>
           <div>
             <span class="vp-badge vp-badge--action">search_hn</span>
-            <p class="mt-1.5 text-step-action">search_hn(query: "Tailwind v4", sort_by: "relevance", max_results: 5)</p>
+            <p class="mt-1.5 text-step-action">
+              search_hn(query: "Tailwind v4", sort_by: "relevance", max_results: 5)
+            </p>
           </div>
           <div>
             <span class="vp-badge vp-badge--observation">5 results</span>
-            <p class="mt-1.5 text-text-muted">Story 39482731 | Tailwind v4 Released: 5x Faster with Oxide Engine | 340 pts<br/>
-            Story 39471022 | Why I switched from Tailwind to vanilla CSS | 127 pts<br/>
-            Story 39495103 | Show HN: CSS-in-Rust Compiler for Tailwind | 89 pts</p>
+            <p class="mt-1.5 text-text-muted">
+              Story 39482731 | Tailwind v4 Released: 5x Faster with Oxide Engine | 340 pts<br />
+              Story 39471022 | Why I switched from Tailwind to vanilla CSS | 127 pts<br />
+              Story 39495103 | Show HN: CSS-in-Rust Compiler for Tailwind | 89 pts
+            </p>
           </div>
           <div>
             <span class="vp-badge vp-badge--thought">thought</span>
-            <p class="mt-1.5 text-text-secondary">Good results. Let me get comments from the top story to understand the sentiment better.</p>
+            <p class="mt-1.5 text-text-secondary">
+              Good results. Let me get comments from the top story to understand the sentiment
+              better.
+            </p>
           </div>
           <div class="vp-cursor">
             <span class="vp-badge vp-badge--action">get_comments</span>
-            <p class="mt-1.5 text-step-action">get_comments(story_id: 39482731, max_comments: 30)</p>
+            <p class="mt-1.5 text-step-action">
+              get_comments(story_id: 39482731, max_comments: 30)
+            </p>
           </div>
         </div>
       </div>
@@ -356,33 +378,75 @@
     <!-- ═══ Trust Bar ═══ -->
     <section>
       <h2 class="text-editorial text-2xl mb-1">Trust Indicators</h2>
-      <p class="text-text-muted text-sm mb-8">Source verification, recency, and viewpoint diversity at a glance.</p>
+      <p class="text-text-muted text-sm mb-8">
+        Source verification, recency, and viewpoint diversity at a glance.
+      </p>
 
       <div class="flex flex-wrap gap-3 mb-8">
         <div class="vp-trust-indicator">
-          <svg class="w-4 h-4 text-trust-verified" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+          <svg
+            class="w-4 h-4 text-trust-verified"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+            />
           </svg>
           <span class="text-trust-verified">4/4 verified</span>
         </div>
 
         <div class="vp-trust-indicator">
-          <svg class="w-4 h-4 text-accent-amber" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg
+            class="w-4 h-4 text-accent-amber"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           <span class="text-text-secondary">3/4 from 2026</span>
         </div>
 
         <div class="vp-trust-indicator">
-          <svg class="w-4 h-4 text-accent-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+          <svg
+            class="w-4 h-4 text-accent-blue"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
+            />
           </svg>
           <span class="text-text-secondary">balanced</span>
         </div>
 
         <div class="vp-trust-indicator">
-          <svg class="w-4 h-4 text-trust-caution" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <svg
+            class="w-4 h-4 text-trust-caution"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
           </svg>
           <span class="text-text-secondary">1 Show HN</span>
         </div>
@@ -398,16 +462,28 @@
 
       <div class="vp-card p-6 md:p-8">
         <div class="vp-prose">
-          <p>Based on recent Hacker News discussions, <strong>Tailwind v4 has been broadly well-received</strong>, with particular praise for the new Oxide engine's 5x build speed improvement. The community highlights several key themes:</p>
+          <p>
+            Based on recent Hacker News discussions,
+            <strong>Tailwind v4 has been broadly well-received</strong>, with particular praise for
+            the new Oxide engine's 5x build speed improvement. The community highlights several key
+            themes:
+          </p>
 
-          <p>Performance-focused developers are enthusiastic about the Rust-based compiler, noting it
-          eliminates the build-time bottleneck that plagued large projects. As <a href="#">tptacek noted</a>
-          with 127 upvotes: <em>"Utility-first CSS creates maintenance debt at scale, but v4's speed
-          makes the trade-off more palatable."</em></p>
+          <p>
+            Performance-focused developers are enthusiastic about the Rust-based compiler, noting it
+            eliminates the build-time bottleneck that plagued large projects. As
+            <a href="#">tptacek noted</a> with 127 upvotes:
+            <em
+              >"Utility-first CSS creates maintenance debt at scale, but v4's speed makes the
+              trade-off more palatable."</em
+            >
+          </p>
 
-          <p>Skeptics remain vocal, citing concerns about <code>className</code> readability in component-heavy
-          codebases. However, the consensus has shifted from "utility CSS is wrong" to "it depends on team
-          size and project scope."</p>
+          <p>
+            Skeptics remain vocal, citing concerns about <code>className</code> readability in
+            component-heavy codebases. However, the consensus has shifted from "utility CSS is
+            wrong" to "it depends on team size and project scope."
+          </p>
         </div>
       </div>
     </section>
@@ -436,10 +512,14 @@
           <p class="text-mono text-xs text-text-muted mb-4">Live Streaming</p>
           <div class="flex items-center gap-3">
             <span class="relative flex h-2.5 w-2.5">
-              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-trust-verified opacity-75"></span>
+              <span
+                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-trust-verified opacity-75"
+              ></span>
               <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-trust-verified"></span>
             </span>
-            <span class="text-mono text-sm text-text-secondary">Agent thinking<span class="vp-cursor"></span></span>
+            <span class="text-mono text-sm text-text-secondary"
+              >Agent thinking<span class="vp-cursor"></span
+            ></span>
           </div>
           <p class="text-mono text-xs text-text-muted mt-4">Step 3 / 7</p>
         </div>
@@ -475,6 +555,5 @@
         VoxPopuli Design System v1.0 — "Data Noir Editorial"
       </p>
     </footer>
-
   </main>
 </div>
