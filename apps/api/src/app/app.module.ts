@@ -9,6 +9,7 @@ import { CacheModule } from '../cache/cache.module';
 import { HnModule } from '../hn/hn.module';
 import { ChunkerModule } from '../chunker/chunker.module';
 import { LlmModule } from '../llm/llm.module';
+import { RagModule } from '../rag/rag.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { LlmModule } from '../llm/llm.module';
     HnModule,
     ChunkerModule,
     LlmModule,
+    RagModule,
   ],
   controllers: [AppController],
   providers: [AppService],
