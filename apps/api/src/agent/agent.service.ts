@@ -6,6 +6,8 @@ import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
 import { createAgentTools } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './system-prompt';
+import { computeTrustMetadata } from './trust';
+import { buildPartialResponse } from './partial-response';
 
 /** Maximum concurrent agent runs. */
 const MAX_CONCURRENT = 5;
@@ -87,67 +89,90 @@ export class AgentService {
 
       let finalAnswer = '';
 
-      for await (const event of stream) {
-        const messages = event.messages ?? [];
-        const lastMsg = messages[messages.length - 1];
-        if (!lastMsg) continue;
+      try {
+        for await (const event of stream) {
+          const messages = event.messages ?? [];
+          const lastMsg = messages[messages.length - 1];
+          if (!lastMsg) continue;
 
-        // Tool call — record as action step
-        if (lastMsg.tool_calls?.length) {
-          for (const tc of lastMsg.tool_calls) {
+          // Tool call — record as action step
+          if (lastMsg.tool_calls?.length) {
+            for (const tc of lastMsg.tool_calls) {
+              steps.push({
+                type: 'action',
+                content: `Calling ${tc.name}`,
+                toolName: tc.name,
+                toolInput: tc.args,
+                timestamp: Date.now(),
+              });
+            }
+          }
+
+          // Tool result message — record as observation
+          if (lastMsg._getType?.() === 'tool' || lastMsg.constructor?.name === 'ToolMessage') {
             steps.push({
-              type: 'action',
-              content: `Calling ${tc.name}`,
-              toolName: tc.name,
-              toolInput: tc.args,
+              type: 'observation',
+              content:
+                typeof lastMsg.content === 'string'
+                  ? lastMsg.content
+                  : JSON.stringify(lastMsg.content),
+              toolName: lastMsg.name,
+              toolOutput:
+                typeof lastMsg.content === 'string'
+                  ? lastMsg.content
+                  : JSON.stringify(lastMsg.content),
               timestamp: Date.now(),
             });
+
+            // Extract source IDs from search results and story fetches
+            this.extractSources(lastMsg.content, sourcesMap);
+          }
+
+          // AI message with content but no tool calls — this is a thought or final answer
+          if (
+            lastMsg.content &&
+            !lastMsg.tool_calls?.length &&
+            (lastMsg._getType?.() === 'ai' ||
+              lastMsg.constructor?.name === 'AIMessage' ||
+              lastMsg.constructor?.name === 'AIMessageChunk')
+          ) {
+            const content = typeof lastMsg.content === 'string' ? lastMsg.content : '';
+            finalAnswer = content;
+
+            // If there are already tool steps, AI content before answer is a "thought"
+            if (steps.length > 0 && steps[steps.length - 1]?.type === 'observation') {
+              steps.push({
+                type: 'thought',
+                content,
+                timestamp: Date.now(),
+              });
+            }
           }
         }
+      } catch (err) {
+        // AI-164: Return partial results if we have any useful data
+        const error = err instanceof Error ? err : new Error(String(err));
+        this.logger.error(`Agent failed after ${steps.length} steps: ${error.message}`);
 
-        // Tool result message — record as observation
-        if (lastMsg._getType?.() === 'tool' || lastMsg.constructor?.name === 'ToolMessage') {
-          steps.push({
-            type: 'observation',
-            content:
-              typeof lastMsg.content === 'string'
-                ? lastMsg.content
-                : JSON.stringify(lastMsg.content),
-            toolName: lastMsg.name,
-            toolOutput:
-              typeof lastMsg.content === 'string'
-                ? lastMsg.content
-                : JSON.stringify(lastMsg.content),
-            timestamp: Date.now(),
-          });
+        const sources = Array.from(sourcesMap.values());
+        const partial = buildPartialResponse(
+          steps,
+          sources,
+          this.llm.getProviderName(),
+          startTime,
+          error,
+        );
 
-          // Extract source IDs from search results and story fetches
-          this.extractSources(lastMsg.content, sourcesMap);
+        if (partial) {
+          return partial;
         }
 
-        // AI message with content but no tool calls — this is a thought or final answer
-        if (
-          lastMsg.content &&
-          !lastMsg.tool_calls?.length &&
-          (lastMsg._getType?.() === 'ai' ||
-            lastMsg.constructor?.name === 'AIMessage' ||
-            lastMsg.constructor?.name === 'AIMessageChunk')
-        ) {
-          const content = typeof lastMsg.content === 'string' ? lastMsg.content : '';
-          finalAnswer = content;
-
-          // If there are already tool steps, AI content before answer is a "thought"
-          if (steps.length > 0 && steps[steps.length - 1]?.type === 'observation') {
-            steps.push({
-              type: 'thought',
-              content,
-              timestamp: Date.now(),
-            });
-          }
-        }
+        // No useful data collected — throw clean error
+        throw error;
       }
 
       const durationMs = Date.now() - startTime;
+      const sources = Array.from(sourcesMap.values());
 
       this.logger.log(
         `Agent completed: ${steps.length} steps, ${sourcesMap.size} sources, ${durationMs}ms`,
@@ -156,16 +181,8 @@ export class AgentService {
       return {
         answer: finalAnswer,
         steps,
-        sources: Array.from(sourcesMap.values()),
-        trust: {
-          sourcesVerified: sourcesMap.size,
-          sourcesTotal: sourcesMap.size,
-          avgSourceAge: 0,
-          recentSourceRatio: 0,
-          viewpointDiversity: 'one-sided',
-          showHnCount: 0,
-          honestyFlags: [],
-        },
+        sources,
+        trust: computeTrustMetadata(steps, sources, finalAnswer),
         meta: {
           provider: this.llm.getProviderName(),
           totalInputTokens: 0,
