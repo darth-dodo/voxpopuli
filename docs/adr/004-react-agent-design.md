@@ -18,25 +18,25 @@ The agent module must orchestrate multi-step research workflows while respecting
 
 ## Decision
 
-### 1. LangChain's createReactAgent + AgentExecutor
+### 1. LangChain's createAgent (v1.2+)
 
-VoxPopuli uses LangChain's `createReactAgent` factory and `AgentExecutor` runner rather than a hand-rolled ReAct loop or a graph-based orchestrator.
+VoxPopuli uses LangChain's `createAgent` factory (from the `langchain` package, v1.2+) rather than a hand-rolled ReAct loop or a graph-based orchestrator. Note: the older `createReactAgent` + `AgentExecutor` API from `@langchain/langgraph/prebuilts` has been superseded by the simpler `createAgent` API.
 
 **Alternatives evaluated:**
 
-| Option                      | Pros                                                                    | Cons                                                                       |
-| --------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| **LangChain AgentExecutor** | Built-in step limiting, timeout, error recovery; handles tool protocols | Less control over exact message flow; tied to LangChain's agent API        |
-| **Hand-rolled ReAct loop**  | Full control over every message and tool invocation                     | Must maintain tool protocol compatibility across 3 providers (~500 lines)  |
-| **Simple RAG (no loop)**    | Simplest implementation, lowest latency                                 | Cannot handle multi-step queries; single retrieval is often insufficient   |
-| **LangGraph**               | State machines, conditional edges, human-in-the-loop                    | Significant complexity overhead for a 3-tool linear agent; overkill for v1 |
+| Option                      | Pros                                                     | Cons                                                                       |
+| --------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| **LangChain `createAgent`** | Simplest API; handles tool protocols; built-in streaming | Less control over exact message flow; tied to LangChain's agent API        |
+| **Hand-rolled ReAct loop**  | Full control over every message and tool invocation      | Must maintain tool protocol compatibility across 3 providers (~500 lines)  |
+| **Simple RAG (no loop)**    | Simplest implementation, lowest latency                  | Cannot handle multi-step queries; single retrieval is often insufficient   |
+| **LangGraph state machine** | State machines, conditional edges, human-in-the-loop     | Significant complexity overhead for a 3-tool linear agent; overkill for v1 |
 
-LangChain's AgentExecutor is chosen because:
+LangChain's `createAgent` is chosen because:
 
 - **Tool protocol delegation.** The primary complexity in a multi-provider ReAct loop is translating tool calls and results into each provider's native format (Claude's `tool_use`/`tool_result` blocks vs OpenAI-compatible `tool` role messages). LangChain already handles this -- see ADR-003.
 - **ReAct is a natural fit.** The think → act → observe → repeat cycle maps directly to the research workflow: the agent reasons about what information it needs, calls a tool to get it, observes the result, and decides whether it has enough to answer.
-- **Built-in operational controls.** AgentExecutor provides `maxIterations` (step limiting) and `maxExecutionTime` (timeout) out of the box. Reimplementing these correctly -- especially timeout with proper cleanup -- is non-trivial.
-- **Error handling.** When a tool call fails (e.g., HN API timeout), AgentExecutor catches the error and passes it back to the model as an observation, allowing the agent to retry or adjust its approach. A hand-rolled loop must implement this recovery logic explicitly.
+- **Built-in streaming.** The agent's `.stream()` method with `streamMode: "values"` emits intermediate steps (tool calls, observations, final answer) as they happen, making SSE integration straightforward.
+- **Error handling.** When a tool call fails (e.g., HN API timeout), the agent catches the error and passes it back to the model as an observation, allowing the agent to retry or adjust its approach. A hand-rolled loop must implement this recovery logic explicitly.
 
 ### 2. Tool design: three focused tools
 
@@ -124,9 +124,9 @@ The agent operates within multiple safety boundaries:
 
 | Constraint            | Value              | Enforcement                                    |
 | --------------------- | ------------------ | ---------------------------------------------- |
-| Max steps per run     | 7                  | `AgentExecutor.maxIterations`                  |
-| Global timeout        | 60s                | `AgentExecutor.maxExecutionTime`               |
-| Concurrent agent runs | 5                  | Semaphore in RagService                        |
+| Max steps per run     | 7                  | `recursionLimit` in agent config               |
+| Global timeout        | 60s                | `AbortSignal.timeout()` passed to `.invoke()`  |
+| Concurrent agent runs | 5                  | Semaphore in AgentService                      |
 | Comments per story    | 30                 | Hard cap in `get_comments` tool implementation |
 | Token budget per tool | Provider-dependent | ChunkerService enforces per ADR-002            |
 | Query max length      | 500 chars          | Input validation in RagController              |
@@ -141,15 +141,15 @@ The agent operates within multiple safety boundaries:
 
 ### Positive
 
-- **Rapid development.** The AgentExecutor handles the ReAct loop, step limiting, timeout, and error recovery. The agent module's core logic is under 150 lines -- mostly tool definitions and system prompt.
+- **Rapid development.** `createAgent` handles the ReAct loop and error recovery. The agent module's core logic is under 150 lines -- mostly tool definitions and system prompt.
 - **Provider-agnostic.** The same agent code runs against Claude, Mistral, and Groq without modification. Tool protocol translation is LangChain's responsibility (see ADR-003).
-- **Battle-tested loop logic.** LangChain's AgentExecutor has been used in thousands of projects. Edge cases in the ReAct loop (tool call parsing failures, model refusals, empty responses) are handled by the library, not by custom code.
+- **Battle-tested loop logic.** LangChain's agent framework has been used in thousands of projects. Edge cases in the ReAct loop (tool call parsing failures, model refusals, empty responses) are handled by the library, not by custom code.
 - **Clean separation of concerns.** The agent module defines tools and the system prompt. ChunkerService handles token budgeting. CacheService handles response caching. RagController handles SSE streaming. No single module is overloaded.
 - **Observable execution.** The SSE streaming integration gives the frontend (and the developer) full visibility into the agent's reasoning process, which is critical for debugging and for the eval harness.
 
 ### Negative
 
-- **LangChain dependency.** The agent module is coupled to LangChain's agent APIs (`createReactAgent`, `AgentExecutor`, `DynamicTool`). If LangChain introduces breaking changes in these APIs, the agent module must be updated. This risk is shared with the LLM provider layer (see ADR-003).
+- **LangChain dependency.** The agent module is coupled to LangChain's agent APIs (`createAgent`, `tool`, `DynamicTool`). If LangChain introduces breaking changes in these APIs, the agent module must be updated. This risk is shared with the LLM provider layer (see ADR-003).
 - **Less control over message formatting.** The exact messages sent to the LLM are constructed by LangChain's agent internals, not by VoxPopuli. If a provider produces better results with a specific prompt format (e.g., Claude performs better with XML-structured tool results), customizing this requires working around LangChain's abstractions.
 - **Opaque debugging.** When the agent produces unexpected behavior (e.g., calling the same tool repeatedly, ignoring a tool result), diagnosing the issue requires understanding LangChain's internal state management, not just the provider's API.
 
