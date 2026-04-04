@@ -103,6 +103,7 @@
     "node-cache": "^5.1.2",
     "pino-http": "^11.0.0",
     "reflect-metadata": "^0.1.13",
-    "rxjs": "^7.8.0"
+    "rxjs": "^7.8.0",
+    "zod": "^4.3.6"
   }
 }
