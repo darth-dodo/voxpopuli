@@ -404,33 +404,34 @@ Epic (Linear Project or Cycle)
 
 **Goal:** The ReAct loop works end-to-end. Ask a question, get a sourced answer.
 **Demo:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
+**Status:** DONE -- 14 issues, 103 tests, live-tested with Mistral.
 
 #### Epic 3.1: ReAct Agent
 
-- **Story: ADR: ReAct agent design and tool selection strategy** (AI-146)
-- **Story: Define agent tools** (AI-116)
-- **Story: Write system prompt** (AI-117)
-- **Story: Implement AgentService.run()** (AI-118)
-  - ReAct loop: think -> act -> observe -> repeat
-  - Tool dispatch to HnService via `executeTool()`
-  - Chunk tool results via ChunkerService
-  - Build native tool_result messages via provider
-  - Max 7 steps, 60s timeout
-  - Concurrent run semaphore (max 5)
-  - Return `AgentResponse` with steps, sources, meta
-- **Story: Write AgentService integration tests** (AI-149)
+- **Story: ADR: ReAct agent design and tool selection strategy** (AI-146) -- DONE (`docs/adr/004-react-agent-design.md`)
+- **Story: Add trust-related shared types** (AI-159) -- DONE (`TrustMetadata`, `RewriteTrustMetadata`, `Claim` in shared-types)
+- **Story: Define agent tools** (AI-116) -- DONE (`search_hn`, `get_story`, `get_comments` via LangChain `tool()` helper with Zod schemas)
+- **Story: Write system prompt** (AI-117) -- DONE (claim taxonomy, contrarian search, honesty rules from product.md Section 13)
+- **Story: Implement AgentService.run()** (AI-118) -- DONE
+  - Uses LangChain `createAgent` (v1.2+) instead of `createReactAgent` + `AgentExecutor`
+  - Streaming via `.stream()` with `streamMode: "values"`
+  - Max 7 steps via `recursionLimit`, 60s timeout via `AbortSignal.timeout()`
+  - Concurrent run semaphore (max 5, simple counter)
+  - Returns `AgentResponse` with steps, sources, trust metadata
+- **Story: Implement trust metadata** (AI-160) -- DONE (source verification, recency, viewpoint diversity, Show HN detection, honesty flags)
+- **Story: Return partial results on LLM failure** (AI-164) -- DONE (returns collected data on mid-loop errors, clean error on first-call failure)
+- **Story: Add retry logic with exponential backoff** (AI-163) -- DONE (3 attempts, jitter, applied to Algolia + Firebase)
+- **Story: Write AgentService integration tests** (AI-149) -- DONE (6 tests: execution, concurrency, semaphore cleanup, prompt template, source extraction)
 
 #### Epic 3.2: RAG Endpoints
 
-- **Story: Implement RagController** (AI-119)
-  - `POST /api/rag/query` -- blocking, returns full AgentResponse
-  - `GET /api/rag/stream` -- SSE with thought/action/observation/answer/error events
-  - `GET /api/health` -- provider, cache stats, uptime
-  - Rate limiting middleware (10/min per IP, 60/min global)
-  - Query result caching (10 min TTL)
-  - Input validation (query required, max 500 chars)
-- **Story: Implement global exception filter** (AI-154)
-- **Story: Write RagController integration tests** (AI-150)
+- **Story: Implement RagController** (AI-119) -- DONE
+  - `POST /api/rag/query` -- blocking, cached (10 min TTL), returns full AgentResponse
+  - `GET /api/rag/stream` -- SSE with thought/action/observation/answer/error events (post-completion replay model)
+  - Rate limiting: global 60 req/min (timestamp array, no per-IP tracking)
+  - Input validation via class-validator DTO + global ValidationPipe
+- **Story: Implement global exception filter** (AI-154) -- DONE (400/429/502/500 mapping, structured error body, request context logging)
+- **Story: Write RagController integration tests** (AI-150) -- DONE (7 tests: POST cached/uncached, SSE events, error events, input validation, rate limiting)
 
 ---
 
