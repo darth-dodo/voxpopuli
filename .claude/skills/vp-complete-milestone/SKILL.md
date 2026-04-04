@@ -48,6 +48,15 @@ npx nx affected:lint     # No new lint errors
 - Query: `project:VoxPopuli milestone:"M{N}: ..."` to find ALL issues (keyword search can miss some)
 - Close **every** issue including epics, implementation tasks, test tasks, and ADRs
 - Watch for individual sub-tasks (e.g., per-provider issues) that keyword search may miss
+- **Post drift comments** on every issue where implementation differs from spec. Format:
+
+  ```markdown
+  ## Implementation Drift Notes
+
+  **{What changed}:** {description of what was implemented instead and why}
+  ```
+
+  Skip issues with no meaningful drift. Use `save_comment(issueId, body)` in parallel.
 
 ### 3. Documentation (use parallel subagents)
 
