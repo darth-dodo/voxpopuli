@@ -1,6 +1,6 @@
 # VoxPopuli
 
-> _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
+> _"Voice of the People."_
 
 **Ask anything. Get the internet's smartest crowd-sourced answer, with receipts.**
 
@@ -220,14 +220,14 @@ See [product.md](product.md) for the full product specification and [architectur
 
 ## Project Status
 
-| Milestone                 | Status      | What it delivers                                        |
-| ------------------------- | ----------- | ------------------------------------------------------- |
-| M1: Scaffold & Data Layer | Done        | Nx monorepo, shared types, HN data flowing with caching |
-| M2: LLM & Chunker         | In Progress | Triple-stack LLM providers, content token budgeting     |
-| M3: Agent Core            | Planned     | ReAct reasoning loop, sourced answers via API           |
-| M4: Frontend              | Planned     | Chat UI with live reasoning visualization               |
-| M5: Voice Output          | Planned     | ElevenLabs TTS with podcast-style narration             |
-| M6: Eval Harness          | Planned     | 20 test queries, automated scoring                      |
+| Milestone                 | Status  | What it delivers                                                   |
+| ------------------------- | ------- | ------------------------------------------------------------------ |
+| M1: Scaffold & Data Layer | Done    | Nx monorepo, shared types, HN data flowing with caching            |
+| M2: LLM & Chunker         | Done    | Triple-stack LLM providers, chunker with token budgeting, 51 tests |
+| M3: Agent Core            | Up Next | ReAct reasoning loop, sourced answers via API                      |
+| M4: Frontend              | Planned | Chat UI with live reasoning visualization                          |
+| M5: Voice Output          | Planned | ElevenLabs TTS with podcast-style narration                        |
+| M6: Eval Harness          | Planned | 20 test queries, automated scoring                                 |
 
 ---
 

@@ -102,17 +102,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology         | Version                   |
-| --------------- | ------------------ | ------------------------- |
-| Monorepo        | Nx                 | Latest                    |
-| Backend         | NestJS             | 10+                       |
-| Frontend        | Angular            | 17+                       |
-| LLM (quality)   | Claude Sonnet 4    | Anthropic SDK             |
-| LLM (cost)      | Mistral Large 3    | Mistral SDK               |
-| LLM (speed/dev) | Groq Llama 3.3 70B | OpenAI-compat             |
-| TTS             | ElevenLabs         | elevenlabs SDK            |
-| Cache           | node-cache         | Latest                    |
-| Shared Types    | TypeScript lib     | `@voxpopuli/shared-types` |
+| Layer           | Technology         | Version                               |
+| --------------- | ------------------ | ------------------------------------- |
+| Monorepo        | Nx                 | Latest                                |
+| Backend         | NestJS             | 10+                                   |
+| Frontend        | Angular            | 17+                                   |
+| LLM (quality)   | Claude Sonnet 4    | LangChain.js (`@langchain/anthropic`) |
+| LLM (cost)      | Mistral Large 3    | LangChain.js (`@langchain/mistralai`) |
+| LLM (speed/dev) | Groq Llama 3.3 70B | LangChain.js (`@langchain/groq`)      |
+| TTS             | ElevenLabs         | elevenlabs SDK                        |
+| Cache           | node-cache         | Latest                                |
+| Shared Types    | TypeScript lib     | `@voxpopuli/shared-types`             |
 
 ### 1.4 Project Structure
 
@@ -184,28 +184,56 @@ Two HTTP clients behind one service, all calls wrapped with CacheService.
 
 ### 2.4 ChunkerModule
 
-Transforms raw HN data into token-budgeted context for the LLM.
+Transforms raw HN data into token-budgeted context for the LLM. Implemented in M2.
 
-| Method                           | Input                 | Output                        |
-| -------------------------------- | --------------------- | ----------------------------- |
-| `chunkStories(hits[])`           | Algolia search hits   | `StoryChunk[]`                |
-| `chunkComments(items[])`         | Firebase comment tree | `CommentChunk[]`              |
-| `buildContext(chunks[], budget)` | Mixed chunks          | `ContextWindow` (fits budget) |
-| `formatForPrompt(context)`       | ContextWindow         | String (ready for LLM)        |
+| Method                                        | Input                          | Output                        |
+| --------------------------------------------- | ------------------------------ | ----------------------------- |
+| `chunkStories(hits[])`                        | Algolia `HnSearchHit[]`        | `StoryChunk[]`                |
+| `chunkComments(comments[])`                   | Firebase `HnComment[]`         | `CommentChunk[]`              |
+| `buildContext(stories[], comments[], budget)` | Story + comment chunks, budget | `ContextWindow` (fits budget) |
+| `formatForPrompt(context)`                    | `ContextWindow`                | String (ready for LLM)        |
+| `estimateTokens(text)`                        | Plain text                     | Token count estimate          |
+| `stripHtml(html)`                             | Raw HTML string                | Cleaned text                  |
 
-**Token budgets:** Claude 80k, Mistral 100k, Groq 50k. Priority: metadata > story text > top-level comments > nested comments.
+**Token counting:** Character-based estimate (1 token ~ 4 characters). Simple and dependency-free; adequate for budgeting purposes without requiring tiktoken.
+
+**HTML stripping:** Preserves `<code>` and `<pre>` blocks by converting them to markdown fenced code blocks. Converts `<a>` tags to markdown links. Decodes common HTML entities.
+
+**Priority ordering in `buildContext()`:**
+
+1. Story metadata (title, author, points) -- always included first
+2. Story text bodies (Ask HN / Show HN) -- added if budget allows
+3. Top-level comments (depth 0-1) -- highest priority comments
+4. Nested comments (depth 2+) -- included with remaining budget
+
+**Token budgets** (passed by caller, sourced from provider): Claude 80k, Mistral 100k, Groq 50k.
+
+**Prompt format** (`formatForPrompt()`): Renders `=== STORIES ===` and `=== COMMENTS ===` sections with story IDs, metadata, and indented comments by depth. Appends a truncation notice when the context window was trimmed.
+
+**Tests:** 57 unit tests covering chunking, HTML stripping, token estimation, context assembly, and prompt formatting. See `docs/adr/002-chunker-strategy.md` for design rationale.
 
 ### 2.5 LlmModule
 
-Provider interface + facade pattern. See product.md Section 5 for full interface definition and native tool protocol details.
+Provider interface + facade pattern, implemented via LangChain.js. Implemented in M2.
 
-| Component              | Responsibility                                                 |
-| ---------------------- | -------------------------------------------------------------- |
-| `LlmProviderInterface` | Abstract contract (chat, formatTools, buildToolResultMessage)  |
-| `ClaudeProvider`       | Anthropic SDK, tool_use/tool_result content blocks             |
-| `MistralProvider`      | Mistral SDK, OpenAI-compatible tool calls                      |
-| `GroqProvider`         | OpenAI-compatible SDK, tool role messages                      |
-| `LlmService`           | Facade: reads `LLM_PROVIDER` env, delegates to active provider |
+All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangChain handles tool-calling protocols (tool_use/tool_result content blocks, OpenAI-compatible function calls) internally, so the provider interface is simpler than originally specified -- no `formatTools()` or `buildToolResultMessage()` methods are needed.
+
+| Component              | Responsibility                                                                      |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                   |
+| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-sonnet-4-20250514` (200k context)                  |
+| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                      |
+| `GroqProvider`         | `ChatGroq` wrapping `llama-3.3-70b-versatile` (128k context)                        |
+| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override |
+
+**Key implementation details:**
+
+- **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. The `ChatModel` instance within each provider is also lazily created on the first `getModel()` call.
+- **API key validation:** Each provider validates its API key at construction time and throws immediately if missing.
+- **Per-request override:** `LlmService.getModel(providerOverride?)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call.
+- **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `groq`, `claude`, `mistral`.
+
+**Tests:** 22 unit tests covering provider resolution, lazy instantiation, API key validation, override support, and error handling. See `docs/adr/003-llm-provider-architecture.md` for design rationale.
 
 ### 2.6 AgentModule
 
@@ -275,7 +303,7 @@ Epic (Linear Project or Cycle)
 
 ---
 
-### Milestone 1: Scaffold & Data Layer
+### Milestone 1: Scaffold & Data Layer -- COMPLETE
 
 **Goal:** Nx monorepo running, shared types defined, HN data flowing with caching.
 **Demo:** `curl` an internal endpoint that returns cached HN search results.
@@ -339,35 +367,36 @@ Epic (Linear Project or Cycle)
 
 ---
 
-### Milestone 2: LLM & Chunker
+### Milestone 2: LLM & Chunker -- COMPLETE
 
 **Goal:** Any of the 3 LLM providers can receive a prompt and return a response. Content fits token budgets.
 **Demo:** A script sends an HN search result through the chunker and gets an LLM summary.
 
-#### Epic 2.1: Content Chunker
+#### Epic 2.1: Content Chunker -- COMPLETE
 
-- **Story: ADR: Chunker strategy and token budget design** (AI-144)
-- **Story: Implement ChunkerService** (AI-108)
+- **Story: ADR: Chunker strategy and token budget design** (AI-144) -- DONE
+  - Documented in `docs/adr/002-chunker-strategy.md`
+- **Story: Implement ChunkerService** (AI-108) -- DONE
   - `chunkStories()` -- extract metadata, strip HTML, count tokens
-  - `chunkComments()` -- flatten tree, assign depth, strip HTML
-  - `buildContext()` -- fit chunks into per-provider token budget
-  - `formatForPrompt()` -- render context as LLM-ready string
-  - Token counting utility (tiktoken or character-based estimate)
-- **Story: Write ChunkerService unit tests** (AI-148)
+  - `chunkComments()` -- filter deleted/dead, strip HTML, preserve depth
+  - `buildContext()` -- 4-phase priority assembly (metadata, text, top-level comments, nested)
+  - `formatForPrompt()` -- render context as LLM-ready string with `=== STORIES ===` / `=== COMMENTS ===` sections
+  - `estimateTokens()` -- character-based estimate (1 token ~ 4 chars), no tiktoken dependency
+  - `stripHtml()` -- preserves `<code>`/`<pre>` as markdown fenced code blocks, converts `<a>` to markdown links
+- **Story: Write ChunkerService unit tests** (AI-148) -- DONE (57 tests)
 
-#### Epic 2.2: LLM Provider Stack
+#### Epic 2.2: LLM Provider Stack -- COMPLETE
 
-- **Story: ADR: LLM provider architecture and tool protocol design** (AI-145)
-- **Story: Define LlmProviderInterface** (AI-109)
-
-  - `chat()`, `formatTools()`, `buildToolResultMessage()`
-  - Internal `LlmMessage` and `LlmResponse` types
-  - `ChatOptions` type (temperature, maxTokens, tools)
-
-- **Story: Implement GroqProvider** (AI-110)
-- **Story: Implement ClaudeProvider** (AI-111)
-- **Story: Implement MistralProvider** (AI-112)
-- **Story: Implement LlmService facade** (AI-113)
+- **Story: ADR: LLM provider architecture and tool protocol design** (AI-145) -- DONE
+  - Documented in `docs/adr/003-llm-provider-architecture.md`
+- **Story: Define LlmProviderInterface** (AI-109) -- DONE
+  - Simplified from original spec: `{ name, maxContextTokens, getModel(): BaseChatModel }`
+  - `chat()`, `formatTools()`, `buildToolResultMessage()` not needed -- LangChain.js handles tool protocols internally
+  - No separate `ChatOptions`, `LlmMessage`, or `LlmResponse` types needed at the provider level
+- **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `llama-3.3-70b-versatile`, 128k)
+- **Story: Implement ClaudeProvider** (AI-111) -- DONE (`ChatAnthropic`, `claude-sonnet-4-20250514`, 200k)
+- **Story: Implement MistralProvider** (AI-112) -- DONE (`ChatMistralAI`, `mistral-large-latest`, 262k)
+- **Story: Implement LlmService facade** (AI-113) -- DONE (lazy instantiation, per-request override, 22 tests)
 
 ---
 
@@ -502,17 +531,17 @@ Epic (Linear Project or Cycle)
 
 ```mermaid
 graph LR
-    M1["M1: Scaffold<br/>& Data Layer"] --> M2["M2: LLM<br/>& Chunker"]
+    M1["M1: Scaffold<br/>& Data Layer<br/>COMPLETE"] --> M2["M2: LLM<br/>& Chunker<br/>COMPLETE"]
     M2 --> M3["M3: Agent<br/>Core"]
     M3 --> M4["M4: Frontend"]
     M3 --> M5["M5: Voice<br/>Output"]
     M3 --> M6["M6: Eval<br/>Harness"]
     M4 --> M5
 
-    style M1 fill:#dbeafe,stroke:#1e40af
-    style M2 fill:#dbeafe,stroke:#1e40af
+    style M1 fill:#d1fae5,stroke:#065f46
+    style M2 fill:#d1fae5,stroke:#065f46
     style M3 fill:#fef3c7,stroke:#92400e
-    style M4 fill:#d1fae5,stroke:#065f46
+    style M4 fill:#dbeafe,stroke:#1e40af
     style M5 fill:#ede9fe,stroke:#5b21b6
     style M6 fill:#fce7f3,stroke:#be185d
 ```
@@ -521,20 +550,22 @@ graph LR
 
 **Parallel after M3:** M5 (voice) and M6 (evals) can run in parallel with M4, but M5's frontend depends on M4.
 
+**Current status:** M1 and M2 complete. M3 (Agent Core) is next on the critical path.
+
 ---
 
 ## 5. Implementation Order (Solo Dev)
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone                 | Stories | Depends On |
-| ----- | ------------------------- | ------- | ---------- |
-| 1     | M1: Scaffold & Data Layer | 16      | --         |
-| 2     | M2: LLM & Chunker         | 8       | M1         |
-| 3     | M3: Agent Core            | 8       | M2         |
-| 4     | M6: Eval Harness          | 3       | M3         |
-| 5     | M4: Frontend              | 6       | M3         |
-| 6     | M5: Voice Output          | 5       | M3, M4     |
+| Order | Milestone                 | Stories | Depends On | Status      |
+| ----- | ------------------------- | ------- | ---------- | ----------- |
+| 1     | M1: Scaffold & Data Layer | 16      | --         | COMPLETE    |
+| 2     | M2: LLM & Chunker         | 8       | M1         | COMPLETE    |
+| 3     | M3: Agent Core            | 8       | M2         | Not started |
+| 4     | M6: Eval Harness          | 3       | M3         | Not started |
+| 5     | M4: Frontend              | 6       | M3         | Not started |
+| 6     | M5: Voice Output          | 5       | M3, M4     | Not started |
 
 **Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
 
@@ -566,23 +597,27 @@ PORT=3000
 
 ## 7. Key Technical Constraints
 
-| Constraint               | Value        | Rationale                  |
-| ------------------------ | ------------ | -------------------------- |
-| Max agent steps          | 7            | Cost + latency cap         |
-| Agent timeout            | 60s          | Prevent runaway loops      |
-| Concurrent agents        | 5            | Prevent cost blowout       |
-| Comment cap              | 30 per story | Firebase API latency       |
-| Query max length         | 500 chars    | Input sanity               |
-| Rate limit (per IP)      | 10 req/min   | Abuse prevention           |
-| Rate limit (global)      | 60 req/min   | Cost protection            |
-| Cache TTL (search)       | 15 min       | Freshness vs cost          |
-| Cache TTL (stories)      | 1 hour       | Stable data                |
-| Cache TTL (comments)     | 30 min       | Semi-stable data           |
-| Cache TTL (query result) | 10 min       | Token savings              |
-| Token budget (Claude)    | 80k of 200k  | Conservative headroom      |
-| Token budget (Mistral)   | 100k of 262k | Conservative headroom      |
-| Token budget (Groq)      | 50k of 128k  | Conservative headroom      |
-| TTS max chars            | 2500         | ElevenLabs streaming limit |
+| Constraint               | Value        | Rationale                                |
+| ------------------------ | ------------ | ---------------------------------------- |
+| Max agent steps          | 7            | Cost + latency cap                       |
+| Agent timeout            | 60s          | Prevent runaway loops                    |
+| Concurrent agents        | 5            | Prevent cost blowout                     |
+| Comment cap              | 30 per story | Firebase API latency                     |
+| Query max length         | 500 chars    | Input sanity                             |
+| Rate limit (per IP)      | 10 req/min   | Abuse prevention                         |
+| Rate limit (global)      | 60 req/min   | Cost protection                          |
+| Cache TTL (search)       | 15 min       | Freshness vs cost                        |
+| Cache TTL (stories)      | 1 hour       | Stable data                              |
+| Cache TTL (comments)     | 30 min       | Semi-stable data                         |
+| Cache TTL (query result) | 10 min       | Token savings                            |
+| Context window (Claude)  | 200k tokens  | `claude-sonnet-4-20250514` via LangChain |
+| Context window (Mistral) | 262k tokens  | `mistral-large-latest` via LangChain     |
+| Context window (Groq)    | 128k tokens  | `llama-3.3-70b-versatile` via LangChain  |
+| Token budget (Claude)    | 80k of 200k  | Conservative headroom                    |
+| Token budget (Mistral)   | 100k of 262k | Conservative headroom                    |
+| Token budget (Groq)      | 50k of 128k  | Conservative headroom                    |
+| Token estimation         | 1 char / 4   | Character-based, no tiktoken dependency  |
+| TTS max chars            | 2500         | ElevenLabs streaming limit               |
 
 ---
 
@@ -614,3 +649,10 @@ A story is **not done** until all of the following are met:
 | TTS module (Section 2.8)    | Voice output (Sections 3.8, 18)                                     |
 | Constraints (Section 7)     | NFRs (Section 13), Rate limiting (Section 3.7)                      |
 | Milestones (Section 3)      | Roadmap (Section 14)                                                |
+
+### ADRs
+
+| ADR                                         | Milestone | Decision                                                  |
+| ------------------------------------------- | --------- | --------------------------------------------------------- |
+| `docs/adr/002-chunker-strategy.md`          | M2        | Token budgeting approach and priority ordering            |
+| `docs/adr/003-llm-provider-architecture.md` | M2        | LangChain.js wrapper pattern, lazy provider instantiation |
