@@ -1,10 +1,10 @@
 # VoxPopuli
 
-> _"Sapientiam persequere."_ - Pursue wisdom.
+> _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
 
 **Ask anything. Get the internet's smartest crowd-sourced answer, with receipts.**
 
-VoxPopuli turns 18+ years of [Hacker News](https://news.ycombinator.com) discussion into answers you can actually use. Ask a question. The agent searches stories, reads comment threads, cross-references sources, and delivers a synthesized answer -- cited, sourced, and transparent.
+VoxPopuli is an AI research agent that turns 18+ years of [Hacker News](https://news.ycombinator.com) discussion into answers you can actually use. It searches stories, reads comment threads, cross-references sources, and delivers a synthesized answer -- cited, sourced, and transparent. Then reads it to you like a podcast.
 
 ---
 
@@ -20,52 +20,44 @@ Hacker News is one of the richest knowledge bases on the internet. Engineers, fo
 
 **The knowledge exists. The retrieval doesn't.**
 
-## The Solution
+---
 
-VoxPopuli is an autonomous research agent. It doesn't just search -- it _reasons_.
+## What VoxPopuli Does
+
+### It reasons, not just retrieves
+
+Most AI search tools: search once, stuff context, generate. VoxPopuli runs a multi-step reasoning loop. It reformulates queries based on initial results, decides whether to dive into comments, and cross-references multiple threads before answering.
 
 ```
 You:   "Is SQLite good enough for production web apps?"
 
 VoxPopuli:
-  -> Searches "SQLite production web app" (50+ point stories)
-  -> Searches "SQLite scaling limitations" (sorted by date)
-  -> Reads 28 comments from the highest-signal thread
-  -> Synthesizes: "HN is broadly positive, with caveats around
-     write-heavy workloads. Specific projects like Litestream
-     and Turso were frequently cited..."
-  -> Links to 4 HN threads with attributed opinions
+  Step 1 -> Searches "SQLite production web app" (50+ point stories)
+  Step 2 -> Searches "SQLite scaling limitations" (sorted by date)
+  Step 3 -> Reads 28 comments from the highest-signal thread
+  Step 4 -> Synthesizes answer from 3 sources + 28 comments
+
+  "HN is broadly positive, with caveats around write-heavy workloads.
+   Specific projects like Litestream and Turso were frequently cited..."
 ```
 
-Every claim traces back to a specific story or comment. No hallucination. If the agent can't find it, it says so.
+### You see the thinking
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as Angular UI
-    participant API as NestJS API
-    participant LLM as LLM Provider
-    participant HN as HN APIs
+Every reasoning step streams to the UI in real time. You see what the agent searches, what it reads, and why it decides to dig deeper. Full transparency. No black box.
 
-    User->>UI: "Is SQLite good for production?"
-    UI->>API: POST /api/rag/query
+### Every answer has receipts
 
-    loop ReAct Loop (max 7 steps)
-        API->>LLM: What should I do next?
-        LLM-->>API: search_hn("SQLite production")
-        API->>HN: Algolia search
-        HN-->>API: 10 stories
-        API->>LLM: Here are the results...
-        LLM-->>API: get_comments(story: 38543832)
-        API->>HN: Firebase comment tree
-        HN-->>API: 30 comments
-        API->>LLM: Here are the comments...
-        LLM-->>API: I have enough. Here's the answer.
-    end
+Story titles, authors, point counts, direct HN links, and commenter usernames for attributed opinions. You can verify anything the agent tells you.
 
-    API-->>UI: Answer + sources + reasoning steps
-    UI-->>User: Rendered answer with citations
-```
+### Listen to your answers
+
+Click **Listen** on any answer and hear it narrated as a podcast. VoxPopuli rewrites the answer into conversational speech, streams it through ElevenLabs TTS, and plays it back with a signature narrator voice. Pour your coffee, put on your headphones, and catch up on what HN thinks.
+
+### Trust indicators at a glance
+
+Every answer comes with trust metadata: how many sources were verified, how recent they are, whether contrarian views were found, and whether Show HN posts (with author bias) are flagged. The agent distinguishes evidence from anecdote from opinion -- and tells you which is which.
+
+---
 
 ## Who Is This For?
 
@@ -77,61 +69,73 @@ sequenceDiagram
 | A **job seeker**                    | "What companies is HN excited about right now?"                    |
 | Just **curious**                    | "What's the most controversial HN post about remote work?"         |
 
-## What Makes It Different
+<details>
+<summary><strong>20 example queries</strong></summary>
 
-### It reasons, not just retrieves
+**Engineers:** Bun vs Deno vs Node for backends, Is Drizzle ORM production-ready, Best database for time-series IoT data, Monorepos vs polyrepos at scale.
 
-Most RAG systems: search once, stuff context, generate. VoxPopuli runs a multi-step reasoning loop. It reformulates queries based on initial results, decides whether to dive into comments, and cross-references multiple threads before answering. This produces dramatically better answers.
+**Founders:** Competitors to Notion and their reception, What developers hate about Stripe, Demand for open-source Figma alternative, Startup ideas HN keeps asking for.
 
-### You see the thinking
+**Researchers:** AI agent sentiment over 12 months, Emerging programming languages, Remote work opinions post-2025, HN reaction to every major OpenAI announcement.
 
-Every reasoning step streams to the UI in real time. You see what the agent searches, what it reads, and why it decides to dig deeper. Full transparency. No black box.
+**Career:** Best companies to work at per HN, Is Rust worth learning in 2026, Senior engineers on moving into management.
 
-### Every answer has receipts
+**Deep dives:** Most controversial HN post ever, Best system design books, Show HN projects that became real businesses, CS degree debate, The Node.js/io.js drama.
 
-Story titles, authors, point counts, direct HN links, and commenter usernames for attributed opinions. You can verify anything the agent tells you.
+</details>
 
-### Three LLM providers, one interface
-
-Pick your tradeoff:
-
-| Provider                 | Best for                  | Cost/query      |
-| ------------------------ | ------------------------- | --------------- |
-| **Groq** (Llama 3.3 70B) | Speed + free dev tier     | $0 - $0.016     |
-| **Mistral** Large 3      | Cost-optimized production | $0.003 - $0.015 |
-| **Claude** Sonnet 4      | Best synthesis quality    | $0.02 - $0.08   |
-
-Switch with a single environment variable. No code changes.
+---
 
 ## How It Works
 
-```mermaid
-flowchart LR
-    Q([Ask a question]) --> T
-
-    subgraph ReAct Loop
-        direction LR
-        T["**THINK**\nWhat do I need?"] --> A["**ACT**\nSearch, fetch\ncomments"]
-        A --> O["**OBSERVE**\nParse results"]
-        O -->|need more| T
-    end
-
-    O -->|enough signal| R([Sourced, cited answer])
-
-    style Q fill:#f8f9fa,stroke:#343a40,color:#343a40
-    style R fill:#d1fae5,stroke:#065f46,color:#065f46
-    style T fill:#dbeafe,stroke:#1e40af,color:#1e40af
-    style A fill:#fef3c7,stroke:#92400e,color:#92400e
-    style O fill:#ede9fe,stroke:#5b21b6,color:#5b21b6
+```
+  Ask a question
+       |
+       v
+  +-----------+     +-----------+     +-----------+
+  |   THINK   | --> |    ACT    | --> |  OBSERVE  |
+  | What do I |     | Search HN |     | Parse and |
+  |   need?   |     | or fetch  |     |  evaluate |
+  +-----------+     | comments  |     |  results  |
+       ^            +-----------+     +-----+-----+
+       |                                    |
+       +------------ need more? ------------+
+                                            |
+                                     enough signal
+                                            |
+                                            v
+                                  Sourced, cited answer
+                                            |
+                                            v
+                                    [> Listen] (optional)
+                                            |
+                                            v
+                                   Podcast-style narration
 ```
 
 The agent loops up to 7 times, using three tools:
 
 - **Search HN** -- query stories with filters (points, date, relevance)
-- **Get Story** -- fetch full story details
+- **Get Story** -- fetch full story details from Firebase
 - **Get Comments** -- fetch comment trees (up to 30 comments, 3 levels deep)
 
 The LLM decides which to call, when, and in what order.
+
+---
+
+## Three Providers, One Interface
+
+Pick your tradeoff. Switch with a single environment variable.
+
+| Provider                 | Best for                  | Speed         | Cost/query      |
+| ------------------------ | ------------------------- | ------------- | --------------- |
+| **Groq** (Llama 3.3 70B) | Development + free tier   | 300+ tokens/s | $0 - $0.016     |
+| **Mistral** Large 3      | Cost-optimized production | ~80 tokens/s  | $0.003 - $0.015 |
+| **Claude** Sonnet 4      | Best synthesis quality    | ~50 tokens/s  | $0.02 - $0.08   |
+
+All three use native tool calling protocols via [LangChain.js](https://js.langchain.com/). Zero code changes to switch.
+
+---
 
 ## Getting Started
 
@@ -139,25 +143,30 @@ The LLM decides which to call, when, and in what order.
 
 - Node.js >= 18, npm >= 9
 - At least one LLM API key:
-  - [Groq](https://console.groq.com) (free tier available)
+  - [Groq](https://console.groq.com) (free tier available -- recommended for development)
   - [Mistral](https://console.mistral.ai)
   - [Anthropic](https://console.anthropic.com)
+- Optional: [ElevenLabs](https://elevenlabs.io) API key for voice output
 
 ### Setup
 
 ```bash
-git clone https://github.com/your-username/voxpopuli.git
+git clone https://github.com/darth-dodo/voxpopuli.git
 cd voxpopuli
 npm install
 
 cp .env.example .env
-# Add at least one API key, set LLM_PROVIDER
+# Add at least one LLM API key, set LLM_PROVIDER=groq
+```
 
+### Run
+
+```bash
 npx nx serve api     # Backend on :3000
 npx nx serve web     # Frontend on :4200
 ```
 
-### Try It
+### Try it
 
 ```bash
 curl -X POST http://localhost:3000/api/rag/query \
@@ -165,81 +174,62 @@ curl -X POST http://localhost:3000/api/rag/query \
   -d '{"query": "What does HN think about the best programming fonts?"}'
 ```
 
+---
+
 ## What You Get Back
 
-```json
-{
-  "answer": "HN is broadly positive on Tailwind v4, with...",
-  "steps": ["searched 'Tailwind v4'", "read 28 comments", "..."],
-  "sources": [{ "title": "Tailwind CSS v4.0", "points": 842, "url": "https://..." }],
-  "meta": {
-    "provider": "groq",
-    "totalTokens": 24500,
-    "durationMs": 6200,
-    "cached": false
-  }
-}
-```
+Every response includes:
 
-Every response includes the full reasoning chain, deduplicated sources with HN links, and metadata showing which provider was used, how many tokens were consumed, and whether the result was cached.
+- **Answer** -- synthesized, cited, with trust indicators
+- **Reasoning steps** -- the full chain of what the agent searched, read, and decided
+- **Sources** -- deduplicated story list with titles, authors, points, and HN links
+- **Trust metadata** -- source verification, recency, viewpoint diversity, bias flags
+- **Meta** -- which provider was used, tokens consumed, latency, cache status
 
-## Under the Hood
+---
 
-```mermaid
-graph TB
-    subgraph Frontend
-        UI["Angular 17+\nChat UI"]
-    end
+## Voice Output
 
-    subgraph Backend ["NestJS API"]
-        RAG["RAG Controller\nPOST /query | GET /stream"]
-        AGENT["Agent Service\nReAct Loop"]
-        CACHE["Cache Service\nnode-cache"]
-        CHUNK["Chunker Service\nToken Budgeting"]
-        HN["HN Service"]
-        LLM["LLM Service"]
-    end
+Click **Listen** on any answer. VoxPopuli:
 
-    subgraph Providers ["LLM Providers"]
-        CLAUDE["Claude\nSonnet 4"]
-        MISTRAL["Mistral\nLarge 3"]
-        GROQ["Groq\nLlama 3.3 70B"]
-    end
+1. Rewrites the answer into a podcast-style script (strips markdown, naturalizes citations, adds conversational transitions)
+2. Streams it through ElevenLabs TTS with a signature narrator voice
+3. Plays audio in-browser with speed controls (0.75x - 1.5x) and MP3 download
 
-    subgraph External ["External APIs"]
-        ALGOLIA["HN Algolia\nSearch"]
-        FIREBASE["HN Firebase\nItems + Comments"]
-    end
+The sign-off: _"That's the signal from Hacker News. I'm VoxPopuli."_
 
-    UI <-->|SSE / HTTP| RAG
-    RAG --> AGENT
-    AGENT --> HN
-    AGENT --> CHUNK
-    AGENT --> LLM
-    HN --> CACHE
-    HN --> ALGOLIA
-    HN --> FIREBASE
-    LLM --> CLAUDE
-    LLM --> MISTRAL
-    LLM --> GROQ
+---
 
-    style Frontend fill:#dbeafe,stroke:#1e40af,color:#1e40af
-    style Backend fill:#f8f9fa,stroke:#343a40,color:#343a40
-    style Providers fill:#fef3c7,stroke:#92400e,color:#92400e
-    style External fill:#ede9fe,stroke:#5b21b6,color:#5b21b6
-```
+## Architecture
 
-| Layer     | Technology                                              |
-| --------- | ------------------------------------------------------- |
-| Monorepo  | Nx                                                      |
-| Backend   | NestJS (TypeScript)                                     |
-| Frontend  | Angular 17+ (standalone components, signals)            |
-| LLM       | Claude / Mistral / Groq via provider interface          |
-| Caching   | node-cache (in-memory, TTL-based)                       |
-| Data      | HN Algolia API (search) + Firebase API (items/comments) |
-| Streaming | Server-Sent Events                                      |
+| Layer        | Technology                                              |
+| ------------ | ------------------------------------------------------- |
+| Monorepo     | Nx                                                      |
+| Backend      | NestJS (TypeScript)                                     |
+| Frontend     | Angular 17+ (standalone components, signals)            |
+| LLM          | Claude / Mistral / Groq via LangChain.js                |
+| Voice        | ElevenLabs TTS (Multilingual v2)                        |
+| Caching      | node-cache (in-memory, TTL-based)                       |
+| Data         | HN Algolia API (search) + Firebase API (items/comments) |
+| Streaming    | Server-Sent Events (SSE)                                |
+| Shared types | `@voxpopuli/shared-types` (single source of truth)      |
 
-See [product.md](product.md) for the full product specification and [architecture.md](architecture.md) for the technical blueprint and implementation plan.
+See [product.md](product.md) for the full product specification and [architecture.md](architecture.md) for the technical blueprint.
+
+---
+
+## Project Status
+
+| Milestone                 | Status      | What it delivers                                        |
+| ------------------------- | ----------- | ------------------------------------------------------- |
+| M1: Scaffold & Data Layer | Done        | Nx monorepo, shared types, HN data flowing with caching |
+| M2: LLM & Chunker         | In Progress | Triple-stack LLM providers, content token budgeting     |
+| M3: Agent Core            | Planned     | ReAct reasoning loop, sourced answers via API           |
+| M4: Frontend              | Planned     | Chat UI with live reasoning visualization               |
+| M5: Voice Output          | Planned     | ElevenLabs TTS with podcast-style narration             |
+| M6: Eval Harness          | Planned     | 20 test queries, automated scoring                      |
+
+---
 
 ## License
 
