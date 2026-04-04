@@ -1,5 +1,12 @@
 # VoxPopuli
 
+[![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green)](https://nodejs.org)
+[![NestJS](https://img.shields.io/badge/NestJS-11-red)](https://nestjs.com)
+[![Angular](https://img.shields.io/badge/Angular-17%2B-dd0031)](https://angular.dev)
+
 > _"Voice of the People."_
 
 **Ask anything. Get the internet's smartest crowd-sourced answer, with receipts.**

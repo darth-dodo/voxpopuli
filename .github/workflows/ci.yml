@@ -55,7 +55,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: nrwl/nx-set-shas@v4
-      - run: npx nx affected -t test
+      - run: npx nx affected -t test -- --coverage
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unittests
+          fail_ci_if_error: false
 
   format:
     runs-on: ubuntu-latest
