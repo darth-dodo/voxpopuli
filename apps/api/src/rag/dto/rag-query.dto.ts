@@ -4,7 +4,7 @@ import { IsString, IsOptional, IsNumber, MaxLength, Min, Max } from 'class-valid
 export class RagQueryDto {
   @IsString()
   @MaxLength(500)
-  query: string;
+  query!: string;
 
   @IsOptional()
   @IsNumber()

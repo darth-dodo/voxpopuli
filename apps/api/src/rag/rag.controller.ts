@@ -1,7 +1,6 @@
 import {
   Controller,
   Post,
-  Get,
   Body,
   Query,
   Sse,
@@ -12,8 +11,8 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { Observable, from, of, concat } from 'rxjs';
-import { mergeMap, map, catchError } from 'rxjs/operators';
+import { Observable, from, of } from 'rxjs';
+import { mergeMap, catchError } from 'rxjs/operators';
 import type { AgentResponse } from '@voxpopuli/shared-types';
 import { AgentService } from '../agent/agent.service';
 import { CacheService } from '../cache/cache.service';

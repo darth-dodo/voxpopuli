@@ -92,7 +92,8 @@ export class AgentService {
       try {
         for await (const event of stream) {
           const messages = event.messages ?? [];
-          const lastMsg = messages[messages.length - 1];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const lastMsg = messages[messages.length - 1] as any;
           if (!lastMsg) continue;
 
           // Tool call — record as action step
