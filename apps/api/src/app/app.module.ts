@@ -7,6 +7,8 @@ import { validate } from '../config/env.validation';
 import { HealthModule } from '../health/health.module';
 import { CacheModule } from '../cache/cache.module';
 import { HnModule } from '../hn/hn.module';
+import { ChunkerModule } from '../chunker/chunker.module';
+import { LlmModule } from '../llm/llm.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { HnModule } from '../hn/hn.module';
     CacheModule,
     HealthModule,
     HnModule,
+    ChunkerModule,
+    LlmModule,
   ],
   controllers: [AppController],
   providers: [AppService],

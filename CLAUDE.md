@@ -11,10 +11,17 @@ VoxPopuli is an agentic RAG system over Hacker News. See [product.md](product.md
 ## Repository Structure
 
 ```
-apps/api/src/       # NestJS backend (agent, cache, chunker, hn, llm, rag, tts modules)
-apps/web/src/app/   # Angular frontend (components + services)
-libs/shared-types/  # @voxpopuli/shared-types (all API contracts)
-evals/              # Evaluation harness (queries, runner, scorer)
+apps/api/src/          # NestJS backend (agent, cache, chunker, hn, llm, rag, tts modules)
+  chunker/             #   ChunkerService — token-aware context building and formatting
+  llm/                 #   LlmService facade + provider implementations
+    providers/         #     groq.provider, claude.provider, mistral.provider
+    llm-provider.interface.ts
+  cache/               #   CacheService — in-memory caching layer
+  hn/                  #   HN API client (stories, comments, search)
+apps/web/src/app/      # Angular frontend (components + services)
+libs/shared-types/     # @voxpopuli/shared-types (all API contracts)
+docs/adr/              # Architecture Decision Records
+evals/                 # Evaluation harness (queries, runner, scorer)
 ```
 
 ## Development Commands
@@ -44,8 +51,9 @@ npx tsx evals/run-eval.ts # Run eval harness
 - **Stateless services.** No mutable state outside CacheService.
 - **Dependency injection** for all service dependencies. No direct imports between modules.
 - All external API calls go through CacheService (`getOrSet<T>()` pattern).
-- All LLM providers implement `LlmProviderInterface`. Never call provider SDKs directly outside the provider class.
+- All LLM providers implement `LlmProviderInterface` and wrap LangChain `ChatModel` instances. Never call LangChain provider SDKs (`@langchain/anthropic`, `@langchain/mistralai`, `@langchain/groq`) directly outside the provider class.
 - Use native tool_result protocol per provider (see product.md Section 9). Do not string-hack tool results into messages.
+- **ChunkerService** uses character-based token estimation (1 token ≈ 4 chars). Token budget priority: metadata > story text > top-level comments > nested comments.
 
 ### Angular Frontend
 
@@ -86,6 +94,15 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 4. **Token budgets vary by provider.** Always use `ChunkerService.buildContext()` with the active provider's budget, not a hardcoded number.
 5. **SSE events have specific types.** Use `thought`, `action`, `observation`, `answer`, `error` -- don't invent new event types.
 6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`.
+7. **Don't import LangChain packages directly.** All LangChain usage is encapsulated inside `apps/api/src/llm/providers/`. Consuming code should only depend on `LlmService` and `LlmProviderInterface`.
+8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
+
+## Architecture Decision Records
+
+ADRs live in `docs/adr/` and document key design choices. Consult these before proposing changes to the areas they cover:
+
+- `002-chunker-strategy.md` — Token-aware context building approach
+- `003-llm-provider-architecture.md` — LangChain provider facade pattern
 
 ## Linear Project
 
