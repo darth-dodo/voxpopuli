@@ -1,10 +1,11 @@
 # VoxPopuli — Product Specification
 
-**Version:** 1.2.0
+**Version:** 2.0.0
 **Status:** Final Draft
-**Last Updated:** March 31, 2026
+**Last Updated:** April 3, 2026
+**Author:** Abhishek Juneja
 
-> _"Sapientiam persequere."_ - Pursue wisdom.
+> _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
 
 ---
 
@@ -12,7 +13,8 @@
 
 | Version | Date       | Changes                                                                                                                                                                                            |
 | ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.2.0   | 2026-03-31 | Voice output (ElevenLabs TTS) with podcast-style narration, listen button, signature narrator voice, TTS service + endpoint, podcast script rewriter                                               |
+| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                   |
+| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                          |
 | 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq) |
 | 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                      |
 
@@ -53,37 +55,36 @@ LLMs can now reason over retrieved context. Combine that with HN's structured AP
 | **Job seekers**                    | "What companies is HN excited about hiring at right now?"     |
 | **Curious humans**                 | "What's the most controversial HN post about remote work?"    |
 
-<details>
-<summary><strong>Sample Use Cases (20)</strong></summary>
+### Sample Use Cases (20)
 
-#### Engineers Making Decisions
+**Engineers Making Decisions:**
 
 1. "Bun vs Deno vs Node for a new backend in 2026" -- Agent searches 3-4 threads, pulls comment opinions from practitioners who actually migrated, synthesizes tradeoffs.
 2. "Is Drizzle ORM production-ready?" -- Finds Show HN launch threads, digs into comments about edge cases, surfaces fans and critics.
 3. "What database should I use for time-series IoT data?" -- Cross-references threads on TimescaleDB, InfluxDB, QuestDB with benchmarks from comments.
 4. "What's the HN consensus on monorepos vs polyrepos at scale?" -- Extracts the strongest arguments from both sides of the recurring holy war.
 
-#### Founders and Product People
+**Founders and Product People:**
 
 5. "Has anyone built a competitor to Notion? What was the reaction?" -- Surfaces Show HN launches and the brutal honesty HN is known for.
 6. "What do developers actually hate about Stripe?" -- Categorizes gripes (pricing, docs, support), notes what Stripe responded to.
 7. "Is there demand for an open-source alternative to Figma?" -- Searches Penpot and Figma acquisition threads, gauges sentiment.
 8. "What startup ideas has HN consistently said 'someone should build this'?" -- Deep dive into Ask HN threads about missing tools and unmet needs.
 
-#### Researchers and Trend Watchers
+**Researchers and Trend Watchers:**
 
 9. "How has HN sentiment on AI agents changed over the past 12 months?" -- Date-sorted search, compares tone of early threads vs recent.
 10. "What are the emerging programming languages HN is excited about?" -- Surfaces Zig, Gleam, Roc, Unison mentions, ranks by engagement.
 11. "What do HN users think about the future of remote work post-2025?" -- Pulls from multiple heated threads, presents the full spectrum.
 12. "Track the HN reaction to every major OpenAI announcement" -- Story-by-story breakdown of community trust over time.
 
-#### Job Seekers and Career
+**Job Seekers and Career:**
 
 13. "What companies is HN most positive about working at right now?" -- Surfaces "Who is hiring" threads and comments praising specific teams.
 14. "Is it worth learning Rust in 2026 for career purposes?" -- Hiring trends, career advice threads, and Rust adoption stories.
 15. "What do senior engineers on HN say about moving into management?" -- Deep comment mining on a question that generates long, personal responses.
 
-#### Curiosity and Deep Dives
+**Curiosity and Deep Dives:**
 
 16. "What's the most controversial HN post of all time?" -- Searches by comment count + point ratio, finds the flamewars.
 17. "Best books recommended on HN for system design" -- Mines Ask HN book threads, deduplicates, ranks by mention count.
@@ -92,8 +93,6 @@ LLMs can now reason over retrieved context. Combine that with HN's structured AP
 20. "ELI5 the drama around the Node.js fork to io.js" -- Historical deep dive from original threads.
 
 **The Podcast Angle:** Every use case becomes a listenable 2-3 minute segment with the voice layer. Daily routine: open VoxPopuli, type "What's interesting on HN today?", hit Listen, pour your coffee.
-
-</details>
 
 ---
 
@@ -274,26 +273,108 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 
 ## 4. Architecture
 
-### 4.1 Overview
+### 4.1 High-Level Overview
 
-Nx monorepo with two apps (`api` + `web`), a shared types library, and an eval harness. The backend is modular NestJS with separate modules for HN data, caching, content chunking, LLM providers, the ReAct agent, TTS, and the RAG controller.
-
-For the full system diagram, module dependency graph, and project structure, see [architecture.md](architecture.md) Sections 1 and 2.
+```
++---------------------------------------------------------+
+|                   Angular (web)                          |
+|                                                          |
+|  +---------+  +--------------+  +----------------+      |
+|  | Chat UI |  | Agent Steps  |  | Source Cards    |     |
+|  |         |  | (live viz)   |  |                 |     |
+|  +----+----+  +------+-------+  +-------+--------+     |
+|  |  [Listen]  |      |                  |               |
+|  |  Audio     |      |                  |               |
+|  |  Player    |      |                  |               |
++--+----+-------+------+------------------+---------------+
+        |              |                  |
+        +--------------+------------------+
+                       | SSE / HTTP / Audio Stream
++----------------------+--------------------------------------+
+|                   NestJS (api)                               |
+|                                                              |
+|  +------------------------------------------------------+   |
+|  |              RAG Controller                           |   |
+|  |   POST /api/rag/query    (full response)              |   |
+|  |   GET  /api/rag/stream   (SSE streaming)              |   |
+|  |   POST /api/tts/speak    (audio stream)               |   |
+|  +---------------------------+---------------------------+   |
+|                              |                               |
+|  +---------------------------+---------------------------+   |
+|  |              Agent Service (ReAct Loop)                |  |
+|  +--------------------------------------------------------+  |
+|                     |                                        |
+|     +---------------+---------------+-----------+            |
+|     v               v               v           v            |
+|  +--------+  +----------+  +----------+  +-----------+      |
+|  |HN API  |  | Chunker  |  | LLM      |  | TTS       |     |
+|  |Service |  | Service  |  | Provider |  | Service   |     |
+|  |+ Cache |  |          |  |          |  |           |     |
+|  +---+----+  +----------+  +--+--+--+-+  +-----+-----+     |
+|      |                        |  |  |          |            |
+|      |                  Claude Mistral Groq  ElevenLabs     |
++------+------------------------------------------------------+
+       |
+       +-->  HN Algolia API (search)
+       +-->  HN Firebase API (items + comments)
+```
 
 ### 4.2 Tech Stack
 
-| Layer                    | Technology                   | Why                                                        |
-| ------------------------ | ---------------------------- | ---------------------------------------------------------- |
-| **Monorepo**             | Nx                           | Shared types, unified builds, dependency graph             |
-| **Backend**              | NestJS (Node.js)             | Modular DI, first-class TypeScript, SSE support            |
-| **Frontend**             | Angular 17+                  | Standalone components, signals, SSE via EventSource        |
-| **LLM (production)**     | Claude (Anthropic API)       | Best synthesis quality, 200k context                       |
-| **LLM (cost-optimized)** | Mistral Large 3              | 262k context, $0.50/$1.50 per M tokens                     |
-| **LLM (speed/dev)**      | Groq (Llama 3.3 70B)         | 300+ t/s inference, free tier for dev                      |
-| **TTS**                  | ElevenLabs (Multilingual v2) | Best-in-class voice quality, streaming API, TypeScript SDK |
-| **Caching**              | node-cache (in-memory)       | Zero-infrastructure, sufficient for single-node v1         |
-| **Shared Types**         | TypeScript library           | Single source of truth for API contracts                   |
-| **Data Sources**         | HN Algolia + Firebase APIs   | Full-text search + structured item/comment data            |
+| Layer                    | Technology                   | Why                                                    |
+| ------------------------ | ---------------------------- | ------------------------------------------------------ |
+| **Monorepo**             | Nx                           | Shared types, unified builds, dependency graph         |
+| **Backend**              | NestJS (Node.js)             | Modular DI, first-class TypeScript, SSE support        |
+| **Frontend**             | Angular 17+                  | Standalone components, signals, SSE via EventSource    |
+| **LLM (production)**     | Claude (Anthropic API)       | Best synthesis quality, 200k context                   |
+| **LLM (cost-optimized)** | Mistral Large 3              | 262k context, $0.50/$1.50 per M tokens                 |
+| **LLM (speed/dev)**      | Groq (Llama 3.3 70B)         | 300+ t/s inference, free tier for dev                  |
+| **Voice (TTS)**          | ElevenLabs (Multilingual v2) | Best voice quality, streaming, podcast-grade narration |
+| **Caching**              | node-cache (in-memory)       | Zero-infrastructure, sufficient for single-node v1     |
+| **Shared Types**         | TypeScript library           | Single source of truth for API contracts               |
+| **Data Sources**         | HN Algolia + Firebase APIs   | Full-text search + structured item/comment data        |
+
+### 4.3 Module Dependency Graph
+
+```
+AppModule
++-- ConfigModule (global)
++-- CacheModule
+|   +-- CacheService (node-cache wrapper, TTL management)
++-- HnModule
+|   +-- HnService
+|       +-- Algolia HTTP client (search, search_by_date)
+|       +-- Firebase HTTP client (getItem, getCommentTree, getTopStoryIds)
+|       +-- CacheService (injected, wraps all external calls)
++-- ChunkerModule
+|   +-- ChunkerService
+|       +-- chunkStories()     -> StoryChunk[]
+|       +-- chunkComments()    -> CommentChunk[]
+|       +-- buildContext()     -> ContextWindow (token-budgeted)
+|       +-- formatForPrompt()  -> string
++-- LlmModule
+|   +-- LlmProviderInterface (abstract)
+|   +-- ClaudeProvider (implements LlmProviderInterface)
+|   +-- MistralProvider (implements LlmProviderInterface)
+|   +-- GroqProvider (implements LlmProviderInterface)
+|   +-- LlmService (facade, delegates to active provider)
++-- AgentModule
+|   +-- AgentService
+|       +-- run()          -> AgentResponse
+|       +-- executeTool()  -> tool results
+|       +-- imports: HnModule, ChunkerModule, LlmModule
++-- RagModule
+|   +-- RagController
+|       +-- POST /api/rag/query
+|       +-- GET  /api/rag/stream (SSE)
+|       +-- imports: AgentModule
++-- TtsModule
+    +-- TtsService (ElevenLabs SDK + podcast rewrite via LlmService)
+    +-- TtsController
+        +-- POST /api/tts/narrate
+        +-- GET  /api/tts/voices
+        +-- imports: LlmModule
+```
 
 ---
 
@@ -325,41 +406,63 @@ No single LLM wins on every axis. Different stages of the project need different
 | **Agent reasoning**   | Excellent                | Strong                      | Adequate                          |
 | **API format**        | Anthropic SDK            | Mistral SDK / OpenAI-compat | OpenAI-compatible                 |
 
-### 5.3 Provider Interface
+### 5.3 Provider Interface (LangChain)
 
-All three providers implement a common TypeScript interface:
+VoxPopuli uses **LangChain.js** as the LLM abstraction layer. Each provider is a thin wrapper around LangChain's `BaseChatModel`, which handles tool protocols, message formatting, and provider-specific serialization internally.
+
+**Why LangChain.js over hand-rolled providers or Vercel AI SDK:**
+
+| Option            | Pros                                                                                             | Cons                                                                                    | Decision                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **LangChain.js**  | Handles all tool protocols natively, battle-tested agent primitives, unified ChatModel interface | Extra dependency (~200KB), version coupling                                             | **Chosen.** Eliminates ~500 lines of hand-rolled tool protocol code. |
+| **Hand-rolled**   | Zero dependencies, full control                                                                  | Must maintain 3 different tool_result protocols, message formats, and streaming parsers | Rejected. Too much plumbing for a solo dev.                          |
+| **Vercel AI SDK** | Good streaming support                                                                           | Weaker agent/tool primitives, less mature tool calling                                  | Rejected. LangChain's agent support is more complete.                |
+
+**Provider interface:**
 
 ```typescript
 export interface LlmProviderInterface {
+  /** Human-readable provider name (e.g., "groq", "claude", "mistral") */
   readonly name: string;
+
+  /** Maximum context window tokens for this provider */
   readonly maxContextTokens: number;
 
-  chat(messages: LlmMessage[], options: ChatOptions): Promise<LlmResponse>;
-
   /**
-   * Convert tool definitions from our internal format
-   * to the provider's expected format.
+   * Return the LangChain ChatModel instance for this provider.
+   * The AgentService uses this to build the LangChain agent executor.
+   * LangChain handles tool_result protocols, message formatting,
+   * and streaming internally.
    */
-  formatTools(tools: ToolDefinition[]): unknown[];
-
-  /**
-   * Build a proper tool_result message from a tool execution.
-   * Claude uses tool_use/tool_result content blocks.
-   * Mistral/Groq use OpenAI-style tool role messages.
-   */
-  buildToolResultMessage(toolCallId: string, result: string): LlmMessage;
+  getModel(): BaseChatModel;
 }
 ```
 
-**Key design choice:** The `buildToolResultMessage` method ensures each provider uses its **native tool result protocol** instead of string-hacking results into assistant messages. This was a critical revision from v1.0.
+**What LangChain handles (we don't touch):**
 
-| Provider    | Tool Result Format                                             |
-| ----------- | -------------------------------------------------------------- |
-| **Claude**  | `tool_result` content block with `tool_use_id` reference       |
-| **Mistral** | `role: "tool"` message with `tool_call_id` (OpenAI-compatible) |
-| **Groq**    | `role: "tool"` message with `tool_call_id` (OpenAI-compatible) |
+- Native tool_use / tool_result content blocks (Claude)
+- OpenAI-compatible tool role messages (Mistral, Groq)
+- Message serialization per provider
+- Streaming token delivery
+- Tool call parsing from model responses
 
-Source: [Anthropic > Tool Use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use), [Mistral > Function Calling](https://docs.mistral.ai/capabilities/function_calling), [Groq > Local Tool Calling](https://console.groq.com/docs/tool-use/local-tool-calling)
+**What we own:**
+
+- Provider instantiation and API key configuration
+- Token budget management (ChunkerService)
+- Caching layer (CacheService)
+- SSE streaming to the frontend (RagController)
+- Tool definitions (DynamicTool with Zod schemas)
+
+**Provider implementations:**
+
+| Provider    | LangChain Class | Package                | Config              |
+| ----------- | --------------- | ---------------------- | ------------------- |
+| **Claude**  | `ChatAnthropic` | `@langchain/anthropic` | `ANTHROPIC_API_KEY` |
+| **Mistral** | `ChatMistralAI` | `@langchain/mistralai` | `MISTRAL_API_KEY`   |
+| **Groq**    | `ChatGroq`      | `@langchain/groq`      | `GROQ_API_KEY`      |
+
+Source: [LangChain.js ChatModels](https://js.langchain.com/docs/integrations/chat/), [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/)
 
 ### 5.4 Provider Selection
 
@@ -639,82 +742,142 @@ The agent has access to three tools. The LLM decides which to call and in what o
 
 ---
 
-## 9. Native Tool Use Protocol
+## 9. Tool Use Protocol (via LangChain)
 
-**This section documents a critical v1.1 revision.**
+**This section documents the tool calling architecture. Updated in v2.0 to reflect LangChain.js integration.**
 
-v1.0 spec hacked tool results into string-concatenated assistant messages. This degrades reasoning quality because the model can't distinguish tool results from its own prior output. v1.1 uses each provider's **native tool result protocol**.
+### 9.1 How Tool Calling Works
 
-### 9.1 Claude (Anthropic)
-
-Claude uses structured content blocks within the messages array:
+LangChain handles all provider-specific tool protocol differences internally. We define tools once using LangChain's `DynamicTool` with Zod schemas, and LangChain translates them to the correct format per provider:
 
 ```typescript
-// Agent decides to call a tool -> Claude returns:
-{
-  role: "assistant",
-  content: [
-    { type: "text", text: "I'll search for relevant stories." },
-    { type: "tool_use", id: "toolu_01abc", name: "search_hn",
-      input: { query: "Tailwind v4" } }
-  ]
-}
+import { DynamicTool } from 'langchain/tools';
+import { z } from 'zod';
 
-// We execute the tool, then send back:
-{
-  role: "user",
-  content: [
-    { type: "tool_result", tool_use_id: "toolu_01abc",
-      content: "[...chunked results...]" }
-  ]
-}
+const searchHnTool = new DynamicTool({
+  name: 'search_hn',
+  description: 'Search Hacker News stories via Algolia',
+  schema: z.object({
+    query: z.string().describe('Search keywords'),
+    sort_by: z.enum(['relevance', 'date']).optional(),
+    min_points: z.number().optional(),
+    max_results: z.number().min(1).max(20).optional(),
+  }),
+  func: async (input) => {
+    // Calls HnService.search(), chunks results, returns string
+  },
+});
 ```
 
-Source: [Anthropic > Tool Use](https://docs.anthropic.com/en/docs/build-with-claude/tool-use)
+### 9.2 What LangChain Handles Per Provider
 
-### 9.2 Mistral and Groq (OpenAI-compatible)
+| Provider    | Tool Format (handled by LangChain)        | Our Code                              |
+| ----------- | ----------------------------------------- | ------------------------------------- |
+| **Claude**  | `tool_use` / `tool_result` content blocks | Just provide `ChatAnthropic` instance |
+| **Mistral** | OpenAI-compatible `tool` role messages    | Just provide `ChatMistralAI` instance |
+| **Groq**    | OpenAI-compatible `tool` role messages    | Just provide `ChatGroq` instance      |
 
-Both use the `tool` role message format:
+LangChain's `AgentExecutor` or `createToolCallingAgent` manages the ReAct loop internally, including:
 
-```typescript
-// Model returns tool call in response:
-{
-  role: "assistant",
-  tool_calls: [{
-    id: "call_abc123",
-    type: "function",
-    function: {
-      name: "search_hn",
-      arguments: '{"query":"Tailwind v4"}'
-    }
-  }]
-}
-
-// We execute the tool, then send back:
-{
-  role: "tool",
-  tool_call_id: "call_abc123",
-  content: "[...chunked results...]"
-}
-```
-
-Source: [Mistral > Function Calling](https://docs.mistral.ai/capabilities/function_calling), [Groq > Local Tool Calling](https://console.groq.com/docs/tool-use/local-tool-calling)
+- Parsing tool calls from model responses
+- Executing tools and formatting results
+- Building native tool_result messages per provider
+- Managing the conversation history with tool results
 
 ### 9.3 Why This Matters
 
-Using native protocols gives the model clear separation between its own reasoning and external data. In testing, this produces:
+Using native protocols (via LangChain) gives the model clear separation between its own reasoning and external data. This produces:
 
 - More accurate tool selection on steps 2+
 - Fewer hallucinated tool arguments
 - Better synthesis when multiple tool results are in context
 
+### 9.4 What We Still Own
+
+LangChain handles the protocol plumbing, but we control:
+
+- **Tool implementations** (`func` callbacks that call HnService + ChunkerService)
+- **Token budgeting** (ChunkerService fits content into provider-specific budgets)
+- **Caching** (CacheService wraps all external API calls)
+- **Step streaming** (we intercept agent callbacks to emit SSE events)
+- **Safety constraints** (max 7 steps, 60s timeout, 5 concurrent runs)
+
+Source: [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/), [LangChain.js Agents](https://js.langchain.com/docs/how_to/agent_executor/)
+
 ---
 
 ## 10. Project Structure
 
-See [architecture.md](architecture.md) Section 1.4 for the full file tree.
-
-Summary: Nx monorepo with `apps/api` (NestJS, 7 modules), `apps/web` (Angular, 5 components + 2 services), `libs/shared-types`, and `evals/`.
+```
+voxpopuli/
++-- apps/
+|   +-- api/                              # NestJS backend
+|   |   +-- src/
+|   |       +-- agent/
+|   |       |   +-- agent.module.ts
+|   |       |   +-- agent.service.ts      # ReAct loop
+|   |       |   +-- tools.ts              # Tool definitions
+|   |       |   +-- system-prompt.ts      # Agent instructions
+|   |       +-- cache/
+|   |       |   +-- cache.module.ts
+|   |       |   +-- cache.service.ts      # node-cache wrapper
+|   |       +-- chunker/
+|   |       |   +-- chunker.module.ts
+|   |       |   +-- chunker.service.ts    # HTML cleanup, token budgeting
+|   |       +-- hn/
+|   |       |   +-- hn.module.ts
+|   |       |   +-- hn.service.ts         # Algolia + Firebase + caching
+|   |       +-- llm/
+|   |       |   +-- llm.module.ts
+|   |       |   +-- llm.service.ts        # Facade (delegates to provider)
+|   |       |   +-- llm-provider.interface.ts
+|   |       |   +-- providers/
+|   |       |       +-- claude.provider.ts
+|   |       |       +-- mistral.provider.ts
+|   |       |       +-- groq.provider.ts
+|   |       +-- rag/
+|   |       |   +-- rag.module.ts
+|   |       |   +-- rag.controller.ts     # POST + SSE endpoints
+|   |       +-- tts/
+|   |       |   +-- tts.module.ts
+|   |       |   +-- tts.controller.ts     # Narrate + voices endpoints
+|   |       |   +-- tts.service.ts        # ElevenLabs + podcast rewrite
+|   |       |   +-- podcast-rewrite.prompt.ts
+|   |       +-- app/
+|   |       |   +-- app.module.ts         # Root module
+|   |       +-- main.ts
+|   |
+|   +-- web/                              # Angular frontend
+|       +-- src/
+|           +-- app/
+|               +-- components/
+|               |   +-- chat/
+|               |   +-- agent-steps/
+|               |   +-- source-card/
+|               |   +-- audio-player/      # Listen button + playback controls
+|               |   +-- provider-selector/ # Switch providers in UI
+|               +-- services/
+|               |   +-- rag.service.ts
+|               |   +-- tts.service.ts     # POST to /api/tts/speak, play audio
+|               +-- app.component.ts
+|
++-- libs/
+|   +-- shared-types/                     # Shared TypeScript interfaces
+|       +-- src/
+|           +-- index.ts
+|
++-- evals/                                # Evaluation harness
+|   +-- queries.json                      # Test queries + expected qualities
+|   +-- run-eval.ts                       # Runner script
+|   +-- score.ts                          # Scoring logic
+|   +-- results/                          # Timestamped eval results
+|
++-- nx.json
++-- tsconfig.base.json
++-- package.json
++-- .env
++-- .env.example
+```
 
 ---
 
@@ -847,9 +1010,221 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 ---
 
-## 13. Non-Functional Requirements
+## 13. Trustworthiness Framework
 
-### 13.1 Performance
+VoxPopuli has three trust layers. Each can fail independently. Each needs its own checks.
+
+### 13.1 Layer 1: Agent Trustworthiness
+
+The agent can hallucinate sources, fabricate consensus, cherry-pick stories, present outdated info as current, or generate confident nonsense when it found nothing.
+
+**Automated checks (run in eval harness):**
+
+| Check                | How                                                                | Target |
+| -------------------- | ------------------------------------------------------------------ | ------ |
+| Source existence     | Every `AgentSource.id` resolves via Firebase API (HTTP 200)        | 100%   |
+| Attribution accuracy | Named usernames in answer appear in fetched comments (fuzzy match) | 95%+   |
+| Consensus honesty    | LLM-as-judge: does answer present both sides on split topics?      | 80%+   |
+| Source coverage      | `cited_sources / fetched_sources` ratio                            | > 20%  |
+| Recency awareness    | Stories older than 2 years flagged in answer                       | 100%   |
+| Honest "no results"  | Gibberish queries produce explicit "nothing found" disclaimer      | 100%   |
+
+**Agent prompt rules that enforce trust:**
+
+- "If all searches returned 0 relevant hits, say so. Do not fabricate an answer."
+- "If the most relevant story is older than 2 years, explicitly note this."
+- "High upvotes indicate popularity, not necessarily correctness. Note whether commenters provide evidence or just opinion."
+- "If all top comments agree, search for a contrarian thread using terms like 'defense of X' or 'why X is actually good.'"
+
+### 13.2 Layer 2: HN Crowd Trustworthiness
+
+The crowd can be wrong. HN has known biases: Bay Area/startup culture, early adopter preferences, contrarian tendencies, language biases (Rust love, Java skepticism), and groupthink on certain topics.
+
+**Mitigations built into the system:**
+
+| Bias                                                       | Mitigation                                                                                                                               |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Survivorship bias** (confident prose > correct answers)  | Agent notes whether commenters provide evidence (benchmarks, links, experience) or just opinion                                          |
+| **Demographic bias** (not representative of all engineers) | Standing disclaimer in UI: "VoxPopuli reflects HN community opinions, which skew toward startup culture and early adopter perspectives." |
+| **Astroturfing / self-promotion**                          | Agent flags Show HN posts (author has vested interest). Source cards show `[Show HN]` tag.                                               |
+| **Temporal decay**                                         | Agent prefers stories from last 12 months for current-state queries. Source cards show dates prominently.                                |
+| **Groupthink**                                             | Agent prompt: actively search for contrarian threads on one-sided topics. Eval tests include known groupthink topics.                    |
+
+**Automated checks:**
+
+| Check                             | How                                                                                | Target               |
+| --------------------------------- | ---------------------------------------------------------------------------------- | -------------------- |
+| Recency of sources                | % of cited sources from last 12 months (for current-state queries)                 | > 60%                |
+| Viewpoint diversity               | LLM-as-judge: does answer include at least one dissenting view on opinion queries? | 80%+                 |
+| Show HN bias noted                | Answer mentions author's vested interest when citing Show HN posts                 | 100% (tag detection) |
+| Evidence vs opinion distinguished | LLM-as-judge: does answer differentiate between backed claims and pure opinion?    | 70%+                 |
+
+### 13.3 Layer 3: Podcast Rewrite Trustworthiness
+
+The rewrite step is a game of telephone. Every transformation can lose or distort meaning.
+
+**Five failure modes and their checks:**
+
+| Failure                                                     | Check                       | How                                                              | Target                 |
+| ----------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------- | ---------------------- |
+| **Fact injection** (rewrite adds info not in original)      | Fact preservation test      | LLM-as-judge: "Does rewrite contain claims not in the original?" | 100% (zero new claims) |
+| **Softening/hardening** ("divided" becomes "agreed")        | Sentiment preservation test | LLM-as-judge: compare confidence levels in original vs rewrite   | 95%+                   |
+| **Attribution loss** (drops usernames)                      | Attribution retention       | Count named sources in original vs rewrite                       | > 80% retained         |
+| **Nuance flattening** (5 arguments become 2)                | Argument coverage           | Count distinct claims in original vs rewrite                     | > 70% retained         |
+| **Tone mismatch** (measured original, enthusiastic rewrite) | Tone alignment              | LLM-as-judge: rate tone match on 1-5 scale                       | > 4.0 average          |
+
+**Prompt rules that enforce trust:**
+
+- "Do NOT add information that wasn't in the original answer."
+- "Preserve the original answer's level of certainty."
+- "Keep all username attributions. Convert to spoken form but do not drop them."
+- "Match the original answer's tone."
+
+### 13.4 Trust Pipeline (Runtime)
+
+```
+Query arrives
+     |
+     v
+Agent Loop
+     +-- Source existence check (every ID resolves)
+     +-- Attribution cross-reference (quotes match tool results)
+     +-- Consensus honesty check (split topics flagged)
+     |
+     v
+Answer produced
+     +-- Recency tags on all sources
+     +-- Viewpoint diversity score
+     +-- Show HN bias flag
+     +-- Trust metadata attached to AgentResponse
+     |
+     v
+User clicks Listen (optional)
+     |
+     v
+Podcast Rewrite
+     +-- Fact preservation check
+     +-- Sentiment preservation check
+     +-- Attribution retention check
+     |
+     v
+Audio delivered with trust indicators in UI
+```
+
+### 13.5 Trust Indicators in the UI
+
+Users should assess trust at a glance:
+
+```
++----------------------------------------------------+
+| Agent Answer                                        |
+|                                                     |
+| "HN is broadly positive on Tailwind v4..."          |
+|                                                     |
+| [Trust Bar]                                         |
+| Sources: 4 verified  |  Recency: 3/4 from 2026     |
+| Viewpoints: balanced |  Show HN: 1 (flagged)        |
+|                                                     |
+| Sources: [card] [card] [card] [card]                |
+|                                                     |
+| [> Listen]  [Trust details v]                       |
++----------------------------------------------------+
+```
+
+Expandable trust details show: which sources were verified, their dates, whether contrarian views were found, Show HN flags, and for narrated answers, "Narration verified: no new claims added."
+
+### 13.6 Trust-Specific Eval Queries
+
+Add to `evals/queries.json`:
+
+| ID  | Query                                     | What It Tests                                              |
+| --- | ----------------------------------------- | ---------------------------------------------------------- |
+| t01 | "Is Rust better than Go?"                 | Must present both sides. Fails if one-sided.               |
+| t02 | "What does HN think of xyzzy florbnog?"   | Must say "no relevant discussions found."                  |
+| t03 | "Is crypto dead?"                         | Must find at least one contrarian view (known groupthink). |
+| t04 | Query targeting a Show HN post            | Must flag author's vested interest.                        |
+| t05 | Query about a 2019-era tool as if current | Must note the age of sources.                              |
+| t06 | Podcast rewrite of a balanced answer      | Rewrite must preserve balance.                             |
+| t07 | Podcast rewrite of a heavily-cited answer | Must retain 80%+ named attributions.                       |
+
+### 13.7 New Shared Types
+
+```typescript
+// Add to libs/shared-types/src/index.ts
+
+export interface TrustMetadata {
+  sourcesVerified: number; // Count of source IDs that resolved
+  sourcesTotal: number; // Total sources cited
+  avgSourceAge: number; // Average age in days
+  recentSourceRatio: number; // % from last 12 months
+  viewpointDiversity: 'one-sided' | 'balanced' | 'contested';
+  showHnCount: number; // Number of Show HN sources (bias flag)
+  honestyFlags: string[]; // e.g., ["no_results_found", "old_sources_noted"]
+}
+
+export interface RewriteTrustMetadata {
+  factPreservation: boolean; // No new claims added
+  attributionsRetained: number; // % of named sources kept
+  toneAlignment: number; // 1-5 scale
+}
+
+// Updated AgentResponse
+export interface AgentResponse {
+  answer: string;
+  steps: AgentStep[];
+  sources: AgentSource[];
+  trust: TrustMetadata; // NEW
+  meta: {
+    /* existing fields */
+  };
+}
+```
+
+### 13.8 Fact vs Opinion Distinction
+
+HN comments mix testable claims, personal experience, and subjective takes in the same sentence. VoxPopuli must surface this distinction at every layer.
+
+**Claim taxonomy:**
+
+| Type          | Definition                                      | Agent Phrasing                              | UI Badge    | Podcast Cue                                    |
+| ------------- | ----------------------------------------------- | ------------------------------------------- | ----------- | ---------------------------------------------- |
+| **Evidence**  | Backed by data, benchmarks, links               | "User X reported [specific detail]..."      | Blue badge  | "And there's data to back this up..."          |
+| **Consensus** | Multiple commenters independently agree         | "Several commenters independently noted..." | Green badge | "This is where the thread converged..."        |
+| **Anecdote**  | Personal experience, not independently testable | "In their experience..."                    | Amber badge | "Now, this is one person's experience, but..." |
+| **Opinion**   | Subjective preference or prediction             | "Some commenters argued..."                 | Gray badge  | "Not everyone agrees..."                       |
+
+**Credibility signals the agent should weight:**
+
+| Signal                                     | Detection              | Effect                           |
+| ------------------------------------------ | ---------------------- | -------------------------------- |
+| Specific data (numbers, benchmarks)        | Text analysis          | Elevates to evidence             |
+| Self-identified expertise ("I maintain X") | Text pattern           | Notes credentials in attribution |
+| High upvotes (50+)                         | Comment metadata       | Community-validated              |
+| Links to external sources                  | URL detection          | External evidence                |
+| Contradicted by upvoted replies            | Child comment analysis | Weakens parent claim             |
+
+**Implementation:**
+
+- **v1.0 (free, prompt-only):** Agent system prompt classifies claims using the phrasing above. Podcast rewrite prompt uses verbal cues. Zero extra cost.
+- **v1.1 (structured):** Second LLM pass extracts `Claim[]` metadata from the answer. UI renders color-coded badges. ~$0.002/query on Groq.
+
+**New type:**
+
+```typescript
+export interface Claim {
+  text: string;
+  type: 'evidence' | 'anecdote' | 'opinion' | 'consensus';
+  attribution: string;
+  confidence: number; // 0-1
+  supportingData?: string; // benchmark, link, or specific detail
+}
+```
+
+---
+
+## 14. Non-Functional Requirements
+
+### 14.1 Performance
 
 **Revised in v1.1: Honest latency targets.**
 
@@ -867,7 +1242,7 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 | P50    | ~6s  | ~10s    | ~13s   |
 | P95    | ~12s | ~20s    | ~28s   |
 
-### 13.2 Reliability
+### 14.2 Reliability
 
 | Concern             | Mitigation                                  |
 | ------------------- | ------------------------------------------- |
@@ -878,7 +1253,7 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 | Token overflow      | Per-provider budget in Chunker              |
 | Cost blowout        | Rate limiting + max 5 concurrent agent runs |
 
-### 13.3 Cost
+### 14.3 Cost
 
 | Provider         | Est. Cost/Query | Monthly (100 queries/day)        |
 | ---------------- | --------------- | -------------------------------- |
@@ -889,7 +1264,7 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 | HN APIs          | Free            | Free                             |
 | Infrastructure   | $0 (dev)        | $5-20 (Railway/Fly)              |
 
-### 13.4 Security
+### 14.4 Security
 
 - API keys in `.env`, never committed. `.env.example` with placeholders.
 - Rate limiting on all endpoints from day one.
@@ -899,20 +1274,34 @@ Results saved to `evals/results/` with timestamps. Run after every agent-related
 
 ---
 
-## 14. Roadmap
+## 15. Roadmap
 
 ### v1.0 -- Foundation (Current Scope)
 
-The v1.0 implementation is broken into 6 milestones with 29 stories. See [architecture.md](architecture.md) Section 3 for the full Linear-ready task breakdown.
-
-| Milestone                 | Goal                                                             |
-| ------------------------- | ---------------------------------------------------------------- |
-| M1: Scaffold & Data Layer | Nx monorepo, shared types, HN data flowing with caching          |
-| M2: LLM & Chunker         | Triple-stack providers working, content fits token budgets       |
-| M3: Agent Core            | ReAct loop end-to-end, sourced answers via API                   |
-| M4: Frontend              | Chat UI with live reasoning viz, source cards, provider selector |
-| M5: Voice Output          | ElevenLabs TTS with podcast-style narration                      |
-| M6: Eval Harness          | 20 test queries, automated scoring, regression detection         |
+- [ ] Nx monorepo scaffold
+- [ ] HN API service (Algolia + Firebase)
+- [ ] In-memory caching layer (node-cache)
+- [ ] Content chunker with per-provider token budgeting
+- [ ] LLM provider interface + triple-stack (Claude, Mistral, Groq)
+- [ ] Native tool_result protocol per provider (via LangChain)
+- [ ] ReAct agent loop (plan, act, observe, respond)
+- [ ] RAG endpoints (POST + SSE) with rate limiting
+- [ ] Evaluation harness (20 test queries)
+- [ ] Angular chat UI with live agent step visualization
+- [ ] Source cards with HN links
+- [ ] Provider selector in UI
+- [ ] Meta bar (provider, tokens, latency, cached)
+- [ ] TtsModule (ElevenLabs streaming TTS)
+- [ ] Podcast rewrite prompt + LLM call
+- [ ] Audio player component with Listen button
+- [ ] Playback speed controls + MP3 download
+- [ ] Trust metadata on AgentResponse (source verification, recency, diversity)
+- [ ] Trust bar UI component
+- [ ] Trust-specific eval queries (7 queries)
+- [ ] ElevenLabs TTS integration (TtsService + streaming endpoint)
+- [ ] Podcast script rewriter (LLM-powered text-to-speech preprocessing)
+- [ ] Listen button + audio player component
+- [ ] Signature narrator voice configuration
 
 ### v1.1 -- Polish
 
@@ -922,8 +1311,10 @@ The v1.0 implementation is broken into 6 milestones with 29 stories. See [archit
 - [ ] Error boundary components
 - [ ] Provider auto-fallback
 - [ ] Query history (local storage)
-- [ ] Voice: waveform visualization on audio player
-- [ ] Voice: audio caching (same narration if answer unchanged)
+- [ ] Waveform visualization on audio player
+- [ ] Audio caching (same narration if answer unchanged)
+- [ ] Voice selector (2-3 preset voices)
+- [ ] "Podcast mode" toggle (auto-narrate every answer)
 - [ ] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
 - [ ] Voice: downloadable MP3 of narrated answer
 
@@ -934,6 +1325,10 @@ The v1.0 implementation is broken into 6 milestones with 29 stories. See [archit
 - [ ] Follow-up suggestions
 - [ ] WebSocket upgrade
 - [ ] Scheduled digests
+- [ ] Downloadable podcast episodes (batch answers into one MP3)
+- [ ] RSS podcast feed (subscribe in podcast apps)
+- [ ] Voice input (STT via Groq Whisper)
+- [ ] Two-voice dialogue mode (host + guest debating HN opinions)
 - [ ] Voice: auto-play podcast mode (toggle in settings)
 - [ ] Voice: user-selectable voice library
 - [ ] Voice: RSS podcast feed (subscribe in podcast apps)
@@ -948,7 +1343,7 @@ The v1.0 implementation is broken into 6 milestones with 29 stories. See [archit
 
 ---
 
-## 15. Success Metrics
+## 16. Success Metrics
 
 | Metric                   | Target                         | How to Measure              |
 | ------------------------ | ------------------------------ | --------------------------- |
@@ -964,7 +1359,7 @@ The v1.0 implementation is broken into 6 milestones with 29 stories. See [archit
 
 ---
 
-## 16. Getting Started
+## 17. Getting Started
 
 ### Prerequisites
 
@@ -999,7 +1394,7 @@ npx tsx evals/run-eval.ts
 
 ---
 
-## 17. Contributing
+## 18. Contributing
 
 ### Areas Where Help Is Needed
 
@@ -1024,13 +1419,31 @@ npx tsx evals/run-eval.ts
 
 ---
 
-## 18. Voice Output -- Implementation Details
+## 19. Voice Output (ElevenLabs TTS)
 
-> For the product overview of voice output (how it works, why it exists, model choices, cost per answer), see **Section 3.8**.
-> For the module spec and API endpoints, see [architecture.md](architecture.md) **Section 2.8**.
-> This section covers implementation details not covered elsewhere.
+### 19.1 Overview
 
-### 18.1 Signature Voice
+When the agent finishes an answer, users can press a Listen button to hear it narrated in a podcast-style voice. The answer is rewritten into conversational speech, sent to ElevenLabs TTS, and streamed back as audio.
+
+### 19.2 Pipeline
+
+```
+1. Agent produces answer (markdown text with citations)
+2. User clicks "Listen"
+3. POST /api/tts/narrate { text, sources }
+4. TtsService:
+   a) Podcast Rewrite (LLM call):
+      - Strip markdown, links, code blocks
+      - Convert citations to spoken references
+      - Add opening hook + sign-off ("That's the signal from HN. I'm VoxPopuli.")
+      - Cap at 2500 characters
+   b) ElevenLabs Streaming TTS:
+      - POST /v1/text-to-speech/{voice_id}/stream
+      - Returns chunked MP3 audio
+5. Frontend: HTML5 <audio> plays as chunks arrive
+```
+
+### 19.3 Signature Voice
 
 **Primary: "Brian"** (voice ID: `nPczCjzI2devNBz1zQrb`)
 
@@ -1055,7 +1468,23 @@ npx tsx evals/run-eval.ts
 
 Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [ElevenLabs > Streaming](https://elevenlabs.io/docs/api-reference/streaming)
 
-### 18.2 Podcast Rewrite Example
+### 19.4 API Endpoints
+
+**POST `/api/tts/narrate`**
+
+Request:
+
+```typescript
+{ text: string; sources?: AgentSource[]; format?: string; }
+```
+
+Response: `Content-Type: audio/mpeg` (chunked MP3 stream)
+
+Errors: 400 (empty/too long text), 429 (credit exhaustion), 502 (ElevenLabs failure)
+
+**GET `/api/tts/voices`** -- Returns active narrator info.
+
+### 19.5 Podcast Rewrite Example
 
 **Raw agent answer:**
 
@@ -1077,13 +1506,38 @@ tptacek argued that utility-first CSS creates maintenance debt at scale.
 That's the signal from Hacker News. I'm VoxPopuli.
 ```
 
-### 18.3 Frontend: Audio Player
+### 19.6 Frontend: Audio Player
 
 States: IDLE (Listen button) -> LOADING -> STREAMING (playing) -> PAUSED -> COMPLETE (listen again + download)
 
 Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download MP3.
 
-### 18.4 Cost Impact
+### 19.7 New Module
+
+```
+TtsModule
++-- TtsService
+|   +-- narrate(text, sources) -> ReadableStream<Buffer>
+|   +-- rewriteForSpeech(text, sources) -> string (LLM call)
+|   +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
++-- TtsController
+    +-- POST /api/tts/narrate
+    +-- GET  /api/tts/voices
+```
+
+### 19.8 New Dependencies and Config
+
+```bash
+npm install elevenlabs
+```
+
+```env
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=nPczCjzI2devNBz1zQrb
+ELEVENLABS_MODEL=eleven_multilingual_v2
+```
+
+### 19.9 Cost Impact
 
 Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 
@@ -1093,7 +1547,7 @@ Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 | 50 queries/day, 15 narrations/day          | Creator ($22/mo) | $22/mo       |
 | 100 queries/day, 30 narrations/day         | Pro ($99/mo)     | $99/mo       |
 
-### 18.5 Risks
+### 19.10 Risks
 
 | Risk                         | Mitigation                                              |
 | ---------------------------- | ------------------------------------------------------- |
@@ -1105,7 +1559,7 @@ Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
 
 ---
 
-## 19. License
+## 20. License
 
 MIT
 
