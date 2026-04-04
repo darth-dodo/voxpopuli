@@ -6,6 +6,12 @@ import { RagController } from './rag.controller';
 import { AgentService } from '../agent/agent.service';
 import { CacheService } from '../cache/cache.service';
 
+// Mock LLM providers to avoid loading @langchain/* ESM packages
+jest.mock('../agent/../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../agent/../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
+jest.mock('../agent/../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
+jest.mock('langchain', () => ({ createAgent: jest.fn() }));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

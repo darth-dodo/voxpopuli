@@ -19,6 +19,11 @@ jest.mock('./tools', () => ({
   createAgentTools: jest.fn(() => []),
 }));
 
+// Mock LLM providers to avoid loading @langchain/* ESM packages
+jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
+jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

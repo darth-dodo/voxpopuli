@@ -15,6 +15,9 @@ export default {
   },
   moduleFileExtensions: ['ts', 'js', 'html'],
   coverageDirectory: 'test-output/jest/coverage',
+  transformIgnorePatterns: [
+    'node_modules/(?!(langchain|@langchain|@mistralai)/)',
+  ],
   moduleNameMapper: {
     '^@voxpopuli/shared-types$':
       '<rootDir>/../../libs/shared-types/src/index.ts',

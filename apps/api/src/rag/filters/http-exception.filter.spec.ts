@@ -7,8 +7,8 @@ import { HttpExceptionFilter } from './http-exception.filter';
 
 /** Creates a mock ArgumentsHost that captures the response sent by the filter. */
 function mockHost(method = 'GET', url = '/api/test') {
-  const json = vi.fn();
-  const status = vi.fn().mockReturnValue({ json });
+  const json = jest.fn();
+  const status = jest.fn().mockReturnValue({ json });
   const response = { status, json };
   const request = { method, url };
 
