@@ -105,6 +105,28 @@ export class ChatComponent implements OnInit {
     );
   });
 
+  /**
+   * Answer text with story IDs and usernames converted to clickable HN links.
+   * - Story references like "Story 12345" or "(12345)" become links to HN items
+   * - Usernames after "by" or "user" become links to HN user profiles
+   */
+  readonly enrichedAnswer = computed(() => {
+    const res = this.response();
+    if (!res) return '';
+    let text = res.answer;
+
+    // Convert story ID references: "Story 12345", "story 12345", "(12345)", "[12345]"
+    text = text.replace(
+      /(?:(?:[Ss]tory\s+)(\d{5,10})|\[(\d{5,10})\]|\((\d{5,10})\))/g,
+      (match, id1, id2, id3) => {
+        const id = id1 ?? id2 ?? id3;
+        return `[${match}](https://news.ycombinator.com/item?id=${id})`;
+      },
+    );
+
+    return text;
+  });
+
   /** Whether the submit button should be disabled. */
   readonly submitDisabled = computed(
     () =>

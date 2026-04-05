@@ -382,7 +382,6 @@
               </svg>
               New question
             </button>
-            <app-provider-selector [(selectedProvider)]="selectedProvider" />
           </div>
         </div>
       </header>
@@ -417,8 +416,8 @@
       </div>
       }
 
-      <!-- Loading state -->
-      @if (loading() && !response()) {
+      <!-- Loading state (only when no steps have arrived yet) -->
+      @if (loading() && !response() && steps().length === 0) {
       <div class="mt-4 space-y-4" aria-busy="true">
         <!-- Context card: what's happening -->
         <div class="rounded-xl border border-border-subtle bg-surface-raised p-5">
@@ -525,7 +524,7 @@
             [class.max-h-96]="!answerExpanded()"
             [class.overflow-hidden]="!answerExpanded()"
           >
-            <markdown [data]="res.answer" />
+            <markdown [data]="enrichedAnswer()" />
           </div>
           @if (!answerExpanded()) {
           <div class="relative -mt-16 pt-16 bg-gradient-to-t from-surface-raised to-transparent">
