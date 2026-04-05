@@ -9,7 +9,7 @@ import type { AgentSource } from '@voxpopuli/shared-types';
  * HN discussion page.
  */
 @Component({
-  selector: 'vp-source-card',
+  selector: 'app-source-card',
   standalone: true,
   templateUrl: './source-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

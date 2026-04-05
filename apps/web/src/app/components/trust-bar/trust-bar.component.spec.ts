@@ -10,7 +10,7 @@ import { TrustBarComponent } from './trust-bar.component';
 @Component({
   standalone: true,
   imports: [TrustBarComponent],
-  template: `<vp-trust-bar [trust]="trust()" />`,
+  template: `<app-trust-bar [trust]="trust()" />`,
 })
 class TestHostComponent {
   readonly trust = input.required<TrustMetadata>();

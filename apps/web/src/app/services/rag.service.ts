@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -37,7 +37,7 @@ export class RagService {
   /** Human-readable error message from the most recent request, or `null`. */
   readonly error = signal<string | null>(null);
 
-  constructor(private readonly http: HttpClient) {}
+  private readonly http = inject(HttpClient);
 
   // -------------------------------------------------------------------------
   // Blocking query

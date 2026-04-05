@@ -21,7 +21,7 @@ type TrustColor =
  * Honesty flags, if present, render as muted text beneath the chips.
  */
 @Component({
-  selector: 'vp-trust-bar',
+  selector: 'app-trust-bar',
   standalone: true,
   templateUrl: './trust-bar.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
