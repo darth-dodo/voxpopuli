@@ -118,6 +118,23 @@ describe('TrustBarComponent', () => {
     expect(getAllText(el)).toContain('3 Show HN posts (may be biased)');
   });
 
+  // ── Recency label branches ──
+
+  it('should show "Mix of old and new" for recentSourceRatio ~0.6', () => {
+    createHost(stubTrust({ recentSourceRatio: 0.6 }));
+    expect(getAllText(el)).toContain('Mix of old and new');
+  });
+
+  it('should show "Mostly older sources" for recentSourceRatio ~0.3', () => {
+    createHost(stubTrust({ recentSourceRatio: 0.3 }));
+    expect(getAllText(el)).toContain('Mostly older');
+  });
+
+  it('should show avg age fallback when recentSourceRatio is 0 but avgSourceAge > 0', () => {
+    createHost(stubTrust({ recentSourceRatio: 0, avgSourceAge: 45 }));
+    expect(getAllText(el)).toContain('45 days old');
+  });
+
   // ── Colors ──
 
   it('should use verified color when all verified', () => {
@@ -136,6 +153,18 @@ describe('TrustBarComponent', () => {
     createHost(stubTrust({ sourcesVerified: 0, sourcesTotal: 0 }));
     const first = getIndicators(el)[0];
     expect(first.className).toContain('text-text-muted');
+  });
+
+  it('should use amber color for recency when ratio ~0.6', () => {
+    createHost(stubTrust({ recentSourceRatio: 0.6 }));
+    const recencyIndicator = getIndicators(el)[1];
+    expect(recencyIndicator.className).toContain('text-accent-amber');
+  });
+
+  it('should use caution color for recency when ratio ~0.3', () => {
+    createHost(stubTrust({ recentSourceRatio: 0.3 }));
+    const recencyIndicator = getIndicators(el)[1];
+    expect(recencyIndicator.className).toContain('text-trust-caution');
   });
 
   // ── Honesty flags ──
