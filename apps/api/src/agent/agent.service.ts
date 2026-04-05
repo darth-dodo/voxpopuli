@@ -136,9 +136,18 @@ export class AgentService {
       );
 
       let finalAnswer = '';
+      let actionCount = 0;
 
       try {
         for await (const event of stream) {
+          // Guard: exit early if we've hit the max action steps
+          if (actionCount >= maxSteps) {
+            this.logger.warn(
+              `[runStream] Hit max steps (${maxSteps}), exiting early with ${sourcesMap.size} sources`,
+            );
+            break;
+          }
+
           const messages = event.messages ?? [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const lastMsg = messages[messages.length - 1] as any;
@@ -161,6 +170,7 @@ export class AgentService {
                 timestamp: Date.now(),
               };
               steps.push(step);
+              actionCount++;
               yield { kind: 'step', step };
             }
           }
@@ -225,7 +235,7 @@ export class AgentService {
         const partial = buildPartialResponse(
           steps,
           sources,
-          this.llm.getProviderName(),
+          options?.provider ?? this.llm.getProviderName(),
           startTime,
           error,
         );
@@ -242,6 +252,24 @@ export class AgentService {
       const durationMs = Date.now() - startTime;
       const sources = Array.from(sourcesMap.values());
 
+      // If we hit the step limit without a final answer, build a partial response
+      if (!finalAnswer && actionCount >= maxSteps) {
+        this.logger.warn(
+          `Agent hit step limit (${maxSteps}): building partial response from ${sources.length} sources`,
+        );
+        const partial = buildPartialResponse(
+          steps,
+          sources,
+          options?.provider ?? this.llm.getProviderName(),
+          startTime,
+          new Error(`Step limit reached (${maxSteps} actions)`),
+        );
+        if (partial) {
+          yield { kind: 'complete', response: partial };
+          return;
+        }
+      }
+
       this.logger.log(
         `Agent completed: ${steps.length} steps, ${sourcesMap.size} sources, ${durationMs}ms`,
       );
@@ -254,7 +282,7 @@ export class AgentService {
           sources,
           trust: computeTrustMetadata(steps, sources, finalAnswer),
           meta: {
-            provider: this.llm.getProviderName(),
+            provider: options?.provider ?? this.llm.getProviderName(),
             totalInputTokens: 0,
             totalOutputTokens: 0,
             durationMs,
