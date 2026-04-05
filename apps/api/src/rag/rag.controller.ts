@@ -73,7 +73,10 @@ export class RagController {
    * @returns Observable of SSE {@link MessageEvent}s
    */
   @Sse('stream')
-  stream(@Query('query') query: string): Observable<MessageEvent> {
+  stream(
+    @Query('query') query: string,
+    @Query('provider') provider?: string,
+  ): Observable<MessageEvent> {
     if (!query || query.length > 500) {
       throw new HttpException(
         'Query is required and must be 500 characters or less',
@@ -84,7 +87,7 @@ export class RagController {
     this.enforceRateLimit();
 
     return new Observable<MessageEvent>((subscriber) => {
-      const generator = this.agent.runStream(query);
+      const generator = this.agent.runStream(query, { provider });
 
       (async () => {
         try {
