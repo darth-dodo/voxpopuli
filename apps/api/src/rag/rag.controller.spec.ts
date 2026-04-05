@@ -69,13 +69,24 @@ function fakeAgentResponse(answer = 'Test answer'): AgentResponse {
 // Tests
 // ---------------------------------------------------------------------------
 
+/**
+ * Create a mock async generator that yields the given events.
+ */
+async function* mockRunStream(
+  events: Array<{ kind: string; step?: AgentStep; response?: AgentResponse }>,
+) {
+  for (const event of events) {
+    yield event;
+  }
+}
+
 describe('RagController', () => {
   let controller: RagController;
-  let agentService: { run: jest.Mock };
+  let agentService: { run: jest.Mock; runStream: jest.Mock };
   let cacheService: { getOrSet: jest.Mock };
 
   beforeEach(async () => {
-    agentService = { run: jest.fn() };
+    agentService = { run: jest.fn(), runStream: jest.fn() };
     cacheService = { getOrSet: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -131,11 +142,21 @@ describe('RagController', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 3. GET /stream should emit SSE events
+  // 3. GET /stream should emit SSE events from runStream generator
   // -------------------------------------------------------------------------
   it('GET /stream should emit SSE events for each step and a final answer', async () => {
     const response = fakeAgentResponse();
-    agentService.run.mockResolvedValue(response);
+    const steps = response.steps;
+
+    // Mock runStream to yield step events then a complete event
+    agentService.runStream.mockReturnValue(
+      mockRunStream([
+        { kind: 'step', step: steps[0] },
+        { kind: 'step', step: steps[1] },
+        { kind: 'step', step: steps[2] },
+        { kind: 'complete', response },
+      ]),
+    );
 
     const observable = controller.stream('What is Rust?');
 
@@ -168,7 +189,13 @@ describe('RagController', () => {
   // 4. GET /stream should emit error event on failure
   // -------------------------------------------------------------------------
   it('GET /stream should emit error event on failure', async () => {
-    agentService.run.mockRejectedValue(new Error('LLM provider timeout'));
+    // Mock runStream to throw an error
+    agentService.runStream.mockReturnValue(
+      // eslint-disable-next-line require-yield
+      (async function* () {
+        throw new Error('LLM provider timeout');
+      })(),
+    );
 
     const observable = controller.stream('failing query');
     const events = await lastValueFrom(observable.pipe(toArray()));

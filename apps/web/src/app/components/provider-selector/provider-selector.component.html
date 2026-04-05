@@ -1,0 +1,16 @@
+<div class="flex items-center gap-2" role="radiogroup" aria-label="LLM provider">
+  @for (provider of providers; track provider.id) {
+  <button
+    type="button"
+    role="radio"
+    [attr.aria-checked]="provider.id === selectedProvider()"
+    [class]="
+      'vp-chip cursor-pointer transition-colors duration-150 ' +
+      (provider.id === selectedProvider() ? 'vp-chip--active' : '')
+    "
+    (click)="select(provider.id)"
+  >
+    {{ provider.name }}
+  </button>
+  }
+</div>

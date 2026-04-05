@@ -1,0 +1,14 @@
+<div class="flex flex-wrap items-center gap-1.5 text-mono text-xs text-text-secondary">
+  <span>{{ meta().provider }}</span>
+
+  <span class="text-text-muted" aria-hidden="true">&middot;</span>
+  <span>{{ totalTokens() }} tokens</span>
+
+  <span class="text-text-muted" aria-hidden="true">&middot;</span>
+  <span [class]="latencyColor()">{{ formattedDuration() }}</span>
+
+  @if (meta().cached) {
+  <span class="text-text-muted" aria-hidden="true">&middot;</span>
+  <span class="vp-badge vp-badge--cached text-xs px-1.5 py-0.5 rounded">cached</span>
+  }
+</div>

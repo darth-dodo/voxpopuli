@@ -1,0 +1,94 @@
+<!-- Agent Reasoning Timeline -->
+<section
+  class="rounded-xl border border-border-subtle bg-surface-raised px-4 py-3 sm:px-5 sm:py-4"
+  aria-label="Agent reasoning steps"
+>
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      @if (isStreaming()) {
+      <span class="relative flex h-2 w-2">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"
+        ></span>
+        <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+      </span>
+      <span class="text-ui text-sm text-text-secondary">Researching</span>
+      } @else {
+      <span class="text-ui text-sm text-text-muted">{{ stepCounter() }}</span>
+      }
+    </div>
+    <button
+      type="button"
+      class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer"
+      (click)="toggleCollapsed()"
+      [attr.aria-expanded]="!collapsed()"
+    >
+      {{ collapsed() ? 'Show' : 'Hide' }}
+    </button>
+  </div>
+
+  <!-- Compact step list -->
+  @if (!collapsed()) {
+  <div class="mt-3 space-y-0.5" role="list" aria-label="Reasoning steps">
+    @for (step of mergedSteps(); track step.action.timestamp; let isLast = $last) {
+    <div role="listitem" class="flex items-center gap-2 py-1 text-ui text-sm">
+      <!-- Checkmark or spinner -->
+      @if (step.observation) {
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="w-3.5 h-3.5 text-trust-verified shrink-0"
+        aria-hidden="true"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+      </svg>
+      } @else {
+      <span class="relative flex h-3 w-3 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-step-action/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-step-action"></span>
+      </span>
+      }
+
+      <!-- Action description -->
+      <span class="text-text-primary truncate">{{ formatAction(step.action) }}</span>
+
+      <!-- Result badge -->
+      @if (step.observation) {
+      <span class="text-mono text-xs text-text-muted shrink-0">
+        {{ formatObservation(step.observation.content) }}
+      </span>
+      }
+    </div>
+    }
+
+    <!-- Streaming indicator -->
+    @if (isStreaming() && pendingAction()) {
+    <div class="flex items-center gap-2 py-1 text-ui text-sm">
+      <span class="relative flex h-3 w-3 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-accent-amber"></span>
+      </span>
+      <span class="text-text-secondary">{{ formatAction(pendingAction()!) }}</span>
+    </div>
+    } @else if (isStreaming() && mergedSteps().length === 0) {
+    <div class="flex items-center gap-2 py-1 text-ui text-sm text-text-muted animate-pulse">
+      <span class="relative flex h-2.5 w-2.5 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
+      </span>
+      Starting...
+    </div>
+    }
+  </div>
+  }
+</section>

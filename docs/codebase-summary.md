@@ -1,7 +1,7 @@
 # VoxPopuli -- Codebase Summary
 
 **Generated:** 2026-04-04
-**Covers:** Milestones 1 through 3 (Scaffold & Data Layer, LLM & Chunker, Agent Core)
+**Covers:** Milestones 1 through 4 (Scaffold & Data Layer, LLM & Chunker, Agent Core, Frontend)
 
 ---
 
@@ -13,23 +13,23 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 
 ## 2. Tech Stack
 
-| Layer           | Technology              | Role                                                       |
-| --------------- | ----------------------- | ---------------------------------------------------------- |
-| Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph    |
-| Backend         | NestJS 11+              | API framework with module-based DI                         |
-| Frontend        | Angular 17+             | SPA with standalone components (scaffolded, not yet built) |
-| LLM (quality)   | Claude Sonnet 4         | Anthropic SDK via LangChain `@langchain/anthropic`         |
-| LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`           |
-| LLM (speed)     | Groq Llama 3.3 70B      | OpenAI-compatible via LangChain `@langchain/groq`          |
-| Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas            |
-| TTS             | ElevenLabs              | Planned -- podcast-style voice narration                   |
-| Cache           | node-cache              | In-memory TTL cache with typed get/set                     |
-| Shared types    | TypeScript lib          | `@voxpopuli/shared-types` consumed by both apps            |
-| Logging         | Pino (nestjs-pino)      | Structured JSON logging, pretty-print in dev               |
-| Validation      | class-validator + Zod   | Environment validation + agent tool schemas                |
-| HTTP client     | @nestjs/axios           | Algolia and Firebase API calls with retry + backoff        |
-| Package manager | pnpm                    | Workspace-aware dependency management                      |
-| CI              | GitHub Actions          | Lint and test on affected projects                         |
+| Layer           | Technology              | Role                                                    |
+| --------------- | ----------------------- | ------------------------------------------------------- |
+| Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph |
+| Backend         | NestJS 11+              | API framework with module-based DI                      |
+| Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4    |
+| LLM (quality)   | Claude Sonnet 4         | Anthropic SDK via LangChain `@langchain/anthropic`      |
+| LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`        |
+| LLM (speed)     | Groq Llama 3.3 70B      | OpenAI-compatible via LangChain `@langchain/groq`       |
+| Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas         |
+| TTS             | ElevenLabs              | Planned -- podcast-style voice narration                |
+| Cache           | node-cache              | In-memory TTL cache with typed get/set                  |
+| Shared types    | TypeScript lib          | `@voxpopuli/shared-types` consumed by both apps         |
+| Logging         | Pino (nestjs-pino)      | Structured JSON logging, pretty-print in dev            |
+| Validation      | class-validator + Zod   | Environment validation + agent tool schemas             |
+| HTTP client     | @nestjs/axios           | Algolia and Firebase API calls with retry + backoff     |
+| Package manager | pnpm                    | Workspace-aware dependency management                   |
+| CI              | GitHub Actions          | Lint and test on affected projects                      |
 
 ---
 
@@ -39,8 +39,8 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | --------- | --------------------- | ----------- | ------------------------------------------------------------------------------- |
 | M1        | Scaffold & Data Layer | Complete    | Nx monorepo, shared types, CacheService, HnService, health endpoint, CI, Docker |
 | M2        | LLM & Chunker         | Complete    | ChunkerService, LlmProviderInterface, 3 providers, LlmService facade            |
-| M3        | Agent Core            | Complete    | ReAct agent, RAG endpoints, trust framework, error handling, 103 tests          |
-| M4        | Frontend              | Not started | Chat UI, agent step visualization, source cards, provider selector              |
+| M3        | Agent Core            | Complete    | ReAct agent, RAG endpoints, trust framework, error handling                     |
+| M4        | Frontend              | Complete    | Chat UI, agent steps, source cards, trust bar, provider selector, landing page  |
 | M5        | Voice Output          | Not started | TTS backend + frontend audio player                                             |
 | M6        | Eval Harness          | Not started | Automated quality scoring for agent responses                                   |
 
@@ -76,7 +76,18 @@ voxpopuli/
 |   |           +-- dto/                      # RagQueryDto (class-validator)
 |   |           +-- filters/                  # HttpExceptionFilter (global error handler)
 |   +-- api-e2e/                     # E2E test harness (api.spec.ts)
-|   +-- web/                         # Angular frontend (scaffolded, default Nx template)
+|   +-- web/                         # Angular frontend
+|   |   +-- src/app/
+|   |       +-- components/
+|   |       |   +-- chat/             # ChatComponent -- query input, answer display, SSE streaming
+|   |       |   +-- agent-steps/      # AgentStepsComponent -- expandable reasoning timeline
+|   |       |   +-- source-card/      # SourceCardComponent -- HN story card with metadata
+|   |       |   +-- trust-bar/        # TrustBarComponent -- visual trust indicators
+|   |       |   +-- provider-selector/ # ProviderSelectorComponent -- LLM provider dropdown
+|   |       |   +-- meta-bar/         # MetaBarComponent -- token count, duration, provider info
+|   |       +-- services/
+|   |       |   +-- rag.service.ts    # HTTP + SSE client for RAG endpoints
+|   |       +-- app.component.ts      # Product landing page with hero + example questions
 |   +-- web-e2e/                     # Frontend E2E placeholder
 +-- libs/
 |   +-- shared-types/src/lib/        # shared-types.ts (all API contracts + trust framework)
@@ -172,15 +183,16 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 ### 5.6 AgentModule (`apps/api/src/agent/`)
 
-| Attribute       | Value                                                                                              |
-| --------------- | -------------------------------------------------------------------------------------------------- |
-| Purpose         | ReAct reasoning agent that searches HN and synthesizes sourced answers                             |
-| Key class       | `AgentService`                                                                                     |
-| Key methods     | `run(query, options?)` -- executes the full agent loop, returns `AgentResponse`                    |
-| Test file       | `agent.service.spec.ts` (6 tests)                                                                  |
-| Dependencies    | `LlmService`, `HnService`, `ChunkerService`, `langchain` (createAgent), `zod`                      |
-| Agent framework | LangChain `createAgent` (v1.2+) with `tool()` helper and Zod schemas                               |
-| Constraints     | Max 7 steps (`recursionLimit`), 60s timeout (`AbortSignal`), 5 concurrent runs (counter semaphore) |
+| Attribute       | Value                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Purpose         | ReAct reasoning agent that searches HN and synthesizes sourced answers                                                     |
+| Key class       | `AgentService`                                                                                                             |
+| Key methods     | `run(query, options?)` -- executes the full agent loop, returns `AgentResponse`                                            |
+| Test file       | `agent.service.spec.ts` (6 tests)                                                                                          |
+| Dependencies    | `LlmService`, `HnService`, `ChunkerService`, `langchain` (createAgent), `zod`                                              |
+| Agent framework | LangChain `createAgent` (v1.2+) with `tool()` helper and Zod schemas                                                       |
+| Constraints     | Max 7 steps (`recursionLimit`) with action count guard, 60s timeout (`AbortSignal`), 5 concurrent runs (counter semaphore) |
+| Enhancements    | Current date injected into system prompt, debug logging for agent loop steps                                               |
 
 **Tools** (defined in `tools.ts`):
 
@@ -209,10 +221,10 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 **Endpoints:**
 
-| Endpoint          | Method | Description                                                    |
-| ----------------- | ------ | -------------------------------------------------------------- |
-| `/api/rag/query`  | POST   | Blocking full `AgentResponse`, cached 10 min                   |
-| `/api/rag/stream` | GET    | SSE streaming (thought/action/observation/answer/error events) |
+| Endpoint          | Method | Description                                                                                    |
+| ----------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `/api/rag/query`  | POST   | Blocking full `AgentResponse`, cached 10 min                                                   |
+| `/api/rag/stream` | GET    | SSE streaming (thought/action/observation/answer/error events), accepts `provider` query param |
 
 **Supporting files:**
 

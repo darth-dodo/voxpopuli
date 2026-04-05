@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AgentService } from './agent.service';
+import type { AgentStreamEvent } from './agent.service';
 import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
@@ -228,14 +229,13 @@ describe('AgentService', () => {
 
     await service.run('test query');
 
-    // Verify the system prompt had {{maxSteps}} replaced with the actual number
+    // Verify the system prompt had placeholders replaced
     const callArgs = (createAgent as jest.Mock).mock.calls[0][0];
     expect(callArgs.systemPrompt).not.toContain('{{maxSteps}}');
+    expect(callArgs.systemPrompt).not.toContain('{{currentDate}}');
     expect(callArgs.systemPrompt).toContain('7'); // MAX_STEPS = 7
-
-    // Verify it matches the expected replaced prompt
-    const expectedPrompt = AGENT_SYSTEM_PROMPT.replace('{{maxSteps}}', '7');
-    expect(callArgs.systemPrompt).toBe(expectedPrompt);
+    // Current date should be injected in YYYY-MM-DD format
+    expect(callArgs.systemPrompt).toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
   // -------------------------------------------------------------------------
@@ -282,5 +282,100 @@ describe('AgentService', () => {
     expect(actionSteps.length).toBeGreaterThanOrEqual(1);
     expect(observationSteps.length).toBeGreaterThanOrEqual(1);
     expect(actionSteps[0].toolName).toBe('search_hn');
+  });
+
+  // =========================================================================
+  // runStream() tests
+  // =========================================================================
+
+  // -------------------------------------------------------------------------
+  // 7. runStream should yield step events during iteration
+  // -------------------------------------------------------------------------
+  it('runStream should yield step events during iteration', async () => {
+    const mockStream = createMockStream([
+      { messages: [fakeToolCallMessage('search_hn', { query: 'rust' })] },
+      { messages: [fakeToolMessage('Found results', 'search_hn')] },
+      { messages: [fakeAIMessage('Rust is popular on HN.')] },
+    ]);
+
+    (createAgent as jest.Mock).mockReturnValue({
+      stream: jest.fn().mockResolvedValue(mockStream),
+    });
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of service.runStream('test query')) {
+      events.push(event);
+    }
+
+    // Should have step events followed by a complete event
+    const stepEvents = events.filter((e) => e.kind === 'step');
+    const completeEvents = events.filter((e) => e.kind === 'complete');
+
+    expect(stepEvents.length).toBeGreaterThanOrEqual(2); // action + observation at minimum
+    expect(completeEvents).toHaveLength(1);
+
+    // Verify step types match expected sequence
+    expect(stepEvents[0].kind === 'step' && stepEvents[0].step.type).toBe('action');
+    expect(stepEvents[1].kind === 'step' && stepEvents[1].step.type).toBe('observation');
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. runStream should yield complete response with trust metadata
+  // -------------------------------------------------------------------------
+  it('runStream should yield complete response with trust metadata', async () => {
+    const mockStream = createMockStream([{ messages: [fakeAIMessage('Direct answer.')] }]);
+
+    (createAgent as jest.Mock).mockReturnValue({
+      stream: jest.fn().mockResolvedValue(mockStream),
+    });
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of service.runStream('test query')) {
+      events.push(event);
+    }
+
+    const completeEvent = events.find((e) => e.kind === 'complete');
+    expect(completeEvent).toBeDefined();
+
+    if (completeEvent?.kind === 'complete') {
+      expect(completeEvent.response.answer).toBe('Direct answer.');
+      expect(completeEvent.response.trust).toHaveProperty('sourcesVerified');
+      expect(completeEvent.response.trust).toHaveProperty('viewpointDiversity');
+      expect(completeEvent.response.meta.provider).toBe('groq');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. runStream should respect max concurrent runs
+  // -------------------------------------------------------------------------
+  it('runStream should respect max concurrent runs', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any).activeConcurrent = 5;
+
+    const generator = service.runStream('test query');
+    await expect(generator.next()).rejects.toThrow(
+      'Too many concurrent agent runs. Please try again later.',
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. runStream should decrement concurrent counter after completion
+  // -------------------------------------------------------------------------
+  it('runStream should decrement concurrent counter after completion', async () => {
+    const mockStream = createMockStream([{ messages: [fakeAIMessage('Done.')] }]);
+
+    (createAgent as jest.Mock).mockReturnValue({
+      stream: jest.fn().mockResolvedValue(mockStream),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any).activeConcurrent = 0;
+
+    for await (const _ of service.runStream('test query')) {
+      // consume all events
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((service as any).activeConcurrent).toBe(0);
   });
 });
