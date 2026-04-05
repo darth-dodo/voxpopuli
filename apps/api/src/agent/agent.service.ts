@@ -103,6 +103,14 @@ export class AgentService {
 
     try {
       const maxSteps = options?.maxSteps ?? MAX_STEPS;
+      const providerName = options?.provider ?? this.llm.getProviderName();
+      this.logger.log(
+        `[runStream] query="${query.slice(
+          0,
+          80,
+        )}" provider=${providerName} maxSteps=${maxSteps} timeout=${TIMEOUT_MS}ms`,
+      );
+
       const model = this.llm.getModel(options?.provider);
       const tools = createAgentTools(this.hn, this.chunker);
 
@@ -139,6 +147,12 @@ export class AgentService {
           // Tool call — record and yield as action step
           if (lastMsg.tool_calls?.length) {
             for (const tc of lastMsg.tool_calls) {
+              this.logger.debug(
+                `[step ${steps.length + 1}] action: ${tc.name}(${JSON.stringify(tc.args).slice(
+                  0,
+                  100,
+                )})`,
+              );
               const step: AgentStep = {
                 type: 'action',
                 content: `Calling ${tc.name}`,
@@ -167,6 +181,9 @@ export class AgentService {
               timestamp: Date.now(),
             };
             steps.push(step);
+            this.logger.debug(
+              `[step ${steps.length}] observation: ${String(lastMsg.content).slice(0, 120)}...`,
+            );
             yield { kind: 'step', step };
 
             // Extract source IDs from search results and story fetches
@@ -199,7 +216,10 @@ export class AgentService {
       } catch (err) {
         // AI-164: Return partial results if we have any useful data
         const error = err instanceof Error ? err : new Error(String(err));
-        this.logger.error(`Agent failed after ${steps.length} steps: ${error.message}`);
+        const elapsed = Date.now() - startTime;
+        this.logger.error(
+          `Agent failed after ${steps.length} steps (${elapsed}ms): ${error.message}`,
+        );
 
         const sources = Array.from(sourcesMap.values());
         const partial = buildPartialResponse(
