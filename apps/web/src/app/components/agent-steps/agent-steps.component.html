@@ -1,93 +1,71 @@
 <!-- Agent Reasoning Timeline -->
-<section
-  class="rounded-xl border border-border-subtle bg-surface-raised px-4 py-3 sm:px-5 sm:py-4"
-  aria-label="Agent reasoning steps"
->
+<section class="vp-terminal overflow-x-auto" aria-label="Agent reasoning steps">
   <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      @if (isStreaming()) {
-      <span class="relative flex h-2 w-2">
-        <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"
-        ></span>
-        <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
-      </span>
-      <span class="text-ui text-sm text-text-secondary">Researching</span>
-      } @else {
-      <span class="text-ui text-sm text-text-muted">{{ stepCounter() }}</span>
-      }
-    </div>
+  <div class="flex items-center justify-between mb-3">
+    <span class="text-mono text-xs text-text-muted">{{ stepCounter() }}</span>
     <button
       type="button"
-      class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer"
+      class="vp-btn-ghost text-xs px-2 py-1"
       (click)="toggleCollapsed()"
       [attr.aria-expanded]="!collapsed()"
+      aria-controls="agent-steps-list"
     >
-      {{ collapsed() ? 'Show' : 'Hide' }}
+      {{ collapsed() ? 'Expand' : 'Collapse' }}
     </button>
   </div>
 
-  <!-- Compact step list -->
+  <!-- Step list -->
   @if (!collapsed()) {
-  <div class="mt-3 space-y-0.5" role="list" aria-label="Reasoning steps">
-    @for (step of mergedSteps(); track step.action.timestamp; let isLast = $last) {
-    <div role="listitem" class="flex items-center gap-2 py-1 text-ui text-sm">
-      <!-- Checkmark or spinner -->
-      @if (step.observation) {
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke-width="2"
-        stroke="currentColor"
-        class="w-3.5 h-3.5 text-trust-verified shrink-0"
-        aria-hidden="true"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-      </svg>
-      } @else {
-      <span class="relative flex h-3 w-3 shrink-0">
-        <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-step-action/50"
-        ></span>
-        <span class="relative inline-flex rounded-full h-3 w-3 bg-step-action"></span>
-      </span>
+  <div id="agent-steps-list" class="space-y-3" role="list" aria-label="Reasoning steps">
+    @for (step of steps(); track step.timestamp; let i = $index; let isLast = $last) {
+    <div role="listitem" class="relative">
+      <!-- Step badge -->
+      <span class="vp-badge vp-badge--{{ step.type }}">{{ step.type }}</span>
+
+      <!-- Thought content -->
+      @if (step.type === 'thought') {
+      <p class="mt-1.5 text-text-secondary">{{ step.content }}</p>
       }
 
-      <!-- Action description -->
-      <span class="text-text-primary truncate">{{ formatAction(step.action) }}</span>
+      <!-- Action content: toolName(toolInput) -->
+      @if (step.type === 'action') {
+      <p class="mt-1.5 text-step-action break-words">
+        {{ step.toolName }}({{ formatToolInput(step.toolInput) }})
+      </p>
+      }
 
-      <!-- Result badge -->
-      @if (step.observation) {
-      <span class="text-mono text-xs text-text-muted shrink-0">
-        {{ formatObservation(step.observation.content) }}
-      </span>
+      <!-- Observation content (collapsible) -->
+      @if (step.type === 'observation') { @if (isLongObservation(step.content)) {
+      <div class="mt-1.5">
+        <p
+          class="text-text-muted whitespace-pre-line"
+          [class.line-clamp-3]="!isObservationExpanded(i)"
+        >
+          {{ step.content }}
+        </p>
+        <button
+          type="button"
+          class="text-accent-amber text-xs mt-1 hover:text-accent-amber-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-amber"
+          (click)="toggleObservation(i)"
+          [attr.aria-expanded]="isObservationExpanded(i)"
+        >
+          {{ isObservationExpanded(i) ? 'Show less' : 'Show more' }}
+        </button>
+      </div>
+      } @else {
+      <p class="mt-1.5 text-text-muted whitespace-pre-line">{{ step.content }}</p>
+      } }
+
+      <!-- Streaming cursor on last step -->
+      @if (isLast && isStreaming()) {
+      <span class="vp-cursor" aria-label="Agent is thinking"></span>
       }
     </div>
     }
 
-    <!-- Streaming indicator -->
-    @if (isStreaming() && pendingAction()) {
-    <div class="flex items-center gap-2 py-1 text-ui text-sm">
-      <span class="relative flex h-3 w-3 shrink-0">
-        <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
-        ></span>
-        <span class="relative inline-flex rounded-full h-3 w-3 bg-accent-amber"></span>
-      </span>
-      <span class="text-text-secondary">{{ formatAction(pendingAction()!) }}</span>
-    </div>
-    } @else if (isStreaming() && mergedSteps().length === 0) {
-    <div class="flex items-center gap-2 py-1 text-ui text-sm text-text-muted animate-pulse">
-      <span class="relative flex h-2.5 w-2.5 shrink-0">
-        <span
-          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
-        ></span>
-        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
-      </span>
-      Starting...
-    </div>
+    <!-- Cursor when streaming with no steps yet -->
+    @if (steps().length === 0 && isStreaming()) {
+    <div class="vp-cursor" aria-label="Agent is thinking"></div>
     }
   </div>
   }

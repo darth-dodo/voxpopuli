@@ -27,7 +27,7 @@ Three-font strategy with clear role separation:
 
 ## Color Palette
 
-### Surfaces (Dark OLED -- default)
+### Surfaces (Dark OLED)
 
 | Token   | Hex       | Tailwind Class       | Usage                |
 | ------- | --------- | -------------------- | -------------------- |
@@ -74,23 +74,6 @@ Three-font strategy with clear role separation:
 | muted     | `#64748B` | `text-text-muted`     |
 | faint     | `#475569` | `text-text-faint`     |
 | inverse   | `#0F172A` | `text-text-inverse`   |
-
-### Light Theme
-
-Activated by adding the `.light` class to the `<html>` element (toggled via the sun/moon button in the header).
-
-| Token           | Dark (default) | Light override |
-| --------------- | -------------- | -------------- |
-| surface-void    | `#000000`      | `#FFFFFF`      |
-| surface-base    | `#020617`      | `#F8FAFC`      |
-| surface-raised  | `#0F172A`      | `#FFFFFF`      |
-| surface-overlay | `#1E293B`      | `#F1F5F9`      |
-| surface-float   | `#334155`      | `#E2E8F0`      |
-| text-primary    | `#F8FAFC`      | `#0F172A`      |
-| text-secondary  | `#94A3B8`      | `#475569`      |
-| text-muted      | `#64748B`      | `#64748B`      |
-| border-subtle   | —              | `#E2E8F0`      |
-| border-default  | —              | `#CBD5E1`      |
 
 ## Component Classes
 
@@ -152,34 +135,23 @@ All components are defined as CSS classes in `apps/web/src/styles.css` via `@lay
 </div>
 ```
 
-### Trust Bar
-
-Trust indicators use inline pill badges with a `border-current/20 bg-current/5` pattern, where the pill's `color` is set to the trust-level color and the border/background derive from it via opacity modifiers.
+### Terminal / Agent Output
 
 ```html
-<span class="text-trust-verified border-current/20 bg-current/5 rounded-full px-2 py-0.5">
-  4/4 verified
-</span>
-```
-
-### Agent Steps
-
-Agent steps render as compact merged rows (no wrapping `vp-terminal` container). Each step is a single row with a colored badge and inline content.
-
-```html
-<!-- Steps are rendered inline, not inside a terminal container -->
-<div class="flex items-start gap-2 ...">
-  <span class="vp-badge vp-badge--thought">thought</span>
-  <span class="text-text-secondary text-sm">Agent reasoning text...</span>
+<div class="vp-terminal">
+  <!-- Agent steps rendered here -->
 </div>
 ```
 
 ### Answer Prose
 
-Answer content is rendered via the `<markdown>` component from `ngx-markdown`, styled with the `vp-prose` class.
-
 ```html
-<markdown class="vp-prose" [data]="answer"></markdown>
+<div class="vp-prose">
+  <p>
+    Editorial-styled answer text with <strong>bold highlights</strong> and
+    <a href="#">source links</a>.
+  </p>
+</div>
 ```
 
 ### Loading States
@@ -224,6 +196,17 @@ Easing: `--ease-out-expo` for entrances, `--ease-in-out-quart` for transitions.
 
 All animations respect `prefers-reduced-motion: reduce`.
 
+## Z-Index Scale
+
+| Token          | Value | Usage               |
+| -------------- | ----- | ------------------- |
+| `--z-base`     | 0     | Default content     |
+| `--z-raised`   | 10    | Cards, panels       |
+| `--z-dropdown` | 20    | Dropdowns, tooltips |
+| `--z-sticky`   | 30    | Sticky headers      |
+| `--z-overlay`  | 40    | Overlays, modals    |
+| `--z-modal`    | 50    | Modal dialogs       |
+
 ## Accessibility
 
 - WCAG AAA contrast on dark backgrounds (text-primary `#F8FAFC` on surface-base `#020617`)
@@ -237,18 +220,10 @@ All animations respect `prefers-reduced-motion: reduce`.
 ```
 apps/web/src/
 ├── styles.css              # Design system (Tailwind v4 @theme + @layer components)
-├── index.html              # Dark/light theme meta tags
+├── index.html              # Dark theme meta tags
 └── app/
-    ├── components/
-    │   ├── agent-steps/    # Compact merged-row agent step display
-    │   ├── chat/           # Chat interface and message rendering
-    │   ├── meta-bar/       # Query metadata bar
-    │   ├── provider-selector/ # LLM provider selection chips
-    │   ├── source-card/    # HN story source cards
-    │   └── trust-bar/      # Trust indicator pill badges
-    ├── pages/
-    │   └── design-system/  # Live showcase (route: /design-system)
-    └── services/           # Angular services (RAG, TTS, etc.)
+    └── pages/
+        └── design-system/  # Live showcase (route: /design-system)
 ```
 
 ## Tailwind v4 Setup

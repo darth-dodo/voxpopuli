@@ -20,15 +20,8 @@ export class MetaBarComponent {
     return (m.totalInputTokens + m.totalOutputTokens).toLocaleString();
   });
 
-  /** Latency formatted as a human-readable duration string. */
-  readonly formattedDuration = computed(() => {
-    const ms = this.meta().durationMs;
-    if (ms < 1_000) return `${ms}ms`;
-    if (ms < 60_000) return `${(ms / 1_000).toFixed(1)}s`;
-    const mins = Math.floor(ms / 60_000);
-    const secs = Math.round((ms % 60_000) / 1_000);
-    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-  });
+  /** Latency formatted with locale separators. */
+  readonly formattedDuration = computed(() => this.meta().durationMs.toLocaleString());
 
   /**
    * CSS class for the latency value based on response time thresholds.

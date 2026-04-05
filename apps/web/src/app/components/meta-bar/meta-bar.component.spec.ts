@@ -65,8 +65,8 @@ describe('MetaBarComponent', () => {
     expect(el.textContent).toContain('1,234 tokens');
   });
 
-  it('should display latency as human-readable duration', () => {
-    expect(el.textContent).toContain('4.5s');
+  it('should display latency in milliseconds', () => {
+    expect(el.textContent).toContain('4,521ms');
   });
 
   // ---------------------------------------------------------------------------
@@ -87,42 +87,11 @@ describe('MetaBarComponent', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Duration formatting branches
-  // ---------------------------------------------------------------------------
-
-  it('should display duration in milliseconds when under 1 second', () => {
-    host.meta.set(stubMeta({ durationMs: 450 }));
-    fixture.detectChanges();
-    expect(el.textContent).toContain('450ms');
-  });
-
-  it('should display duration in minutes and seconds when over 1 minute', () => {
-    host.meta.set(stubMeta({ durationMs: 75000 }));
-    fixture.detectChanges();
-    expect(el.textContent).toContain('1m 15s');
-  });
-
-  it('should display duration in minutes only when exactly 1 minute', () => {
-    host.meta.set(stubMeta({ durationMs: 60000 }));
-    fixture.detectChanges();
-    expect(el.textContent).toContain('1m');
-    expect(el.textContent).not.toContain('1m 0s');
-  });
-
-  // ---------------------------------------------------------------------------
   // Latency color thresholds
   // ---------------------------------------------------------------------------
 
   it('should apply green color class for latency < 5000ms', () => {
     host.meta.set(stubMeta({ durationMs: 2000 }));
-    fixture.detectChanges();
-
-    const latencySpan = findLatencySpan();
-    expect(latencySpan?.classList.contains('text-trust-verified')).toBe(true);
-  });
-
-  it('should apply green color class for fast duration under 1 second', () => {
-    host.meta.set(stubMeta({ durationMs: 3000 }));
     fixture.detectChanges();
 
     const latencySpan = findLatencySpan();
@@ -165,16 +134,9 @@ describe('MetaBarComponent', () => {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /** Find the span that contains the latency value (has a latency color class). */
+  /** Find the span that contains the latency value (ends with "ms"). */
   function findLatencySpan(): Element | null {
     const spans = el.querySelectorAll('span');
-    return (
-      Array.from(spans).find(
-        (s) =>
-          s.classList.contains('text-trust-verified') ||
-          s.classList.contains('text-accent-amber') ||
-          s.classList.contains('text-trust-danger'),
-      ) ?? null
-    );
+    return Array.from(spans).find((s) => s.textContent?.trim().endsWith('ms')) ?? null;
   }
 });

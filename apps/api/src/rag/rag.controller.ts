@@ -4,6 +4,7 @@ import {
   Body,
   Query,
   Sse,
+  Header,
   Logger,
   HttpException,
   HttpStatus,
@@ -73,6 +74,9 @@ export class RagController {
    * @returns Observable of SSE {@link MessageEvent}s
    */
   @Sse('stream')
+  @Header('X-Accel-Buffering', 'no')
+  @Header('Cache-Control', 'no-cache')
+  @Header('Connection', 'keep-alive')
   stream(
     @Query('query') query: string,
     @Query('provider') provider?: string,
