@@ -76,13 +76,13 @@ describe('RagService', () => {
     it('should POST to /api/rag/query and return AgentResponse', () => {
       const expected = stubAgentResponse();
 
-      service.query('What is Hacker News?').subscribe((res) => {
+      service.query('What is HackerNews?').subscribe((res) => {
         expect(res).toEqual(expected);
       });
 
       const req = httpMock.expectOne('/api/rag/query');
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ query: 'What is Hacker News?' });
+      expect(req.request.body).toEqual({ query: 'What is HackerNews?' });
       req.flush(expected);
     });
 

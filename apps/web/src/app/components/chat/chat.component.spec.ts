@@ -15,7 +15,7 @@ import { MetaBarComponent } from '../meta-bar/meta-bar.component';
 /** Factory for a minimal valid AgentResponse. */
 function mockAgentResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
   return {
-    answer: '<p>Test answer about Hacker News.</p>',
+    answer: '<p>Test answer about HackerNews.</p>',
     steps: [],
     sources: [
       {
