@@ -1,10 +1,10 @@
 <!-- Agent Reasoning Timeline -->
 <section
-  class="rounded-xl border border-border-subtle bg-surface-raised p-4 sm:p-5"
+  class="rounded-xl border border-border-subtle bg-surface-raised px-4 py-3 sm:px-5 sm:py-4"
   aria-label="Agent reasoning steps"
 >
-  <!-- Header with progress -->
-  <div class="flex items-center justify-between mb-4">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
     <div class="flex items-center gap-2">
       @if (isStreaming()) {
       <span class="relative flex h-2 w-2">
@@ -13,7 +13,7 @@
         ></span>
         <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
       </span>
-      <span class="text-ui text-sm text-text-secondary">Thinking...</span>
+      <span class="text-ui text-sm text-text-secondary">Researching</span>
       } @else {
       <span class="text-ui text-sm text-text-muted">{{ stepCounter() }}</span>
       }
@@ -23,109 +23,70 @@
       class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer"
       (click)="toggleCollapsed()"
       [attr.aria-expanded]="!collapsed()"
-      aria-controls="agent-steps-list"
     >
       {{ collapsed() ? 'Show' : 'Hide' }}
     </button>
   </div>
 
-  <!-- Step list -->
+  <!-- Compact step list -->
   @if (!collapsed()) {
-  <div id="agent-steps-list" class="space-y-1" role="list" aria-label="Reasoning steps">
-    @for (step of steps(); track step.timestamp; let i = $index; let isLast = $last) {
-    <div role="listitem" class="flex items-start gap-3 py-1.5">
-      <!-- Timeline icon -->
-      <div class="flex flex-col items-center pt-1">
-        @if (step.type === 'action') {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-4 h-4 text-step-action"
-          aria-hidden="true"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-          />
-        </svg>
-        } @else if (step.type === 'thought') {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-4 h-4 text-step-thought"
-          aria-hidden="true"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-          />
-        </svg>
-        } @else {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-4 h-4 text-step-observation"
-          aria-hidden="true"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
-          />
-        </svg>
-        }
-      </div>
+  <div class="mt-3 space-y-0.5" role="list" aria-label="Reasoning steps">
+    @for (step of mergedSteps(); track step.action.timestamp; let isLast = $last) {
+    <div role="listitem" class="flex items-center gap-2 py-1 text-ui text-sm">
+      <!-- Checkmark or spinner -->
+      @if (step.observation) {
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="w-3.5 h-3.5 text-trust-verified shrink-0"
+        aria-hidden="true"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+      </svg>
+      } @else {
+      <span class="relative flex h-3 w-3 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-step-action/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-step-action"></span>
+      </span>
+      }
 
-      <!-- Step content -->
-      <div class="flex-1 min-w-0">
-        @if (step.type === 'action') {
-        <p class="text-ui text-sm text-text-primary">{{ formatAction(step) }}</p>
-        } @else if (step.type === 'thought') {
-        <p class="text-ui text-sm text-text-secondary italic">{{ step.content }}</p>
-        } @else if (step.type === 'observation') {
-        <p class="text-ui text-sm text-text-muted">{{ formatObservation(step.content) }}</p>
-        @if (isLongObservation(step.content)) {
-        <button
-          type="button"
-          class="text-mono text-xs text-text-faint hover:text-text-muted cursor-pointer mt-0.5"
-          (click)="toggleObservation(i)"
-          [attr.aria-expanded]="isObservationExpanded(i)"
-        >
-          {{ isObservationExpanded(i) ? 'Hide raw output' : 'Show raw output' }}
-        </button>
-        @if (isObservationExpanded(i)) {
-        <pre
-          class="mt-2 text-mono text-xs text-text-faint bg-surface-void rounded-lg p-3 overflow-x-auto max-h-48 overflow-y-auto"
-          >{{ step.content }}</pre
-        >
-        } } }
-      </div>
+      <!-- Action description -->
+      <span class="text-text-primary truncate">{{ formatAction(step.action) }}</span>
+
+      <!-- Result badge -->
+      @if (step.observation) {
+      <span class="text-mono text-xs text-text-muted shrink-0">
+        {{ formatObservation(step.observation.content) }}
+      </span>
+      }
     </div>
     }
 
-    <!-- Streaming indicator when waiting for next step -->
-    @if (isStreaming()) {
-    <div class="flex items-center gap-3 py-1.5">
-      <div class="flex flex-col items-center pt-1">
-        <span class="relative flex h-3 w-3">
-          <span
-            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
-          ></span>
-          <span class="relative inline-flex rounded-full h-3 w-3 bg-accent-amber"></span>
-        </span>
-      </div>
-      <p class="text-ui text-sm text-text-muted animate-pulse">Working...</p>
+    <!-- Streaming indicator -->
+    @if (isStreaming() && pendingAction()) {
+    <div class="flex items-center gap-2 py-1 text-ui text-sm">
+      <span class="relative flex h-3 w-3 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-accent-amber"></span>
+      </span>
+      <span class="text-text-secondary">{{ formatAction(pendingAction()!) }}</span>
+    </div>
+    } @else if (isStreaming() && mergedSteps().length === 0) {
+    <div class="flex items-center gap-2 py-1 text-ui text-sm text-text-muted animate-pulse">
+      <span class="relative flex h-2.5 w-2.5 shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber/50"
+        ></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
+      </span>
+      Starting...
     </div>
     }
   </div>
