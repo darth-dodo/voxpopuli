@@ -1,5 +1,5 @@
 <!-- Agent Reasoning Timeline -->
-<section class="vp-terminal" aria-label="Agent reasoning steps">
+<section class="vp-terminal overflow-x-auto" aria-label="Agent reasoning steps">
   <!-- Header -->
   <div class="flex items-center justify-between mb-3">
     <span class="text-mono text-xs text-text-muted">{{ stepCounter() }}</span>
@@ -29,7 +29,7 @@
 
       <!-- Action content: toolName(toolInput) -->
       @if (step.type === 'action') {
-      <p class="mt-1.5 text-step-action">
+      <p class="mt-1.5 text-step-action break-words">
         {{ step.toolName }}({{ formatToolInput(step.toolInput) }})
       </p>
       }

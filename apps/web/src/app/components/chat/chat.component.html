@@ -1,10 +1,10 @@
 <section
-  class="flex flex-col min-h-screen bg-surface-base px-md py-xl max-w-3xl mx-auto"
+  class="flex flex-col min-h-screen bg-surface-base px-4 md:px-8 py-xl max-w-3xl mx-auto"
   aria-label="VoxPopuli Chat"
 >
   <!-- Header -->
   <header class="mb-xl text-center">
-    <h1 class="text-editorial text-accent-amber mb-xs">VoxPopuli</h1>
+    <h1 class="text-editorial text-accent-amber mb-xs text-3xl md:text-4xl">VoxPopuli</h1>
     <p class="text-text-secondary text-sm text-ui">Voice of Hacker News</p>
   </header>
 
@@ -73,12 +73,12 @@
   </div>
 
   <!-- Input area -->
-  <footer class="flex items-center gap-sm">
+  <footer class="sticky bottom-0 bg-surface-base pb-4 pt-3 flex items-center gap-sm">
     <label for="query-input" class="sr-only">Your question</label>
     <input
       id="query-input"
       type="text"
-      class="vp-input flex-1"
+      class="vp-input flex-1 min-w-0"
       placeholder="What's happening on Hacker News?"
       [ngModel]="query()"
       (ngModelChange)="query.set($event)"
@@ -97,7 +97,10 @@
     >
       Ask
     </button>
-    <span class="text-mono text-xs text-text-muted whitespace-nowrap" aria-label="Character count">
+    <span
+      class="text-mono text-xs text-text-muted whitespace-nowrap hidden sm:inline"
+      aria-label="Character count"
+    >
       {{ charCount() }}&nbsp;/&nbsp;{{ maxLength }}
     </span>
   </footer>
