@@ -358,10 +358,33 @@
         <app-provider-selector [(selectedProvider)]="selectedProvider" />
       </header>
 
-      <!-- Agent steps timeline -->
+      <!-- Agent steps (auto-collapsed after answer, expanded during streaming) -->
       @if (steps().length > 0 || isStreaming()) {
       <div class="mb-4">
+        @if (stepsCollapsed() && !isStreaming()) {
+        <!-- Collapsed summary -->
+        <button
+          type="button"
+          class="w-full flex items-center justify-between p-3 rounded-lg bg-surface-raised border border-border-subtle text-left cursor-pointer hover:border-border-default transition-colors"
+          (click)="stepsCollapsed.set(false)"
+        >
+          <span class="text-mono text-xs text-text-muted">
+            Agent completed in {{ steps().length }} steps
+          </span>
+          <span class="text-mono text-xs text-accent-amber">Expand</span>
+        </button>
+        } @else {
+        <!-- Full steps view -->
         <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+        @if (!isStreaming() && response()) {
+        <button
+          type="button"
+          class="w-full text-center text-mono text-xs text-text-muted mt-2 hover:text-text-secondary cursor-pointer"
+          (click)="stepsCollapsed.set(true)"
+        >
+          Collapse steps
+        </button>
+        } }
       </div>
       }
 
@@ -417,15 +440,33 @@
         </div>
         }
 
-        <!-- Answer prose -->
+        <!-- Answer prose (capped height with expand toggle) -->
         <div class="vp-card p-5 sm:p-8">
-          <div class="vp-prose">
+          <div
+            class="vp-prose"
+            [class.max-h-96]="!answerExpanded()"
+            [class.overflow-hidden]="!answerExpanded()"
+          >
             <markdown [data]="res.answer" />
           </div>
+          @if (!answerExpanded()) {
+          <div class="relative -mt-16 pt-16 bg-gradient-to-t from-surface-raised to-transparent">
+            <button
+              type="button"
+              class="w-full text-center text-mono text-xs text-accent-amber hover:text-accent-amber-glow cursor-pointer py-2"
+              (click)="answerExpanded.set(true)"
+            >
+              Show full answer
+            </button>
+          </div>
+          }
         </div>
 
-        <!-- Trust bar -->
-        <app-trust-bar [trust]="res.trust" />
+        <!-- Trust + Meta row -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <app-trust-bar [trust]="res.trust" />
+          <app-meta-bar [meta]="res.meta" />
+        </div>
 
         <!-- Source cards -->
         @if (res.sources.length > 0) {
@@ -433,16 +474,13 @@
           <h3 class="text-mono text-xs text-text-muted uppercase tracking-wider mb-3">
             Sources ({{ res.sources.length }})
           </h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             @for (source of res.sources; track source.storyId) {
             <app-source-card [source]="source" />
             }
           </div>
         </div>
         }
-
-        <!-- Meta bar -->
-        <app-meta-bar [meta]="res.meta" />
       </article>
       } }
     </div>

@@ -84,6 +84,12 @@ export class ChatComponent implements OnInit {
   /** Whether the SSE stream is actively producing events. */
   readonly isStreaming = signal(false);
 
+  /** Whether the agent steps section is collapsed in the results view. */
+  readonly stepsCollapsed = signal(false);
+
+  /** Whether the answer prose is fully expanded (removes max-height cap). */
+  readonly answerExpanded = signal(false);
+
   /** Maximum query length exposed to the template. */
   readonly maxLength = MAX_QUERY_LENGTH;
 
@@ -121,6 +127,8 @@ export class ChatComponent implements OnInit {
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
+    this.stepsCollapsed.set(false);
+    this.answerExpanded.set(false);
 
     this.ragService.stream(q, this.selectedProvider()).subscribe({
       next: (event: StreamEvent) => {
@@ -153,6 +161,8 @@ export class ChatComponent implements OnInit {
             this.response.set(event.response);
             this.isStreaming.set(false);
             this.loading.set(false);
+            // Auto-collapse agent steps when answer arrives
+            this.stepsCollapsed.set(true);
             break;
           case 'error':
             this.error.set(event.message);
