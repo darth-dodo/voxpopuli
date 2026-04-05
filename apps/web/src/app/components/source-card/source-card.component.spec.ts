@@ -10,7 +10,7 @@ import { SourceCardComponent } from './source-card.component';
 @Component({
   standalone: true,
   imports: [SourceCardComponent],
-  template: `<vp-source-card [source]="source()" />`,
+  template: `<app-source-card [source]="source()" />`,
 })
 class TestHostComponent {
   readonly source = input.required<AgentSource>();
