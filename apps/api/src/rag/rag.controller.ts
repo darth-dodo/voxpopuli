@@ -14,7 +14,6 @@ import {
 import { Observable } from 'rxjs';
 import type { AgentResponse } from '@voxpopuli/shared-types';
 import { AgentService } from '../agent/agent.service';
-import type { AgentStreamEvent } from '../agent/agent.service';
 import { CacheService } from '../cache/cache.service';
 import { RagQueryDto } from './dto/rag-query.dto';
 
