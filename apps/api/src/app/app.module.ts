@@ -24,6 +24,20 @@ import { RagModule } from '../rag/rag.module';
           ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
           : {}),
         level: process.env.LOG_LEVEL || 'info',
+        genReqId: (req: { headers: Record<string, string | string[] | undefined> }) =>
+          (req.headers['x-request-id'] as string) || crypto.randomUUID(),
+        redact: {
+          paths: ['req.headers.authorization', 'req.headers.cookie', 'req.query.api_key'],
+          remove: true,
+        },
+        serializers: {
+          req: (req: { method: string; url: string; query: unknown; remotePort: number }) => ({
+            method: req.method,
+            url: req.url,
+            query: req.query,
+            remotePort: req.remotePort,
+          }),
+        },
       } as Record<string, unknown>,
     }),
     CacheModule,
