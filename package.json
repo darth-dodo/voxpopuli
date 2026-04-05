@@ -101,6 +101,8 @@
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "@sentry/angular": "^10.47.0",
+    "@sentry/nestjs": "^10.47.0",
     "axios": "^1.14.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
