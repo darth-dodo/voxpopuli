@@ -1,4 +1,4 @@
-import { Component, type OnInit, inject, signal, computed } from '@angular/core';
+import { Component, type OnInit, inject, signal, computed, model } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
@@ -76,7 +76,7 @@ export class ChatComponent implements OnInit {
   readonly response = signal<AgentResponse | null>(null);
 
   /** Currently selected LLM provider. */
-  readonly selectedProvider = signal('groq');
+  readonly selectedProvider = model('groq');
 
   /** Agent reasoning steps accumulated during streaming. */
   readonly steps = signal<AgentStep[]>([]);
