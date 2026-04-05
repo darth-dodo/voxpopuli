@@ -61,15 +61,6 @@
   --color-step-observation: #34d399;
   --color-step-error: #f87171;
 
-  /* ── Spacing Scale ── */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 3rem;
-  --spacing-3xl: 4rem;
-
   /* ── Border Radius ── */
   --radius-sm: 0.25rem;
   --radius-md: 0.5rem;
@@ -84,14 +75,6 @@
   --shadow-glow-amber: 0 0 20px rgba(245, 158, 11, 0.15), 0 0 40px rgba(245, 158, 11, 0.05);
   --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.15);
   --shadow-glow-green: 0 0 12px rgba(34, 197, 94, 0.2);
-
-  /* ── Z-Index Scale ── */
-  --z-base: 0;
-  --z-raised: 10;
-  --z-dropdown: 20;
-  --z-sticky: 30;
-  --z-overlay: 40;
-  --z-modal: 50;
 
   /* ── Animation Durations ── */
   --duration-instant: 100ms;
