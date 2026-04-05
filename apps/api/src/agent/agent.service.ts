@@ -9,6 +9,15 @@ import { AGENT_SYSTEM_PROMPT } from './system-prompt';
 import { computeTrustMetadata } from './trust';
 import { buildPartialResponse } from './partial-response';
 
+// ---------------------------------------------------------------------------
+// Stream event types
+// ---------------------------------------------------------------------------
+
+/** Discriminated union of events yielded by {@link AgentService.runStream}. */
+export type AgentStreamEvent =
+  | { kind: 'step'; step: AgentStep }
+  | { kind: 'complete'; response: AgentResponse };
+
 /** Maximum concurrent agent runs. */
 const MAX_CONCURRENT = 5;
 
@@ -54,6 +63,37 @@ export class AgentService {
     query: string,
     options?: { maxSteps?: number; provider?: string },
   ): Promise<AgentResponse> {
+    let lastResponse: AgentResponse | undefined;
+
+    for await (const event of this.runStream(query, options)) {
+      if (event.kind === 'complete') {
+        lastResponse = event.response;
+      }
+    }
+
+    if (!lastResponse) {
+      throw new Error('Agent stream ended without producing a response');
+    }
+
+    return lastResponse;
+  }
+
+  /**
+   * Stream the ReAct agent loop, yielding each step as it occurs.
+   *
+   * Yields `{ kind: 'step', step }` for every intermediate thought, action,
+   * or observation, then yields `{ kind: 'complete', response }` with the
+   * full {@link AgentResponse} including trust metadata.
+   *
+   * @param query   - The user's natural-language question
+   * @param options - Optional overrides for max steps and provider
+   * @yields {@link AgentStreamEvent} — step events mid-loop, complete event at end
+   * @throws Error if the concurrency limit is reached or the agent times out
+   */
+  async *runStream(
+    query: string,
+    options?: { maxSteps?: number; provider?: string },
+  ): AsyncGenerator<AgentStreamEvent> {
     if (this.activeConcurrent >= MAX_CONCURRENT) {
       throw new Error('Too many concurrent agent runs. Please try again later.');
     }
@@ -77,7 +117,7 @@ export class AgentService {
       const steps: AgentStep[] = [];
       const sourcesMap = new Map<number, AgentSource>();
 
-      // Stream the agent execution to capture intermediate steps
+      // Stream the agent execution to capture and yield intermediate steps
       const stream = await agent.stream(
         { messages: [{ role: 'user', content: query }] },
         {
@@ -96,22 +136,24 @@ export class AgentService {
           const lastMsg = messages[messages.length - 1] as any;
           if (!lastMsg) continue;
 
-          // Tool call — record as action step
+          // Tool call — record and yield as action step
           if (lastMsg.tool_calls?.length) {
             for (const tc of lastMsg.tool_calls) {
-              steps.push({
+              const step: AgentStep = {
                 type: 'action',
                 content: `Calling ${tc.name}`,
                 toolName: tc.name,
                 toolInput: tc.args,
                 timestamp: Date.now(),
-              });
+              };
+              steps.push(step);
+              yield { kind: 'step', step };
             }
           }
 
-          // Tool result message — record as observation
+          // Tool result message — record and yield as observation
           if (lastMsg._getType?.() === 'tool' || lastMsg.constructor?.name === 'ToolMessage') {
-            steps.push({
+            const step: AgentStep = {
               type: 'observation',
               content:
                 typeof lastMsg.content === 'string'
@@ -123,7 +165,9 @@ export class AgentService {
                   ? lastMsg.content
                   : JSON.stringify(lastMsg.content),
               timestamp: Date.now(),
-            });
+            };
+            steps.push(step);
+            yield { kind: 'step', step };
 
             // Extract source IDs from search results and story fetches
             this.extractSources(lastMsg.content, sourcesMap);
@@ -142,11 +186,13 @@ export class AgentService {
 
             // If there are already tool steps, AI content before answer is a "thought"
             if (steps.length > 0 && steps[steps.length - 1]?.type === 'observation') {
-              steps.push({
+              const step: AgentStep = {
                 type: 'thought',
                 content,
                 timestamp: Date.now(),
-              });
+              };
+              steps.push(step);
+              yield { kind: 'step', step };
             }
           }
         }
@@ -165,7 +211,8 @@ export class AgentService {
         );
 
         if (partial) {
-          return partial;
+          yield { kind: 'complete', response: partial };
+          return;
         }
 
         // No useful data collected — throw clean error
@@ -179,17 +226,20 @@ export class AgentService {
         `Agent completed: ${steps.length} steps, ${sourcesMap.size} sources, ${durationMs}ms`,
       );
 
-      return {
-        answer: finalAnswer,
-        steps,
-        sources,
-        trust: computeTrustMetadata(steps, sources, finalAnswer),
-        meta: {
-          provider: this.llm.getProviderName(),
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          durationMs,
-          cached: false,
+      yield {
+        kind: 'complete',
+        response: {
+          answer: finalAnswer,
+          steps,
+          sources,
+          trust: computeTrustMetadata(steps, sources, finalAnswer),
+          meta: {
+            provider: this.llm.getProviderName(),
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            durationMs,
+            cached: false,
+          },
         },
       };
     } finally {

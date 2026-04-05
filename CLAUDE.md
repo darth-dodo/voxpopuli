@@ -109,7 +109,7 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 7. **Don't import LangChain packages directly.** All LangChain usage is encapsulated inside `apps/api/src/llm/providers/` and `apps/api/src/agent/`. Consuming code should only depend on `LlmService`, `AgentService`, or the tool factories.
 8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
 9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/groq.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
-10. **SSE is post-completion replay.** The current `GET /api/rag/stream` endpoint runs the agent to completion, then replays steps as SSE events. True mid-loop streaming is a v1.1 enhancement.
+10. **SSE streams mid-loop via AsyncGenerator.** `AgentService.runStream()` yields step events during the ReAct loop. `RagController.stream()` converts the generator to an Observable for NestJS `@Sse`. The blocking `run()` method consumes `runStream()` internally.
 11. **Trust metadata depends on tool usage.** Source age and recency metrics require the agent to call `get_story` (which emits "Posted: YYYY-MM-DD"). Search-only runs will have `avgSourceAge: 0`.
 
 ## Architecture Decision Records

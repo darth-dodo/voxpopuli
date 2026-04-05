@@ -11,10 +11,10 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
-import { Observable, from, of } from 'rxjs';
-import { mergeMap, catchError } from 'rxjs/operators';
+import { Observable } from 'rxjs';
 import type { AgentResponse } from '@voxpopuli/shared-types';
 import { AgentService } from '../agent/agent.service';
+import type { AgentStreamEvent } from '../agent/agent.service';
 import { CacheService } from '../cache/cache.service';
 import { RagQueryDto } from './dto/rag-query.dto';
 
@@ -66,9 +66,9 @@ export class RagController {
   /**
    * Stream a RAG query as Server-Sent Events.
    *
-   * Emits individual agent steps as `thought`, `action`, `observation`
-   * events, followed by a final `answer` event. Errors are emitted as
-   * `error` events.
+   * Events are emitted in real time as the agent loop progresses — each
+   * thought, action, and observation is sent to the client as it occurs,
+   * followed by a final `answer` event when the loop completes.
    *
    * @param query - The search query (required, max 500 chars)
    * @returns Observable of SSE {@link MessageEvent}s
@@ -84,46 +84,46 @@ export class RagController {
 
     this.enforceRateLimit();
 
-    const agentRun$ = from(this.agent.run(query));
+    return new Observable<MessageEvent>((subscriber) => {
+      const generator = this.agent.runStream(query);
 
-    return agentRun$.pipe(
-      mergeMap((response: AgentResponse) => {
-        const events: MessageEvent[] = [];
-
-        // Emit each step as its own SSE event
-        for (const step of response.steps) {
-          events.push({
-            type: step.type,
-            data: JSON.stringify({
-              content: step.content,
-              toolName: step.toolName,
-              toolInput: step.toolInput,
-              timestamp: step.timestamp,
-            }),
+      (async () => {
+        try {
+          for await (const event of generator) {
+            if (event.kind === 'step') {
+              subscriber.next({
+                type: event.step.type,
+                data: JSON.stringify({
+                  content: event.step.content,
+                  toolName: event.step.toolName,
+                  toolInput: event.step.toolInput,
+                  timestamp: event.step.timestamp,
+                }),
+              } as MessageEvent);
+            } else if (event.kind === 'complete') {
+              subscriber.next({
+                type: 'answer',
+                data: JSON.stringify({
+                  answer: event.response.answer,
+                  sources: event.response.sources,
+                  trust: event.response.trust,
+                  meta: event.response.meta,
+                }),
+              } as MessageEvent);
+            }
+          }
+          subscriber.complete();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Stream error: ${message}`, err instanceof Error ? err.stack : '');
+          subscriber.next({
+            type: 'error',
+            data: JSON.stringify({ message }),
           } as MessageEvent);
+          subscriber.complete();
         }
-
-        // Emit the final answer
-        events.push({
-          type: 'answer',
-          data: JSON.stringify({
-            answer: response.answer,
-            sources: response.sources,
-            trust: response.trust,
-            meta: response.meta,
-          }),
-        } as MessageEvent);
-
-        return from(events);
-      }),
-      catchError((err: Error) => {
-        this.logger.error(`Stream error: ${err.message}`, err.stack);
-        return of({
-          type: 'error',
-          data: JSON.stringify({ message: err.message }),
-        } as MessageEvent);
-      }),
-    );
+      })();
+    });
   }
 
   /**
