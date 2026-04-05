@@ -8,6 +8,9 @@ const MAX_ENTRIES = 5000;
 /** Cache full warning threshold (percentage). */
 const WARNING_THRESHOLD = 0.8;
 
+/** Wrapper so that null values can be stored in the LRU cache (which requires `extends {}`). */
+const NULL_SENTINEL = Object.freeze({ __null: true }) as { __null: true };
+
 /**
  * Thin wrapper around `lru-cache` providing typed get/set operations,
  * LRU eviction, and cache statistics for the health endpoint.
@@ -16,7 +19,7 @@ const WARNING_THRESHOLD = 0.8;
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
 
-  private readonly cache = new LRUCache<string, unknown>({
+  private readonly cache = new LRUCache<string, object | string | number | boolean>({
     max: MAX_ENTRIES,
     allowStale: false,
   });
@@ -34,15 +37,15 @@ export class CacheService {
    * @returns The cached or freshly-fetched value
    */
   async getOrSet<T>(key: string, fetcher: () => Promise<T>, ttlSeconds: number): Promise<T> {
-    const cached = this.cache.get(key) as T | undefined;
-    if (cached !== undefined) {
+    const raw = this.cache.get(key);
+    if (raw !== undefined) {
       this.hits++;
-      return cached;
+      return this.unwrap<T>(raw);
     }
 
     this.misses++;
     const value = await fetcher();
-    this.cache.set(key, value, { ttl: ttlSeconds * 1000 });
+    this.cache.set(key, this.wrap(value), { ttl: ttlSeconds * 1000 });
     this.checkCapacity();
     return value;
   }
@@ -54,13 +57,13 @@ export class CacheService {
    * @returns The cached value, or `undefined` on a miss
    */
   get<T>(key: string): T | undefined {
-    const value = this.cache.get(key) as T | undefined;
-    if (value !== undefined) {
+    const raw = this.cache.get(key);
+    if (raw !== undefined) {
       this.hits++;
-    } else {
-      this.misses++;
+      return this.unwrap<T>(raw);
     }
-    return value;
+    this.misses++;
+    return undefined;
   }
 
   /**
@@ -83,6 +86,16 @@ export class CacheService {
       misses: this.misses,
       keys: this.cache.size,
     };
+  }
+
+  /** Wrap null values so they can be stored in the LRU cache. */
+  private wrap(value: unknown): object | string | number | boolean {
+    return value === null ? NULL_SENTINEL : (value as object | string | number | boolean);
+  }
+
+  /** Unwrap sentinel values back to null. */
+  private unwrap<T>(raw: object | string | number | boolean): T {
+    return (raw === NULL_SENTINEL ? null : raw) as T;
   }
 
   /** Log a warning when cache approaches capacity. */
