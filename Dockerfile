@@ -34,8 +34,8 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
 COPY libs/shared-types/package.json libs/shared-types/
 
-# Production deps only
-RUN pnpm install --frozen-lockfile --prod
+# Production deps only (--ignore-scripts skips husky prepare hook)
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # Copy built output
 COPY --from=build /app/dist/apps/api dist/apps/api
