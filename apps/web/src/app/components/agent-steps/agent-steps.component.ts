@@ -36,7 +36,7 @@ export class AgentStepsComponent {
 
   /** Human-readable step counter, e.g. "Step 3 / 7". */
   readonly stepCounter = computed(() => {
-    const count = this.steps().length;
+    const count = Math.min(this.steps().length, MAX_STEPS);
     return `Step ${count} / ${MAX_STEPS}`;
   });
 

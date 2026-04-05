@@ -156,8 +156,8 @@ describe('TrustBarComponent', () => {
     createHost(stubTrust({ honestyFlags: ['old_sources_noted', 'no_results_found'] }));
     const flags = el.querySelectorAll('.text-text-muted');
     const flagTexts = Array.from(flags).map((f) => f.textContent?.trim());
-    expect(flagTexts).toContain('old_sources_noted');
-    expect(flagTexts).toContain('no_results_found');
+    expect(flagTexts).toContain('old sources noted');
+    expect(flagTexts).toContain('no results found');
   });
 
   it('should not render honesty flags section when empty', () => {

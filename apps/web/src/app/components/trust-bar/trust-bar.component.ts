@@ -72,4 +72,9 @@ export class TrustBarComponent {
 
   /** Human-readable Show HN label. */
   readonly showHnLabel = computed(() => `${this.trust().showHnCount} Show HN`);
+
+  /** Format a snake_case honesty flag as a readable label. */
+  formatFlag(flag: string): string {
+    return flag.replace(/_/g, ' ');
+  }
 }

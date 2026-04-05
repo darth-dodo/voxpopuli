@@ -1,5 +1,6 @@
 import { Component, type OnInit, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MarkdownComponent } from 'ngx-markdown';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
 import { RagService, StreamEvent } from '../../services/rag.service';
 import { AgentStepsComponent } from '../agent-steps/agent-steps.component';
@@ -25,6 +26,7 @@ const MAX_QUERY_LENGTH = 500;
   standalone: true,
   imports: [
     FormsModule,
+    MarkdownComponent,
     AgentStepsComponent,
     SourceCardComponent,
     TrustBarComponent,
@@ -87,6 +89,15 @@ export class ChatComponent implements OnInit {
 
   /** Current character count for the counter display. */
   readonly charCount = computed(() => this.query().length);
+
+  /** Whether the response contains an error or partial results. */
+  readonly isPartialResult = computed(() => {
+    const res = this.response();
+    if (!res) return false;
+    return (
+      res.meta.error === true || res.trust.honestyFlags.includes('agent_error_partial_results')
+    );
+  });
 
   /** Whether the submit button should be disabled. */
   readonly submitDisabled = computed(

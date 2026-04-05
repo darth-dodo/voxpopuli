@@ -65,8 +65,8 @@ describe('MetaBarComponent', () => {
     expect(el.textContent).toContain('1,234 tokens');
   });
 
-  it('should display latency in milliseconds', () => {
-    expect(el.textContent).toContain('4,521ms');
+  it('should display latency as human-readable duration', () => {
+    expect(el.textContent).toContain('4.5s');
   });
 
   // ---------------------------------------------------------------------------
@@ -134,9 +134,16 @@ describe('MetaBarComponent', () => {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /** Find the span that contains the latency value (ends with "ms"). */
+  /** Find the span that contains the latency value (has a latency color class). */
   function findLatencySpan(): Element | null {
     const spans = el.querySelectorAll('span');
-    return Array.from(spans).find((s) => s.textContent?.trim().endsWith('ms')) ?? null;
+    return (
+      Array.from(spans).find(
+        (s) =>
+          s.classList.contains('text-trust-verified') ||
+          s.classList.contains('text-accent-amber') ||
+          s.classList.contains('text-trust-danger'),
+      ) ?? null
+    );
   }
 });
