@@ -27,7 +27,18 @@ apps/api/src/          # NestJS backend (agent, cache, chunker, hn, llm, rag, tt
     llm-provider.interface.ts
   cache/               #   CacheService — in-memory caching layer
   hn/                  #   HN API client (stories, comments, search, retry with backoff)
-apps/web/src/app/      # Angular frontend (components + services)
+apps/web/src/app/      # Angular frontend (Data Noir Editorial design system)
+  components/           #   UI components
+    agent-steps/        #     Agent reasoning timeline (compact merged rows)
+    chat/               #     Main chat page (landing + results + streaming)
+    meta-bar/           #     Response metadata display
+    provider-selector/  #     LLM provider chip selector
+    source-card/        #     HN story source card
+    trust-bar/          #     Trust metadata indicators
+  pages/
+    design-system/      #     Design system showcase page
+  services/
+    rag.service.ts      #     HTTP + SSE client for RAG endpoints
 libs/shared-types/     # @voxpopuli/shared-types (all API contracts + trust framework types)
 docs/adr/              # Architecture Decision Records
 evals/                 # Evaluation harness (queries, runner, scorer)
@@ -71,8 +82,12 @@ npx tsx evals/run-eval.ts # Run eval harness
 
 - **Standalone components** (no NgModules).
 - **Signals** for reactive state where applicable.
-- **Tailwind CSS** for styling. Utility-first, no component CSS files unless necessary.
+- **Tailwind CSS v4** for styling. CSS-first config via `@theme` block in `styles.css` (no `tailwind.config.js`).
+- **Design system: "Data Noir Editorial"** with light theme support. Light/dark theme via CSS variable overrides (`.light` class on `<html>`).
+- **`ngx-markdown`** for answer rendering (Markdown-to-HTML in the chat component).
 - SSE via native `EventSource`, not libraries.
+- Proxy config at `apps/web/proxy.conf.json` for dev server to API forwarding.
+- Angular 21's Vite-based dev server requires `/api/**` glob pattern for proxy routes.
 
 ### Testing
 
@@ -83,16 +98,16 @@ npx tsx evals/run-eval.ts # Run eval harness
 
 ## Key Constraints
 
-| Constraint            | Value                       |
-| --------------------- | --------------------------- |
-| Max agent steps       | 7                           |
-| Agent timeout         | 60s                         |
-| Concurrent agents     | 5 (semaphore)               |
-| Comment cap per story | 30                          |
-| Query max length      | 500 chars                   |
-| Rate limit (global)   | 60 req/min                  |
-| Token budget: Claude  | 80k, Mistral 100k, Groq 50k |
-| TTS max chars         | 2500                        |
+| Constraint            | Value                                                   |
+| --------------------- | ------------------------------------------------------- |
+| Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit) |
+| Agent timeout         | 60s                                                     |
+| Concurrent agents     | 5 (semaphore)                                           |
+| Comment cap per story | 30                                                      |
+| Query max length      | 500 chars                                               |
+| Rate limit (global)   | 60 req/min                                              |
+| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                             |
+| TTS max chars         | 2500                                                    |
 
 ## Environment Variables
 
@@ -111,6 +126,9 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/groq.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
 10. **SSE streams mid-loop via AsyncGenerator.** `AgentService.runStream()` yields step events during the ReAct loop. `RagController.stream()` converts the generator to an Observable for NestJS `@Sse`. The blocking `run()` method consumes `runStream()` internally.
 11. **Trust metadata depends on tool usage.** Source age and recency metrics require the agent to call `get_story` (which emits "Posted: YYYY-MM-DD"). Search-only runs will have `avgSourceAge: 0`.
+12. **Angular 21 uses Vite-based dev server.** Proxy patterns need `/api/**` glob, not `/api`.
+13. **Tailwind v4 `@theme` spacing tokens override default utilities.** Don't define `--spacing-sm/md/lg/xl` as they shadow built-in spacing scale.
+14. **`model()` is required for two-way binding.** Use `model()` for `[()]` syntax, not `signal()`. Signals are read-only from the parent's perspective.
 
 ## Architecture Decision Records
 
@@ -119,6 +137,7 @@ ADRs live in `docs/adr/` and document key design choices. Consult these before p
 - `002-chunker-strategy.md` — Token-aware context building approach
 - `003-llm-provider-architecture.md` — LangChain provider facade pattern
 - `004-react-agent-design.md` — ReAct agent design, tool selection, LangChain createAgent (v1.2+)
+- `005-true-sse-streaming.md` — AsyncGenerator-based mid-loop SSE streaming
 
 ## Linear Project
 

@@ -21,12 +21,14 @@
 
 ```mermaid
 graph TB
-    subgraph Frontend ["Angular 17+ (apps/web)"]
-        CHAT["Chat Component"]
-        STEPS["Agent Steps Component"]
-        SOURCES["Source Cards Component"]
-        AUDIO["Audio Player Component"]
-        PROVIDER["Provider Selector"]
+    subgraph Frontend ["Angular 21 (apps/web)"]
+        CHAT["ChatComponent<br/>(page shell)"]
+        STEPS["AgentStepsComponent"]
+        TRUST["TrustBarComponent"]
+        SOURCES["SourceCardComponent"]
+        META["MetaBarComponent"]
+        AUDIO["AudioPlayerComponent"]
+        PROVIDER["ProviderSelectorComponent"]
     end
 
     subgraph Backend ["NestJS (apps/api)"]
@@ -106,7 +108,7 @@ graph TD
 | --------------- | ------------------ | ------------------------------------- |
 | Monorepo        | Nx                 | Latest                                |
 | Backend         | NestJS             | 10+                                   |
-| Frontend        | Angular            | 17+                                   |
+| Frontend        | Angular            | 21                                    |
 | LLM (quality)   | Claude Sonnet 4    | LangChain.js (`@langchain/anthropic`) |
 | LLM (cost)      | Mistral Large 3    | LangChain.js (`@langchain/mistralai`) |
 | LLM (speed/dev) | Groq Llama 3.3 70B | LangChain.js (`@langchain/groq`)      |
@@ -129,8 +131,9 @@ voxpopuli/
 |   |   +-- rag/           # RagController (POST + SSE)
 |   |   +-- tts/           # TtsService, TtsController, podcast-rewrite prompt
 |   +-- web/src/app/
-|       +-- components/    # chat, agent-steps, source-card, audio-player, provider-selector
-|       +-- services/      # rag.service.ts, tts.service.ts
+|       +-- components/    # chat, agent-steps, trust-bar, source-card, meta-bar, provider-selector
+|       +-- pages/         # design-system (Tailwind token playground)
+|       +-- services/      # rag.service.ts
 +-- libs/
 |   +-- shared-types/src/  # All shared interfaces (AgentResponse, AgentStep, etc.)
 +-- evals/                 # queries.json, run-eval.ts, score.ts, results/
@@ -275,17 +278,45 @@ See product.md Section 18 for full pipeline, voice config, and cost analysis.
 | `/api/tts/narrate` | POST   | Streaming MP3 audio response |
 | `/api/tts/voices`  | GET    | Active narrator info         |
 
-### 2.9 Frontend Components
+### 2.9 Frontend Architecture
 
-| Component                   | Responsibility                                       |
-| --------------------------- | ---------------------------------------------------- |
-| `ChatComponent`             | Query input, answer display, conversation layout     |
-| `AgentStepsComponent`       | Real-time step timeline (expandable)                 |
-| `SourceCardComponent`       | Story card with title, author, points, HN link       |
-| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download |
-| `ProviderSelectorComponent` | LLM provider dropdown                                |
-| `RagService`                | HTTP + EventSource client for RAG endpoints          |
-| `TtsService`                | HTTP client for TTS endpoint, audio blob management  |
+#### Component Hierarchy
+
+All components are **Angular 21 standalone components** (no NgModules). Reactive state is managed with **Angular signals** -- no RxJS stores or BehaviorSubjects.
+
+```
+ChatComponent (page shell — query input, answer display, conversation layout)
+├── AgentStepsComponent    — real-time step timeline; merges action+observation pairs into compact rows; auto-collapses when answer arrives
+├── TrustBarComponent      — trust metadata visualization (source count, recency, diversity)
+├── SourceCardComponent    — story card with title, author, points, HN link
+├── MetaBarComponent       — response metadata (provider, timing, step count)
+└── ProviderSelectorComponent — LLM provider dropdown
+```
+
+| Component                   | Responsibility                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ChatComponent`             | Page shell: query input, answer display with `ngx-markdown` rendering, conversation layout      |
+| `AgentStepsComponent`       | Real-time step timeline (expandable); merges action+observation pairs; auto-collapses on answer |
+| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                              |
+| `SourceCardComponent`       | Story card with title, author, points, HN link                                                  |
+| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                           |
+| `ProviderSelectorComponent` | LLM provider dropdown                                                                           |
+| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                       |
+| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming                         |
+| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                        |
+
+#### Styling
+
+- **Tailwind CSS v4** with CSS-first `@theme` configuration (no `tailwind.config.js`)
+- Design system utility classes: `vp-card`, `vp-prose`, `vp-badge`, etc.
+- Light/dark theme via CSS custom property overrides on `:root` / `.dark`
+- Markdown rendering via `ngx-markdown` (used in ChatComponent for answer display)
+
+#### Dev Server Setup
+
+- `npx nx serve api` — backend on port 3000
+- `npx nx serve web --port 4201` — frontend on port 4201
+- Proxy config at `apps/web/proxy.conf.json` forwards `/api/**` to `http://localhost:3000`
 
 ---
 
