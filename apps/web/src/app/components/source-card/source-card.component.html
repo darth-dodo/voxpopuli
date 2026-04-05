@@ -10,18 +10,18 @@
   <p class="vp-source-card__title">
     <!-- Title links to original URL if available, stop propagation so outer card link still works -->
     @if (source().url) {
-    <a
-      class="text-text-primary hover:text-accent-amber-glow transition-colors no-underline"
-      [href]="source().url"
-      target="_blank"
-      rel="noopener noreferrer"
-      (click)="$event.stopPropagation()"
-      [attr.aria-label]="'Read original article: ' + source().title"
-    >
-      {{ source().title }}
-    </a>
+      <a
+        class="text-text-primary hover:text-accent-amber-glow transition-colors no-underline"
+        [href]="source().url"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="$event.stopPropagation()"
+        [attr.aria-label]="'Read original article: ' + source().title"
+      >
+        {{ source().title }}
+      </a>
     } @else {
-    {{ source().title }}
+      {{ source().title }}
     }
   </p>
 

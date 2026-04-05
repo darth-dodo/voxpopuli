@@ -2,14 +2,14 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import type { AgentSource } from '@voxpopuli/shared-types';
 
 /**
- * Displays a single HackerNews story referenced as a source in the agent's answer.
+ * Displays a single Hacker News story referenced as a source in the agent's answer.
  *
  * The entire card is clickable and opens the HN discussion page in a new tab.
  * The title links to the story's original URL when available, otherwise to the
  * HN discussion page.
  */
 @Component({
-  selector: 'app-source-card',
+  selector: 'vp-source-card',
   standalone: true,
   templateUrl: './source-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,

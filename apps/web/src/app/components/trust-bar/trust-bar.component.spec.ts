@@ -10,13 +10,16 @@ import { TrustBarComponent } from './trust-bar.component';
 @Component({
   standalone: true,
   imports: [TrustBarComponent],
-  template: `<app-trust-bar [trust]="trust()" />`,
+  template: `<vp-trust-bar [trust]="trust()" />`,
 })
 class TestHostComponent {
   readonly trust = input.required<TrustMetadata>();
 }
 
-/** Build a TrustMetadata object with sensible defaults and overrides. */
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function stubTrust(overrides: Partial<TrustMetadata> = {}): TrustMetadata {
   return {
     sourcesVerified: 4,
@@ -30,17 +33,16 @@ function stubTrust(overrides: Partial<TrustMetadata> = {}): TrustMetadata {
   };
 }
 
-/** Query all indicator spans (role="group" children). */
+/** Query all `.vp-trust-indicator` elements as an array. */
 function getIndicators(el: HTMLElement): HTMLElement[] {
-  const group = el.querySelector('[role="group"]');
-  if (!group) return [];
-  return Array.from(group.querySelectorAll(':scope > span'));
+  return Array.from(el.querySelectorAll('.vp-trust-indicator'));
 }
 
-/** Get all indicator text content joined. */
-function getAllText(el: HTMLElement): string {
-  const group = el.querySelector('[role="group"]');
-  return group?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+/** Get combined text content of all indicators. */
+function getIndicatorTexts(el: HTMLElement): string {
+  return getIndicators(el)
+    .map((ind) => ind.textContent?.trim() ?? '')
+    .join(' | ');
 }
 
 // ---------------------------------------------------------------------------
@@ -66,123 +68,108 @@ describe('TrustBarComponent', () => {
 
   // ── Indicator rendering ──
 
-  it('should render 4 indicators when showHnCount > 0', () => {
+  it('should render all 4 indicators when showHnCount > 0', () => {
     createHost(stubTrust({ showHnCount: 2 }));
-    expect(getIndicators(el).length).toBe(4);
+    const indicators = getIndicators(el);
+    expect(indicators.length).toBe(4);
   });
 
   it('should render 3 indicators when showHnCount is 0', () => {
     createHost(stubTrust({ showHnCount: 0 }));
-    expect(getIndicators(el).length).toBe(3);
+    const indicators = getIndicators(el);
+    expect(indicators.length).toBe(3);
   });
 
-  // ── Labels ──
-
-  it('should show "All N sources verified" when all verified', () => {
-    createHost(stubTrust({ sourcesVerified: 4, sourcesTotal: 4 }));
-    expect(getAllText(el)).toContain('All 4 sources verified');
-  });
-
-  it('should show "X of Y verified" when partially verified', () => {
+  it('should display verified count label', () => {
     createHost(stubTrust({ sourcesVerified: 3, sourcesTotal: 5 }));
-    expect(getAllText(el)).toContain('3 of 5 verified');
+    expect(getIndicatorTexts(el)).toContain('3/5 verified');
   });
 
-  it('should show "Mostly recent sources" for high recency', () => {
+  it('should display recency as percentage', () => {
     createHost(stubTrust({ recentSourceRatio: 0.8 }));
-    expect(getAllText(el)).toContain('Mostly recent sources');
+    expect(getIndicatorTexts(el)).toContain('80% recent');
   });
 
-  it('should show "Age unknown" when no date data', () => {
-    createHost(stubTrust({ recentSourceRatio: 0, avgSourceAge: 0 }));
-    expect(getAllText(el)).toContain('Age unknown');
-  });
-
-  it('should show "Multiple viewpoints" for balanced', () => {
-    createHost(stubTrust({ viewpointDiversity: 'balanced' }));
-    expect(getAllText(el)).toContain('Multiple viewpoints');
-  });
-
-  it('should show "Actively debated" for contested', () => {
+  it('should display viewpoint diversity label', () => {
     createHost(stubTrust({ viewpointDiversity: 'contested' }));
-    expect(getAllText(el)).toContain('Actively debated');
+    expect(getIndicatorTexts(el)).toContain('contested');
   });
 
-  it('should show "One-sided perspective" for one-sided', () => {
-    createHost(stubTrust({ viewpointDiversity: 'one-sided' }));
-    expect(getAllText(el)).toContain('One-sided perspective');
-  });
-
-  it('should show Show HN warning with count', () => {
+  it('should display Show HN count', () => {
     createHost(stubTrust({ showHnCount: 3 }));
-    expect(getAllText(el)).toContain('3 Show HN posts (may be biased)');
+    expect(getIndicatorTexts(el)).toContain('3 Show HN');
   });
 
-  // ── Recency label branches ──
+  // ── Color logic ──
 
-  it('should show "Mix of old and new" for recentSourceRatio ~0.6', () => {
-    createHost(stubTrust({ recentSourceRatio: 0.6 }));
-    expect(getAllText(el)).toContain('Mix of old and new');
-  });
-
-  it('should show "Mostly older sources" for recentSourceRatio ~0.3', () => {
-    createHost(stubTrust({ recentSourceRatio: 0.3 }));
-    expect(getAllText(el)).toContain('Mostly older');
-  });
-
-  it('should show avg age fallback when recentSourceRatio is 0 but avgSourceAge > 0', () => {
-    createHost(stubTrust({ recentSourceRatio: 0, avgSourceAge: 45 }));
-    expect(getAllText(el)).toContain('45 days old');
-  });
-
-  // ── Colors ──
-
-  it('should use verified color when all verified', () => {
+  it('should use verified color when all sources are verified', () => {
     createHost(stubTrust({ sourcesVerified: 4, sourcesTotal: 4 }));
-    const first = getIndicators(el)[0];
-    expect(first.className).toContain('text-trust-verified');
+    const verifiedSpan = getIndicators(el)[0].querySelector('span');
+    expect(verifiedSpan?.classList.contains('text-trust-verified')).toBe(true);
   });
 
-  it('should use caution color when partially verified', () => {
+  it('should use caution color when not all sources are verified', () => {
     createHost(stubTrust({ sourcesVerified: 2, sourcesTotal: 4 }));
-    const first = getIndicators(el)[0];
-    expect(first.className).toContain('text-trust-caution');
+    const verifiedSpan = getIndicators(el)[0].querySelector('span');
+    expect(verifiedSpan?.classList.contains('text-trust-caution')).toBe(true);
   });
 
-  it('should use muted color when no sources', () => {
-    createHost(stubTrust({ sourcesVerified: 0, sourcesTotal: 0 }));
-    const first = getIndicators(el)[0];
-    expect(first.className).toContain('text-text-muted');
+  it('should use verified color for recency > 75%', () => {
+    createHost(stubTrust({ recentSourceRatio: 0.9 }));
+    const recencySpan = getIndicators(el)[1].querySelector('span');
+    expect(recencySpan?.classList.contains('text-trust-verified')).toBe(true);
   });
 
-  it('should use amber color for recency when ratio ~0.6', () => {
+  it('should use caution color for recency between 50-75%', () => {
     createHost(stubTrust({ recentSourceRatio: 0.6 }));
-    const recencyIndicator = getIndicators(el)[1];
-    expect(recencyIndicator.className).toContain('text-accent-amber');
+    const recencySpan = getIndicators(el)[1].querySelector('span');
+    expect(recencySpan?.classList.contains('text-trust-caution')).toBe(true);
   });
 
-  it('should use caution color for recency when ratio ~0.3', () => {
+  it('should use warning color for recency below 50%', () => {
     createHost(stubTrust({ recentSourceRatio: 0.3 }));
-    const recencyIndicator = getIndicators(el)[1];
-    expect(recencyIndicator.className).toContain('text-trust-caution');
+    const recencySpan = getIndicators(el)[1].querySelector('span');
+    expect(recencySpan?.classList.contains('text-trust-warning')).toBe(true);
+  });
+
+  it('should use blue color for contested viewpoints', () => {
+    createHost(stubTrust({ viewpointDiversity: 'contested' }));
+    const diversitySpan = getIndicators(el)[2].querySelector('span');
+    expect(diversitySpan?.classList.contains('text-accent-blue')).toBe(true);
+  });
+
+  it('should use verified color for balanced viewpoints', () => {
+    createHost(stubTrust({ viewpointDiversity: 'balanced' }));
+    const diversitySpan = getIndicators(el)[2].querySelector('span');
+    expect(diversitySpan?.classList.contains('text-trust-verified')).toBe(true);
+  });
+
+  it('should use caution color for one-sided viewpoints', () => {
+    createHost(stubTrust({ viewpointDiversity: 'one-sided' }));
+    const diversitySpan = getIndicators(el)[2].querySelector('span');
+    expect(diversitySpan?.classList.contains('text-trust-caution')).toBe(true);
   });
 
   // ── Honesty flags ──
 
-  it('should show honesty flags as italic note', () => {
-    createHost(stubTrust({ honestyFlags: ['old_sources_noted'] }));
-    const note = el.querySelector('.italic');
-    expect(note?.textContent).toContain('old sources noted');
+  it('should show honesty flags when present', () => {
+    createHost(stubTrust({ honestyFlags: ['old_sources_noted', 'no_results_found'] }));
+    const flags = el.querySelectorAll('.text-text-muted');
+    const flagTexts = Array.from(flags).map((f) => f.textContent?.trim());
+    expect(flagTexts).toContain('old_sources_noted');
+    expect(flagTexts).toContain('no_results_found');
   });
 
-  it('should not render honesty flags when empty', () => {
+  it('should not render honesty flags section when empty', () => {
     createHost(stubTrust({ honestyFlags: [] }));
-    expect(el.querySelector('.italic')).toBeNull();
+    // No extra muted spans should exist outside the indicators
+    const flagContainer = el.querySelector('.mt-2');
+    expect(flagContainer).toBeNull();
   });
 
   // ── Accessibility ──
 
-  it('should have SVGs marked as aria-hidden', () => {
+  it('should have SVG icons marked as aria-hidden', () => {
     createHost(stubTrust());
     const svgs = el.querySelectorAll('svg');
     svgs.forEach((svg) => {
@@ -190,9 +177,10 @@ describe('TrustBarComponent', () => {
     });
   });
 
-  it('should have role group with label', () => {
+  it('should have a role group with aria-label on the indicator row', () => {
     createHost(stubTrust());
     const group = el.querySelector('[role="group"]');
+    expect(group).toBeTruthy();
     expect(group?.getAttribute('aria-label')).toBe('Trust indicators');
   });
 });

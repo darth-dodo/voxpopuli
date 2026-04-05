@@ -1,4 +1,4 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -37,7 +37,7 @@ export class RagService {
   /** Human-readable error message from the most recent request, or `null`. */
   readonly error = signal<string | null>(null);
 
-  private readonly http = inject(HttpClient);
+  constructor(private readonly http: HttpClient) {}
 
   // -------------------------------------------------------------------------
   // Blocking query
@@ -76,17 +76,13 @@ export class RagService {
    * underlying `EventSource`.
    *
    * @param query - Natural-language question (max 500 chars).
-   * @param provider - Optional LLM provider override (groq / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
-  stream(query: string, provider?: string): Observable<StreamEvent> {
+  stream(query: string): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
 
-    let url = `${this.baseUrl}/stream?query=${encodeURIComponent(query)}`;
-    if (provider) {
-      url += `&provider=${encodeURIComponent(provider)}`;
-    }
+    const url = `${this.baseUrl}/stream?query=${encodeURIComponent(query)}`;
 
     return new Observable<StreamEvent>((subscriber) => {
       const eventSource = new EventSource(url);
