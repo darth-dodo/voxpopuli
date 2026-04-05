@@ -194,4 +194,16 @@ export class ChatComponent implements OnInit {
       this.submit();
     }
   }
+
+  /** Reset to the landing page state. */
+  goHome(): void {
+    this.query.set('');
+    this.response.set(null);
+    this.error.set(null);
+    this.steps.set([]);
+    this.loading.set(false);
+    this.isStreaming.set(false);
+    this.stepsCollapsed.set(false);
+    this.answerExpanded.set(false);
+  }
 }

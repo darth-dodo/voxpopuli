@@ -350,12 +350,41 @@
     @if (loading() || error() || response()) {
     <div class="py-6" role="region" aria-live="polite" aria-label="Agent response">
       <!-- Compact header when results are showing -->
-      <header class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-3">
-          <h1 class="text-editorial text-xl font-semibold text-accent-amber">VoxPopuli</h1>
-          <span class="text-text-faint text-sm hidden sm:inline">Voice of Hacker News</span>
+      <header class="mb-6">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-editorial text-xl font-semibold text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer"
+              (click)="goHome()"
+              aria-label="Back to home"
+            >
+              VoxPopuli
+            </button>
+            <span class="text-text-faint text-sm hidden sm:inline">Voice of Hacker News</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
+              (click)="goHome()"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-3.5 h-3.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              New question
+            </button>
+            <app-provider-selector [(selectedProvider)]="selectedProvider" />
+          </div>
         </div>
-        <app-provider-selector [(selectedProvider)]="selectedProvider" />
       </header>
 
       <!-- Agent steps (auto-collapsed after answer, expanded during streaming) -->
@@ -537,6 +566,29 @@
     <!-- Sticky input bar when results are showing -->
     <footer class="sticky bottom-0 bg-surface-base border-t border-border-subtle py-3 mt-auto">
       <div class="flex items-center gap-2">
+        <!-- Home button (mobile only) -->
+        <button
+          type="button"
+          class="sm:hidden shrink-0 p-2 rounded-lg border border-border-subtle text-text-muted hover:text-text-secondary hover:border-border-default transition-colors cursor-pointer"
+          (click)="goHome()"
+          aria-label="Back to home"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-4 h-4"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
+            />
+          </svg>
+        </button>
         <label for="query-input-active" class="sr-only">Your question</label>
         <input
           id="query-input-active"
