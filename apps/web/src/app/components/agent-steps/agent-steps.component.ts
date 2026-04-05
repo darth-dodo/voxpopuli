@@ -80,4 +80,59 @@ export class AgentStepsComponent {
       )
       .join(', ');
   }
+
+  /**
+   * Convert a tool action into a human-friendly description.
+   * e.g. search_hn with query "Rust" -> "Searching HN for "Rust""
+   */
+  formatAction(step: AgentStep): string {
+    const toolName = step.toolName ?? '';
+    const input = step.toolInput as Record<string, unknown> | undefined;
+
+    switch (toolName) {
+      case 'search_hn': {
+        const query = input?.['query'] ?? '';
+        return `Searching HN for \u201c${query}\u201d`;
+      }
+      case 'get_story': {
+        const id = input?.['story_id'] ?? input?.['storyId'] ?? '';
+        return `Fetching story #${id}`;
+      }
+      case 'get_comments': {
+        const id = input?.['story_id'] ?? input?.['storyId'] ?? '';
+        return `Reading comments on story #${id}`;
+      }
+      default:
+        return `Running ${toolName}`;
+    }
+  }
+
+  /**
+   * Convert an observation into a human-friendly summary.
+   * Extracts story count from raw output or returns a short version.
+   */
+  formatObservation(content: string): string {
+    if (content.includes('No results found')) {
+      return 'No results \u2014 trying a different search\u2026';
+    }
+
+    // Count stories in output
+    const storyMatches = content.match(/\[\d+\]/g);
+    if (storyMatches) {
+      return `Found ${storyMatches.length} ${storyMatches.length === 1 ? 'story' : 'stories'}`;
+    }
+
+    // Count comments
+    const commentMatch = content.match(/COMMENTS.*?(\d+)\s+total/);
+    if (commentMatch) {
+      return `Found ${commentMatch[1]} comments`;
+    }
+
+    // Truncate long content
+    if (content.length > 80) {
+      return content.slice(0, 77) + '...';
+    }
+
+    return content;
+  }
 }
