@@ -194,6 +194,40 @@
     background: var(--color-text-muted);
   }
 
+  /* Light theme overrides */
+  .light {
+    --color-surface-void: #ffffff;
+    --color-surface-base: #f8fafc;
+    --color-surface-raised: #ffffff;
+    --color-surface-overlay: #f1f5f9;
+    --color-surface-float: #e2e8f0;
+
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-text-muted: #64748b;
+    --color-text-faint: #94a3b8;
+    --color-text-inverse: #f8fafc;
+
+    --color-border-subtle: #e2e8f0;
+    --color-border-default: #cbd5e1;
+    --color-border-emphasis: #94a3b8;
+
+    color-scheme: light;
+  }
+
+  .light ::selection {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #0f172a;
+  }
+
+  .light ::-webkit-scrollbar-track {
+    background: #f8fafc;
+  }
+
+  .light ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+  }
+
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     *,

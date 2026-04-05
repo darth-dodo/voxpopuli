@@ -1,20 +1,77 @@
 <div class="min-h-screen bg-surface-base flex flex-col">
+  <!-- Theme toggle — top right, always visible -->
+  <div class="fixed top-4 right-4 z-50">
+    <button
+      type="button"
+      class="vp-btn-ghost p-2"
+      (click)="toggleTheme()"
+      [attr.aria-label]="theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
+    >
+      @if (theme() === 'dark') {
+      <!-- Sun icon -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+        class="w-5 h-5"
+        aria-hidden="true"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"
+        />
+      </svg>
+      } @else {
+      <!-- Moon icon -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+        class="w-5 h-5"
+        aria-hidden="true"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"
+        />
+      </svg>
+      }
+    </button>
+  </div>
+
   <!-- Main content area -->
-  <main class="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-    <!-- Empty state: centered hero -->
+  <main class="flex-1 flex flex-col w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- ═══════════════════════════════════════════════
+         EMPTY STATE: Landing page
+         ═══════════════════════════════════════════════ -->
     @if (!loading() && !error() && !response()) {
-    <div class="flex-1 flex flex-col items-center justify-center text-center py-12">
-      <p class="text-mono text-xs tracking-[0.2em] uppercase text-accent-amber mb-3">Agentic RAG</p>
+
+    <!-- SECTION 1: Hero -->
+    <section class="flex-1 flex flex-col items-center justify-center text-center pt-24 pb-16">
+      <p
+        class="text-mono text-xs tracking-[0.25em] uppercase text-accent-amber mb-4"
+        aria-label="Product category"
+      >
+        Agentic RAG
+      </p>
       <h1
-        class="text-editorial text-4xl sm:text-5xl md:text-6xl font-semibold tracking-tight text-text-primary mb-4"
+        class="text-editorial text-5xl sm:text-6xl md:text-7xl font-bold tracking-tight text-text-primary mb-5 leading-tight"
       >
         VoxPopuli
       </h1>
-      <p class="text-text-secondary text-base sm:text-lg max-w-md mb-10">
-        Ask any question about Hacker News. Get sourced answers with real-time reasoning.
+      <p
+        class="text-editorial text-lg sm:text-xl text-text-secondary max-w-lg mb-12 leading-relaxed"
+      >
+        The pulse of Hacker News, distilled through AI reasoning.
       </p>
 
-      <!-- Inline search bar for empty state -->
+      <!-- Search bar -->
       <div class="w-full max-w-xl">
         <div class="flex items-center gap-2">
           <label for="query-input" class="sr-only">Your question</label>
@@ -31,12 +88,27 @@
           />
           <button
             type="button"
-            class="vp-btn-primary px-5 py-3"
+            class="vp-btn-primary px-5 py-3 gap-2"
             [disabled]="submitDisabled()"
             (click)="submit()"
             aria-label="Submit query"
           >
             Ask
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-4 h-4"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"
+              />
+            </svg>
           </button>
         </div>
         <div class="flex items-center justify-between mt-2 px-1">
@@ -46,35 +118,235 @@
           <app-provider-selector [(selectedProvider)]="selectedProvider" />
         </div>
       </div>
+    </section>
 
-      <!-- Example queries -->
-      <div class="mt-8 flex flex-wrap justify-center gap-2">
+    <!-- SECTION 2: Example questions -->
+    <section class="pb-16 max-w-3xl mx-auto w-full" aria-label="Example questions">
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        @for (q of exampleQueries; track q) {
         <button
           type="button"
-          class="vp-chip text-xs cursor-pointer"
-          (click)="query.set('What are the top trends on HN this week?')"
+          class="vp-card vp-card--interactive p-4 text-left"
+          (click)="query.set(q)"
         >
-          Top trends this week
+          <p class="text-ui text-sm text-text-secondary leading-relaxed">{{ q }}</p>
         </button>
-        <button
-          type="button"
-          class="vp-chip text-xs cursor-pointer"
-          (click)="query.set('What does HN think about Tailwind v4?')"
-        >
-          Tailwind v4 opinions
-        </button>
-        <button
-          type="button"
-          class="vp-chip text-xs cursor-pointer"
-          (click)="query.set('Show HN highlights from the past month')"
-        >
-          Show HN highlights
-        </button>
+        }
       </div>
-    </div>
+    </section>
+
+    <hr class="vp-divider max-w-2xl mx-auto" aria-hidden="true" />
+
+    <!-- SECTION 3: Feature highlights -->
+    <section class="py-16 max-w-3xl mx-auto w-full" aria-label="How it works">
+      <p class="text-mono text-xs tracking-[0.2em] uppercase text-text-muted text-center mb-2">
+        How it works
+      </p>
+      <h2
+        class="text-editorial text-2xl sm:text-3xl font-semibold text-text-primary text-center mb-12"
+      >
+        Intelligence, not search
+      </h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-8">
+        <!-- Ask -->
+        <div class="text-center">
+          <div
+            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6 text-accent-amber"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+              />
+            </svg>
+          </div>
+          <h3 class="text-ui font-semibold text-text-primary mb-2">Ask anything</h3>
+          <p class="text-sm text-text-secondary leading-relaxed">
+            Natural language queries about any Hacker News topic, trend, or discussion.
+          </p>
+          <p class="text-mono text-xs text-text-muted mt-3">search_hn + get_story</p>
+        </div>
+
+        <!-- Agent Reasons -->
+        <div class="text-center">
+          <div
+            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6 text-accent-amber"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
+              />
+            </svg>
+          </div>
+          <h3 class="text-ui font-semibold text-text-primary mb-2">Agent reasons</h3>
+          <p class="text-sm text-text-secondary leading-relaxed">
+            ReAct loop searches HN, fetches stories, and reads comments to build a grounded answer.
+          </p>
+          <p class="text-mono text-xs text-text-muted mt-3">think &rarr; act &rarr; observe</p>
+        </div>
+
+        <!-- Trust verified -->
+        <div class="text-center">
+          <div
+            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              class="w-6 h-6 text-trust-verified"
+              aria-hidden="true"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+              />
+            </svg>
+          </div>
+          <h3 class="text-ui font-semibold text-text-primary mb-2">Trust verified</h3>
+          <p class="text-sm text-text-secondary leading-relaxed">
+            Every source verified with recency scoring, viewpoint diversity, and bias tracking.
+          </p>
+          <p class="text-mono text-xs text-text-muted mt-3">sources + recency + diversity</p>
+        </div>
+      </div>
+    </section>
+
+    <hr class="vp-divider max-w-2xl mx-auto" aria-hidden="true" />
+
+    <!-- SECTION 4: Example answer preview -->
+    <section class="py-16 max-w-3xl mx-auto w-full" aria-label="Example response">
+      <p class="text-mono text-xs tracking-[0.2em] uppercase text-text-muted text-center mb-2">
+        See it in action
+      </p>
+      <h2
+        class="text-editorial text-2xl sm:text-3xl font-semibold text-text-primary text-center mb-10"
+      >
+        A real answer looks like this
+      </h2>
+
+      <div class="vp-card p-0 overflow-hidden">
+        <!-- Agent steps preview -->
+        <div class="vp-terminal rounded-none border-0 border-b border-border-subtle">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="vp-badge vp-badge--thought">thought</span>
+            <span class="text-text-secondary text-sm"
+              >Searching for Tailwind v4 discussions...</span
+            >
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <span class="vp-badge vp-badge--action">action</span>
+            <span class="text-text-secondary text-sm">search_hn("Tailwind v4")</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="vp-badge vp-badge--observation">observation</span>
+            <span class="text-text-secondary text-sm">5 results found</span>
+          </div>
+        </div>
+
+        <!-- Answer preview -->
+        <div class="p-5 sm:p-8">
+          <div class="vp-prose">
+            <p>
+              Based on Hacker News discussions,
+              <strong>Tailwind v4 has been broadly well-received</strong>, with particular praise
+              for the Oxide engine's 5x speed improvement and the new CSS-first configuration
+              approach. Some developers expressed concern about the migration path from v3, but the
+              consensus is positive.
+            </p>
+          </div>
+        </div>
+
+        <!-- Trust bar preview -->
+        <div class="px-5 sm:px-8 pb-4">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="vp-badge vp-badge--verified">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-3.5 h-3.5"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+                />
+              </svg>
+              4/4 verified
+            </span>
+            <span class="vp-badge vp-badge--cached">75% recent</span>
+            <span class="vp-badge vp-badge--thought">balanced</span>
+          </div>
+        </div>
+
+        <!-- Source cards preview -->
+        <div class="px-5 sm:px-8 pb-4">
+          <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-3">Sources (2)</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="vp-source-card">
+              <p class="vp-source-card__title">Tailwind CSS v4: 5x Faster</p>
+              <p class="vp-source-card__meta">342 points &middot; 187 comments</p>
+            </div>
+            <div class="vp-source-card">
+              <p class="vp-source-card__title">Why I Switched from Tailwind</p>
+              <p class="vp-source-card__meta">128 points &middot; 94 comments</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Meta bar preview -->
+        <div
+          class="flex flex-wrap items-center gap-4 px-5 sm:px-8 py-3 border-t border-border-subtle text-mono text-xs text-text-muted"
+        >
+          <span>groq</span>
+          <span>&middot;</span>
+          <span>1,234 tokens</span>
+          <span>&middot;</span>
+          <span>4.5s</span>
+        </div>
+      </div>
+    </section>
+
+    <hr class="vp-divider max-w-2xl mx-auto" aria-hidden="true" />
+
+    <!-- SECTION 5: Footer -->
+    <footer class="py-16 text-center">
+      <p class="text-text-muted text-sm">Built with Claude, Groq, Mistral &middot; Open source</p>
+      <p class="text-mono text-xs text-text-faint mt-2">VoxPopuli v1.0</p>
+    </footer>
+
     }
 
-    <!-- Active state: query in progress or results shown -->
+    <!-- ═══════════════════════════════════════════════
+         ACTIVE STATE: Query in progress or results shown
+         ═══════════════════════════════════════════════ -->
     @if (loading() || error() || response()) {
     <div class="py-6" role="region" aria-live="polite" aria-label="Agent response">
       <!-- Compact header when results are showing -->

@@ -1,4 +1,4 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, type OnInit, inject, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
 import { RagService, StreamEvent } from '../../services/rag.service';
@@ -33,8 +33,33 @@ const MAX_QUERY_LENGTH = 500;
   ],
   templateUrl: './chat.component.html',
 })
-export class ChatComponent {
+export class ChatComponent implements OnInit {
   private readonly ragService = inject(RagService);
+
+  /** Current theme ('dark' | 'light'). */
+  readonly theme = signal<'dark' | 'light'>('dark');
+
+  /** Example queries displayed on the landing page. */
+  readonly exampleQueries = [
+    'What are the top trends on HN this week?',
+    'How does HN feel about Tailwind v4?',
+    'What Show HN projects got the most traction?',
+    'Compare React vs Vue sentiment on Hacker News',
+    "What's the sentiment on AI code assistants?",
+    'Most controversial HN discussions this month?',
+  ];
+
+  /** Toggle between dark and light themes. */
+  toggleTheme(): void {
+    const next = this.theme() === 'dark' ? 'light' : 'dark';
+    this.theme.set(next);
+    document.documentElement.className = next;
+  }
+
+  /** Initialize default theme on document root. */
+  ngOnInit(): void {
+    document.documentElement.className = 'dark';
+  }
 
   /** Current query string bound to the input field. */
   readonly query = signal('');
