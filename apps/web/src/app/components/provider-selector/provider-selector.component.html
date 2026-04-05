@@ -1,20 +1,20 @@
 <div class="flex flex-col gap-1.5" role="radiogroup" aria-label="LLM provider">
   <div class="flex flex-row gap-2">
     @for (provider of providers; track provider.id) {
-      <button
-        type="button"
-        role="radio"
-        [attr.aria-checked]="provider.id === selectedProvider()"
-        [class]="
-          'vp-chip text-mono text-sm px-3 py-1.5 rounded-full border cursor-pointer transition-colors ' +
-          (provider.id === selectedProvider()
-            ? 'vp-chip--active bg-accent-amber text-text-primary border-accent-amber'
-            : 'bg-surface-raised text-text-secondary border-border-subtle hover:border-border-default')
-        "
-        (click)="select(provider.id)"
-      >
-        {{ provider.name }}
-      </button>
+    <button
+      type="button"
+      role="radio"
+      [attr.aria-checked]="provider.id === selectedProvider()"
+      [class]="
+        'vp-chip text-mono text-sm px-3 py-1.5 rounded-full border cursor-pointer transition-colors ' +
+        (provider.id === selectedProvider()
+          ? 'vp-chip--active bg-accent-amber text-text-primary border-accent-amber'
+          : 'bg-surface-raised text-text-secondary border-border-subtle hover:border-border-default')
+      "
+      (click)="select(provider.id)"
+    >
+      {{ provider.name }}
+    </button>
     }
   </div>
 
