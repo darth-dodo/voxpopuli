@@ -114,7 +114,11 @@ export class AgentService {
       const model = this.llm.getModel(options?.provider);
       const tools = createAgentTools(this.hn, this.chunker);
 
-      const systemPrompt = AGENT_SYSTEM_PROMPT.replace('{{maxSteps}}', String(maxSteps));
+      const currentDate = new Date().toISOString().split('T')[0];
+      const systemPrompt = AGENT_SYSTEM_PROMPT.replace(
+        /\{\{maxSteps\}\}/g,
+        String(maxSteps),
+      ).replace(/\{\{currentDate\}\}/g, currentDate);
 
       const agent = createAgent({
         model,

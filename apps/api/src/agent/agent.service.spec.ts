@@ -229,14 +229,13 @@ describe('AgentService', () => {
 
     await service.run('test query');
 
-    // Verify the system prompt had {{maxSteps}} replaced with the actual number
+    // Verify the system prompt had placeholders replaced
     const callArgs = (createAgent as jest.Mock).mock.calls[0][0];
     expect(callArgs.systemPrompt).not.toContain('{{maxSteps}}');
+    expect(callArgs.systemPrompt).not.toContain('{{currentDate}}');
     expect(callArgs.systemPrompt).toContain('7'); // MAX_STEPS = 7
-
-    // Verify it matches the expected replaced prompt
-    const expectedPrompt = AGENT_SYSTEM_PROMPT.replace('{{maxSteps}}', '7');
-    expect(callArgs.systemPrompt).toBe(expectedPrompt);
+    // Current date should be injected in YYYY-MM-DD format
+    expect(callArgs.systemPrompt).toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 
   // -------------------------------------------------------------------------
