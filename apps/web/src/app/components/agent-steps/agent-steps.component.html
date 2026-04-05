@@ -1,0 +1,74 @@
+<!-- Agent Reasoning Timeline -->
+<section class="vp-terminal" aria-label="Agent reasoning steps">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-3">
+    <span class="text-mono text-xs text-text-muted">{{ stepCounter() }}</span>
+    <button
+      type="button"
+      class="vp-btn-ghost text-xs px-2 py-1"
+      (click)="toggleCollapsed()"
+      [attr.aria-expanded]="!collapsed()"
+      aria-controls="agent-steps-list"
+    >
+      {{ collapsed() ? 'Expand' : 'Collapse' }}
+    </button>
+  </div>
+
+  <!-- Step list -->
+  @if (!collapsed()) {
+    <div id="agent-steps-list" class="space-y-3" role="list" aria-label="Reasoning steps">
+      @for (step of steps(); track step.timestamp; let i = $index; let isLast = $last) {
+        <div role="listitem" class="relative">
+          <!-- Step badge -->
+          <span class="vp-badge vp-badge--{{ step.type }}">{{ step.type }}</span>
+
+          <!-- Thought content -->
+          @if (step.type === 'thought') {
+            <p class="mt-1.5 text-text-secondary">{{ step.content }}</p>
+          }
+
+          <!-- Action content: toolName(toolInput) -->
+          @if (step.type === 'action') {
+            <p class="mt-1.5 text-step-action">
+              {{ step.toolName }}({{ formatToolInput(step.toolInput) }})
+            </p>
+          }
+
+          <!-- Observation content (collapsible) -->
+          @if (step.type === 'observation') {
+            @if (isLongObservation(step.content)) {
+              <div class="mt-1.5">
+                <p
+                  class="text-text-muted whitespace-pre-line"
+                  [class.line-clamp-3]="!isObservationExpanded(i)"
+                >
+                  {{ step.content }}
+                </p>
+                <button
+                  type="button"
+                  class="text-accent-amber text-xs mt-1 hover:text-accent-amber-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-amber"
+                  (click)="toggleObservation(i)"
+                  [attr.aria-expanded]="isObservationExpanded(i)"
+                >
+                  {{ isObservationExpanded(i) ? 'Show less' : 'Show more' }}
+                </button>
+              </div>
+            } @else {
+              <p class="mt-1.5 text-text-muted whitespace-pre-line">{{ step.content }}</p>
+            }
+          }
+
+          <!-- Streaming cursor on last step -->
+          @if (isLast && isStreaming()) {
+            <span class="vp-cursor" aria-label="Agent is thinking"></span>
+          }
+        </div>
+      }
+
+      <!-- Cursor when streaming with no steps yet -->
+      @if (steps().length === 0 && isStreaming()) {
+        <div class="vp-cursor" aria-label="Agent is thinking"></div>
+      }
+    </div>
+  }
+</section>

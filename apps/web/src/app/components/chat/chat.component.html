@@ -1,0 +1,98 @@
+<section class="flex flex-col min-h-screen bg-surface-base px-md py-xl max-w-3xl mx-auto" aria-label="VoxPopuli Chat">
+
+  <!-- Header -->
+  <header class="mb-xl text-center">
+    <h1 class="text-editorial text-accent-amber mb-xs">VoxPopuli</h1>
+    <p class="text-text-secondary text-sm text-ui">Voice of Hacker News</p>
+  </header>
+
+  <!-- Answer area -->
+  <div class="flex-1 mb-lg" role="region" aria-live="polite" aria-label="Agent response">
+
+    <!-- Loading state -->
+    @if (loading()) {
+      <div class="vp-card p-lg space-y-md" aria-busy="true">
+        <div class="vp-skeleton h-4 w-3/4"></div>
+        <div class="vp-skeleton h-4 w-full"></div>
+        <div class="vp-skeleton h-4 w-5/6"></div>
+        <div class="vp-skeleton h-4 w-2/3"></div>
+        <p class="text-text-muted text-mono text-sm mt-md vp-cursor">Agent thinking</p>
+      </div>
+    }
+
+    <!-- Error state -->
+    @if (error(); as errorMsg) {
+      @if (!loading()) {
+        <div class="vp-card p-lg border-trust-danger/30" role="alert">
+          <p class="text-trust-danger text-ui font-semibold mb-xs">Error</p>
+          <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
+        </div>
+      }
+    }
+
+    <!-- Answer state -->
+    @if (response(); as res) {
+      @if (!loading()) {
+        <article class="vp-card p-lg">
+          <div class="vp-prose" [innerHTML]="res.answer"></div>
+
+          <hr class="vp-divider" />
+
+          <!-- Meta info -->
+          <div class="flex flex-wrap items-center gap-sm text-mono text-xs text-text-muted">
+            <span>{{ res.meta.provider }}</span>
+            <span aria-hidden="true">&middot;</span>
+            <span>{{ res.meta.totalInputTokens + res.meta.totalOutputTokens }} tokens</span>
+            <span aria-hidden="true">&middot;</span>
+            <span>{{ res.meta.durationMs }}ms</span>
+            <span aria-hidden="true">&middot;</span>
+            <span>{{ res.sources.length }} {{ res.sources.length === 1 ? 'source' : 'sources' }}</span>
+            @if (res.trust.sourcesVerified > 0) {
+              <span aria-hidden="true">&middot;</span>
+              <span class="text-trust-verified">{{ res.trust.sourcesVerified }}/{{ res.trust.sourcesTotal }} verified</span>
+            }
+          </div>
+        </article>
+      }
+    }
+
+    <!-- Empty state -->
+    @if (!loading() && !error() && !response()) {
+      <div class="flex flex-col items-center justify-center py-3xl text-center">
+        <p class="text-editorial text-text-muted text-lg italic">Ask anything about Hacker News...</p>
+        <p class="text-text-faint text-sm text-ui mt-sm">Top stories, trends, discussions, and more</p>
+      </div>
+    }
+  </div>
+
+  <!-- Input area -->
+  <footer class="flex items-center gap-sm">
+    <label for="query-input" class="sr-only">Your question</label>
+    <input
+      id="query-input"
+      type="text"
+      class="vp-input flex-1"
+      placeholder="What's happening on Hacker News?"
+      [ngModel]="query()"
+      (ngModelChange)="query.set($event)"
+      (keydown)="onKeydown($event)"
+      [attr.maxlength]="maxLength"
+      [attr.aria-disabled]="loading()"
+      [disabled]="loading()"
+      autocomplete="off"
+    />
+    <button
+      type="button"
+      class="vp-btn-primary"
+      [disabled]="submitDisabled()"
+      (click)="submit()"
+      aria-label="Submit query"
+    >
+      Ask
+    </button>
+    <span class="text-mono text-xs text-text-muted whitespace-nowrap" aria-label="Character count">
+      {{ charCount() }}&nbsp;/&nbsp;{{ maxLength }}
+    </span>
+  </footer>
+
+</section>

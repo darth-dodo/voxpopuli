@@ -1,0 +1,34 @@
+<!-- Entire card links to HN discussion -->
+<a
+  class="vp-source-card block no-underline"
+  [href]="hnUrl()"
+  target="_blank"
+  rel="noopener noreferrer"
+  [attr.aria-label]="'View HN discussion: ' + source().title"
+>
+  <!-- Title row -->
+  <p class="vp-source-card__title">
+    <!-- Title links to original URL if available, stop propagation so outer card link still works -->
+    @if (source().url) {
+      <a
+        class="text-text-primary hover:text-accent-amber-glow transition-colors no-underline"
+        [href]="source().url"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="$event.stopPropagation()"
+        [attr.aria-label]="'Read original article: ' + source().title"
+      >
+        {{ source().title }}
+      </a>
+    } @else {
+      {{ source().title }}
+    }
+  </p>
+
+  <!-- Metadata line -->
+  <div class="vp-source-card__meta flex items-center gap-3">
+    <span>{{ source().author }}</span>
+    <span aria-label="points">{{ source().points }} pts</span>
+    <span aria-label="comments">{{ source().commentCount }} comments</span>
+  </div>
+</a>
