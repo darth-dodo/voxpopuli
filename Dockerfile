@@ -37,12 +37,12 @@ COPY libs/shared-types/package.json libs/shared-types/
 # Production deps only (--ignore-scripts skips husky prepare hook)
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
-# Copy built output
-COPY --from=build /app/dist/apps/api dist/apps/api
+# Copy built output (webpack outputs to apps/api/dist/)
+COPY --from=build /app/apps/api/dist apps/api/dist
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:3000/api/health || exit 1
 
-CMD ["node", "dist/apps/api/main.js"]
+CMD ["node", "apps/api/dist/main.js"]
