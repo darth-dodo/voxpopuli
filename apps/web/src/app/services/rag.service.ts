@@ -76,13 +76,17 @@ export class RagService {
    * underlying `EventSource`.
    *
    * @param query - Natural-language question (max 500 chars).
+   * @param provider - Optional LLM provider override (groq / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
-  stream(query: string): Observable<StreamEvent> {
+  stream(query: string, provider?: string): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
 
-    const url = `${this.baseUrl}/stream?query=${encodeURIComponent(query)}`;
+    let url = `${this.baseUrl}/stream?query=${encodeURIComponent(query)}`;
+    if (provider) {
+      url += `&provider=${encodeURIComponent(provider)}`;
+    }
 
     return new Observable<StreamEvent>((subscriber) => {
       const eventSource = new EventSource(url);

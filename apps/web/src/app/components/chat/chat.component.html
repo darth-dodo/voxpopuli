@@ -8,11 +8,19 @@
     <p class="text-text-secondary text-sm text-ui">Voice of Hacker News</p>
   </header>
 
+  <!-- Provider selector -->
+  <app-provider-selector [(selectedProvider)]="selectedProvider" />
+
   <!-- Answer area -->
-  <div class="flex-1 mb-lg" role="region" aria-live="polite" aria-label="Agent response">
-    <!-- Loading state -->
-    @if (loading()) {
-    <div class="vp-card p-lg space-y-md" aria-busy="true">
+  <div class="flex-1 mb-lg mt-lg" role="region" aria-live="polite" aria-label="Agent response">
+    <!-- Agent steps (visible during streaming and after completion) -->
+    @if (steps().length > 0 || isStreaming()) {
+    <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+    }
+
+    <!-- Loading skeleton (shown while streaming, before answer arrives) -->
+    @if (loading() && !response()) {
+    <div class="vp-card p-lg space-y-md mt-md" aria-busy="true">
       <div class="vp-skeleton h-4 w-3/4"></div>
       <div class="vp-skeleton h-4 w-full"></div>
       <div class="vp-skeleton h-4 w-5/6"></div>
@@ -23,7 +31,7 @@
 
     <!-- Error state -->
     @if (error(); as errorMsg) { @if (!loading()) {
-    <div class="vp-card p-lg border-trust-danger/30" role="alert">
+    <div class="vp-card p-lg border-trust-danger/30 mt-md" role="alert">
       <p class="text-trust-danger text-ui font-semibold mb-xs">Error</p>
       <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
     </div>
@@ -31,27 +39,25 @@
 
     <!-- Answer state -->
     @if (response(); as res) { @if (!loading()) {
-    <article class="vp-card p-lg">
+    <article class="vp-card p-lg mt-md">
       <div class="vp-prose" [innerHTML]="res.answer"></div>
 
       <hr class="vp-divider" />
 
-      <!-- Meta info -->
-      <div class="flex flex-wrap items-center gap-sm text-mono text-xs text-text-muted">
-        <span>{{ res.meta.provider }}</span>
-        <span aria-hidden="true">&middot;</span>
-        <span>{{ res.meta.totalInputTokens + res.meta.totalOutputTokens }} tokens</span>
-        <span aria-hidden="true">&middot;</span>
-        <span>{{ res.meta.durationMs }}ms</span>
-        <span aria-hidden="true">&middot;</span>
-        <span>{{ res.sources.length }} {{ res.sources.length === 1 ? 'source' : 'sources' }}</span>
-        @if (res.trust.sourcesVerified > 0) {
-        <span aria-hidden="true">&middot;</span>
-        <span class="text-trust-verified"
-          >{{ res.trust.sourcesVerified }}/{{ res.trust.sourcesTotal }} verified</span
-        >
+      <!-- Trust indicators -->
+      <app-trust-bar [trust]="res.trust" />
+
+      <!-- Source cards -->
+      @if (res.sources.length > 0) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm mt-md">
+        @for (source of res.sources; track source.storyId) {
+        <app-source-card [source]="source" />
         }
       </div>
+      }
+
+      <!-- Meta bar -->
+      <app-meta-bar [meta]="res.meta" />
     </article>
     } }
 
