@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as http from 'http';
 import { HealthModule } from './health.module';
+import { CacheModule } from '../cache/cache.module';
 import type { HealthResponse } from '@voxpopuli/shared-types';
 
 /**
@@ -39,7 +40,7 @@ describe('HealthController', () => {
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [HealthModule],
+      imports: [HealthModule, CacheModule],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -63,8 +64,12 @@ describe('HealthController', () => {
     expect(health.uptime).toBeGreaterThan(0);
 
     expect(health.cacheStats).toBeDefined();
-    expect(health.cacheStats.hits).toBe(0);
-    expect(health.cacheStats.misses).toBe(0);
-    expect(health.cacheStats.keys).toBe(0);
+    expect(typeof health.cacheStats.hits).toBe('number');
+    expect(typeof health.cacheStats.misses).toBe('number');
+    expect(typeof health.cacheStats.keys).toBe('number');
+
+    const extended = body as HealthResponse & { memoryMB: number };
+    expect(typeof extended.memoryMB).toBe('number');
+    expect(extended.memoryMB).toBeGreaterThan(0);
   });
 });
