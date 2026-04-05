@@ -3,6 +3,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import type { AgentResponse } from '@voxpopuli/shared-types';
+import { environment } from '../../environments/environment';
 
 // ---------------------------------------------------------------------------
 // Stream event types
@@ -29,7 +30,7 @@ export type StreamEvent =
  */
 @Injectable({ providedIn: 'root' })
 export class RagService {
-  private readonly baseUrl = '/api/rag';
+  private readonly baseUrl = `${environment.apiUrl}/rag`;
 
   /** Whether a request is currently in-flight. */
   readonly loading = signal(false);
