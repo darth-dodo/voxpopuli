@@ -89,11 +89,10 @@ describe('ChatComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should display the character counter as 0 / 500 initially', () => {
-    const el: HTMLElement = fixture.nativeElement;
-    const counter = el.querySelector('[aria-label="Character count"]');
-    expect(counter?.textContent).toContain('0');
-    expect(counter?.textContent).toContain('500');
+  it('should track character count via the charCount signal', () => {
+    expect(component.charCount()).toBe(0);
+    component.query.set('hello');
+    expect(component.charCount()).toBe(5);
   });
 
   it('should update character count when query changes', () => {

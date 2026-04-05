@@ -1,107 +1,182 @@
-<section
-  class="flex flex-col min-h-screen bg-surface-base px-4 md:px-8 py-xl max-w-3xl mx-auto"
-  aria-label="VoxPopuli Chat"
->
-  <!-- Header -->
-  <header class="mb-xl text-center">
-    <h1 class="text-editorial text-accent-amber mb-xs text-3xl md:text-4xl">VoxPopuli</h1>
-    <p class="text-text-secondary text-sm text-ui">Voice of Hacker News</p>
-  </header>
+<div class="min-h-screen bg-surface-base flex flex-col">
+  <!-- Main content area -->
+  <main class="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- Empty state: centered hero -->
+    @if (!loading() && !error() && !response()) {
+    <div class="flex-1 flex flex-col items-center justify-center text-center py-12">
+      <p class="text-mono text-xs tracking-[0.2em] uppercase text-accent-amber mb-3">Agentic RAG</p>
+      <h1
+        class="text-editorial text-4xl sm:text-5xl md:text-6xl font-semibold tracking-tight text-text-primary mb-4"
+      >
+        VoxPopuli
+      </h1>
+      <p class="text-text-secondary text-base sm:text-lg max-w-md mb-10">
+        Ask any question about Hacker News. Get sourced answers with real-time reasoning.
+      </p>
 
-  <!-- Provider selector -->
-  <app-provider-selector [(selectedProvider)]="selectedProvider" />
+      <!-- Inline search bar for empty state -->
+      <div class="w-full max-w-xl">
+        <div class="flex items-center gap-2">
+          <label for="query-input" class="sr-only">Your question</label>
+          <input
+            id="query-input"
+            type="text"
+            class="vp-input flex-1 min-w-0 text-base"
+            placeholder="What does HN think about..."
+            [ngModel]="query()"
+            (ngModelChange)="query.set($event)"
+            (keydown)="onKeydown($event)"
+            [attr.maxlength]="maxLength"
+            autocomplete="off"
+          />
+          <button
+            type="button"
+            class="vp-btn-primary px-5 py-3"
+            [disabled]="submitDisabled()"
+            (click)="submit()"
+            aria-label="Submit query"
+          >
+            Ask
+          </button>
+        </div>
+        <div class="flex items-center justify-between mt-2 px-1">
+          <span class="text-mono text-xs text-text-muted">
+            {{ charCount() }} / {{ maxLength }}
+          </span>
+          <app-provider-selector [(selectedProvider)]="selectedProvider" />
+        </div>
+      </div>
 
-  <!-- Answer area -->
-  <div class="flex-1 mb-lg mt-lg" role="region" aria-live="polite" aria-label="Agent response">
-    <!-- Agent steps (visible during streaming and after completion) -->
-    @if (steps().length > 0 || isStreaming()) {
-    <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
-    }
-
-    <!-- Loading skeleton (shown while streaming, before answer arrives) -->
-    @if (loading() && !response()) {
-    <div class="vp-card p-lg space-y-md mt-md" aria-busy="true">
-      <div class="vp-skeleton h-4 w-3/4"></div>
-      <div class="vp-skeleton h-4 w-full"></div>
-      <div class="vp-skeleton h-4 w-5/6"></div>
-      <div class="vp-skeleton h-4 w-2/3"></div>
-      <p class="text-text-muted text-mono text-sm mt-md vp-cursor">Agent thinking</p>
+      <!-- Example queries -->
+      <div class="mt-8 flex flex-wrap justify-center gap-2">
+        <button
+          type="button"
+          class="vp-chip text-xs cursor-pointer"
+          (click)="query.set('What are the top trends on HN this week?')"
+        >
+          Top trends this week
+        </button>
+        <button
+          type="button"
+          class="vp-chip text-xs cursor-pointer"
+          (click)="query.set('What does HN think about Tailwind v4?')"
+        >
+          Tailwind v4 opinions
+        </button>
+        <button
+          type="button"
+          class="vp-chip text-xs cursor-pointer"
+          (click)="query.set('Show HN highlights from the past month')"
+        >
+          Show HN highlights
+        </button>
+      </div>
     </div>
     }
 
-    <!-- Error state -->
-    @if (error(); as errorMsg) { @if (!loading()) {
-    <div class="vp-card p-lg border-trust-danger/30 mt-md" role="alert">
-      <p class="text-trust-danger text-ui font-semibold mb-xs">Error</p>
-      <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
-    </div>
-    } }
+    <!-- Active state: query in progress or results shown -->
+    @if (loading() || error() || response()) {
+    <div class="py-6" role="region" aria-live="polite" aria-label="Agent response">
+      <!-- Compact header when results are showing -->
+      <header class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-3">
+          <h1 class="text-editorial text-xl font-semibold text-accent-amber">VoxPopuli</h1>
+          <span class="text-text-faint text-sm hidden sm:inline">Voice of Hacker News</span>
+        </div>
+        <app-provider-selector [(selectedProvider)]="selectedProvider" />
+      </header>
 
-    <!-- Answer state -->
-    @if (response(); as res) { @if (!loading()) {
-    <article class="vp-card p-lg mt-md">
-      <div class="vp-prose" [innerHTML]="res.answer"></div>
-
-      <hr class="vp-divider" />
-
-      <!-- Trust indicators -->
-      <app-trust-bar [trust]="res.trust" />
-
-      <!-- Source cards -->
-      @if (res.sources.length > 0) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm mt-md">
-        @for (source of res.sources; track source.storyId) {
-        <app-source-card [source]="source" />
-        }
+      <!-- Agent steps timeline -->
+      @if (steps().length > 0 || isStreaming()) {
+      <div class="mb-4">
+        <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
       </div>
       }
 
-      <!-- Meta bar -->
-      <app-meta-bar [meta]="res.meta" />
-    </article>
-    } }
+      <!-- Loading skeleton -->
+      @if (loading() && !response()) {
+      <div class="vp-card p-5 sm:p-6 space-y-3 mt-4" aria-busy="true">
+        <div class="vp-skeleton h-4 w-3/4"></div>
+        <div class="vp-skeleton h-4 w-full"></div>
+        <div class="vp-skeleton h-4 w-5/6"></div>
+        <div class="vp-skeleton h-4 w-2/3"></div>
+        <p class="text-text-muted text-mono text-sm mt-4 vp-cursor">Agent thinking</p>
+      </div>
+      }
 
-    <!-- Empty state -->
-    @if (!loading() && !error() && !response()) {
-    <div class="flex flex-col items-center justify-center py-3xl text-center">
-      <p class="text-editorial text-text-muted text-lg italic">Ask anything about Hacker News...</p>
-      <p class="text-text-faint text-sm text-ui mt-sm">
-        Top stories, trends, discussions, and more
-      </p>
+      <!-- Error state -->
+      @if (error(); as errorMsg) { @if (!loading()) {
+      <div class="vp-card p-5 sm:p-6 border-trust-danger/30 mt-4" role="alert">
+        <p class="text-trust-danger text-ui font-semibold mb-1">Error</p>
+        <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
+      </div>
+      } }
+
+      <!-- Answer -->
+      @if (response(); as res) { @if (!loading()) {
+      <article class="mt-4 space-y-4">
+        <!-- Answer prose -->
+        <div class="vp-card p-5 sm:p-8">
+          <div class="vp-prose" [innerHTML]="res.answer"></div>
+        </div>
+
+        <!-- Trust bar -->
+        <app-trust-bar [trust]="res.trust" />
+
+        <!-- Source cards -->
+        @if (res.sources.length > 0) {
+        <div>
+          <h3 class="text-mono text-xs text-text-muted uppercase tracking-wider mb-3">
+            Sources ({{ res.sources.length }})
+          </h3>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            @for (source of res.sources; track source.storyId) {
+            <app-source-card [source]="source" />
+            }
+          </div>
+        </div>
+        }
+
+        <!-- Meta bar -->
+        <app-meta-bar [meta]="res.meta" />
+      </article>
+      } }
     </div>
-    }
-  </div>
 
-  <!-- Input area -->
-  <footer class="sticky bottom-0 bg-surface-base pb-4 pt-3 flex items-center gap-sm">
-    <label for="query-input" class="sr-only">Your question</label>
-    <input
-      id="query-input"
-      type="text"
-      class="vp-input flex-1 min-w-0"
-      placeholder="What's happening on Hacker News?"
-      [ngModel]="query()"
-      (ngModelChange)="query.set($event)"
-      (keydown)="onKeydown($event)"
-      [attr.maxlength]="maxLength"
-      [attr.aria-disabled]="loading()"
-      [disabled]="loading()"
-      autocomplete="off"
-    />
-    <button
-      type="button"
-      class="vp-btn-primary"
-      [disabled]="submitDisabled()"
-      (click)="submit()"
-      aria-label="Submit query"
-    >
-      Ask
-    </button>
-    <span
-      class="text-mono text-xs text-text-muted whitespace-nowrap hidden sm:inline"
-      aria-label="Character count"
-    >
-      {{ charCount() }}&nbsp;/&nbsp;{{ maxLength }}
-    </span>
-  </footer>
-</section>
+    <!-- Sticky input bar when results are showing -->
+    <footer class="sticky bottom-0 bg-surface-base border-t border-border-subtle py-3 mt-auto">
+      <div class="flex items-center gap-2">
+        <label for="query-input-active" class="sr-only">Your question</label>
+        <input
+          id="query-input-active"
+          type="text"
+          class="vp-input flex-1 min-w-0"
+          placeholder="Ask another question..."
+          [ngModel]="query()"
+          (ngModelChange)="query.set($event)"
+          (keydown)="onKeydown($event)"
+          [attr.maxlength]="maxLength"
+          [attr.aria-disabled]="loading()"
+          [disabled]="loading()"
+          autocomplete="off"
+        />
+        <button
+          type="button"
+          class="vp-btn-primary"
+          [disabled]="submitDisabled()"
+          (click)="submit()"
+          aria-label="Submit query"
+        >
+          Ask
+        </button>
+        <span
+          class="text-mono text-xs text-text-muted whitespace-nowrap hidden sm:inline"
+          aria-label="Character count"
+        >
+          {{ charCount() }} / {{ maxLength }}
+        </span>
+      </div>
+    </footer>
+    }
+  </main>
+</div>

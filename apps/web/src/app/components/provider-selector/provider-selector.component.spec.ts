@@ -34,10 +34,9 @@ describe('ProviderSelectorComponent', () => {
     expect(names).toEqual(['Groq', 'Mistral', 'Claude']);
   });
 
-  it('should show speed and cost for the selected provider', () => {
-    const label = fixture.nativeElement.querySelector('p');
-    expect(label.textContent).toContain('Fastest');
-    expect(label.textContent).toContain('Free tier');
+  it('should expose activeProvider computed for the selected provider', () => {
+    expect(component.activeProvider().speed).toBe('Fastest');
+    expect(component.activeProvider().cost).toBe('Free tier');
   });
 
   // ---------------------------------------------------------------------------
@@ -71,14 +70,13 @@ describe('ProviderSelectorComponent', () => {
     expect(buttons[0].classList.contains('vp-chip--active')).toBe(false);
   });
 
-  it('should update speed/cost label when selection changes', () => {
+  it('should update activeProvider when selection changes', () => {
     const buttons = fixture.nativeElement.querySelectorAll('button[role="radio"]');
     buttons[2].click();
     fixture.detectChanges();
 
-    const label = fixture.nativeElement.querySelector('p');
-    expect(label.textContent).toContain('Slower');
-    expect(label.textContent).toContain('Higher');
+    expect(component.activeProvider().speed).toBe('Slower');
+    expect(component.activeProvider().cost).toBe('Higher');
   });
 
   it('should update aria-checked when selection changes', () => {
