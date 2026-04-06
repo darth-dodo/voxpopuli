@@ -485,16 +485,16 @@
             </svg>
             <div class="flex-1">
               <p class="text-trust-danger text-ui font-semibold mb-1">
-                {{ errorMsg.includes('timeout') || errorMsg.includes('SSE') ? 'Agent timed out' : 'Something went wrong' }}
+                {{
+                  errorMsg.includes('timeout') || errorMsg.includes('SSE')
+                    ? 'Agent timed out'
+                    : 'Something went wrong'
+                }}
               </p>
               <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
             </div>
           </div>
-          <button
-            type="button"
-            class="mt-4 vp-btn-primary text-sm px-4 py-2"
-            (click)="retry()"
-          >
+          <button type="button" class="mt-4 vp-btn-primary text-sm px-4 py-2" (click)="retry()">
             Retry query
           </button>
         </div>
@@ -506,7 +506,8 @@
             Collected before timeout
           </p>
           <p class="text-text-secondary text-sm mb-3">
-            The agent completed {{ ctx.stepCount }} steps and found {{ ctx.storyCount }} stories before the error.
+            The agent completed {{ ctx.stepCount }} steps and found {{ ctx.storyCount }} stories
+            before the error.
           </p>
           @if (ctx.titles.length > 0) {
           <ul class="space-y-1.5">
@@ -518,11 +519,8 @@
             }
           </ul>
           @if (ctx.storyCount > 5) {
-          <p class="text-text-muted text-xs mt-2">
-            and {{ ctx.storyCount - 5 }} more stories
-          </p>
-          }
-          }
+          <p class="text-text-muted text-xs mt-2">and {{ ctx.storyCount - 5 }} more stories</p>
+          } }
           <p class="text-text-muted text-xs mt-4">
             Check the Steps tab for full details of what the agent found.
           </p>
