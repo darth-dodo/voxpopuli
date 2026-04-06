@@ -5,13 +5,13 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { LlmProviderInterface } from '../llm-provider.interface';
 
 /** Groq model identifier. */
-const MODEL_ID = 'llama-3.3-70b-versatile';
+const MODEL_ID = 'qwen/qwen3-32b';
 
 /** Groq context window size in tokens. */
-const MAX_CONTEXT_TOKENS = 128_000;
+const MAX_CONTEXT_TOKENS = 131_000;
 
 /**
- * LLM provider backed by Groq's hosted LLaMA models.
+ * LLM provider backed by Groq's hosted models (Qwen3 32B).
  *
  * Reads `GROQ_API_KEY` from the environment at construction time
  * and throws immediately if the key is missing.

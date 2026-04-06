@@ -86,7 +86,7 @@ describe('AgentService', () => {
   const mockLlmService = {
     getModel: jest.fn().mockReturnValue(mockModel),
     getProviderName: jest.fn().mockReturnValue('groq'),
-    getMaxContextTokens: jest.fn().mockReturnValue(50000),
+    getMaxContextTokens: jest.fn().mockReturnValue(131000),
   };
 
   const mockHnService = {
