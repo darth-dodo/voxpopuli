@@ -1,72 +1,74 @@
-<!-- Agent Reasoning Timeline -->
-<section class="vp-terminal overflow-x-auto" aria-label="Agent reasoning steps">
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-3">
-    <span class="text-mono text-xs text-text-muted">{{ stepCounter() }}</span>
-    <button
-      type="button"
-      class="vp-btn-ghost text-xs px-2 py-1"
-      (click)="toggleCollapsed()"
-      [attr.aria-expanded]="!collapsed()"
-      aria-controls="agent-steps-list"
-    >
-      {{ collapsed() ? 'Expand' : 'Collapse' }}
-    </button>
-  </div>
+<!-- Human-readable Agent Steps -->
+<section class="space-y-3" aria-label="Agent reasoning steps">
+  @for (step of groupedSteps(); track step.number; let i = $index; let isLast = $last) {
+  <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
+    <!-- Step header -->
+    <div class="flex items-start gap-3">
+      <!-- Icon -->
+      <div class="shrink-0 mt-0.5">
+        @if (step.icon === 'search') {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-accent-amber" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+        </svg>
+        } @else if (step.icon === 'read') {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-accent-amber" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+        </svg>
+        } @else {
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-accent-amber" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+        </svg>
+        }
+      </div>
 
-  <!-- Step list -->
-  @if (!collapsed()) {
-  <div id="agent-steps-list" class="space-y-3" role="list" aria-label="Reasoning steps">
-    @for (step of steps(); track step.timestamp; let i = $index; let isLast = $last) {
-    <div role="listitem" class="relative">
-      <!-- Step badge -->
-      <span class="vp-badge vp-badge--{{ step.type }}">{{ step.type }}</span>
+      <!-- Content -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-mono text-xs text-text-muted">Step {{ step.number }}</span>
+        </div>
+        <p class="text-ui text-sm text-text-primary">{{ step.summary }}</p>
 
-      <!-- Thought content -->
-      @if (step.type === 'thought') {
-      <p class="mt-1.5 text-text-secondary">{{ step.content }}</p>
-      }
+        <!-- Observation result -->
+        @if (step.observation) {
+        <p class="text-ui text-xs text-text-muted mt-1">{{ step.observation }}</p>
+        }
 
-      <!-- Action content: toolName(toolInput) -->
-      @if (step.type === 'action') {
-      <p class="mt-1.5 text-step-action break-words">
-        {{ step.toolName }}({{ formatToolInput(step.toolInput) }})
-      </p>
-      }
-
-      <!-- Observation content (collapsible) -->
-      @if (step.type === 'observation') { @if (isLongObservation(step.content)) {
-      <div class="mt-1.5">
-        <p
-          class="text-text-muted whitespace-pre-line"
-          [class.line-clamp-3]="!isObservationExpanded(i)"
-        >
-          {{ step.content }}
-        </p>
+        <!-- Show raw toggle -->
+        @if (step.rawAction || step.rawObservation) {
         <button
           type="button"
-          class="text-accent-amber text-xs mt-1 hover:text-accent-amber-glow focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-amber"
-          (click)="toggleObservation(i)"
-          [attr.aria-expanded]="isObservationExpanded(i)"
+          class="text-mono text-xs text-text-faint hover:text-text-muted mt-2 cursor-pointer"
+          (click)="toggleRaw(i)"
         >
-          {{ isObservationExpanded(i) ? 'Show less' : 'Show more' }}
+          {{ isRawExpanded(i) ? 'Hide raw' : 'Show raw' }}
         </button>
+
+        @if (isRawExpanded(i)) {
+        <div class="mt-2 p-3 rounded bg-surface-overlay text-mono text-xs text-text-muted whitespace-pre-wrap break-words">
+          @if (step.rawAction) {
+          <p class="text-step-action">{{ step.rawAction }}</p>
+          }
+          @if (step.rawObservation) {
+          <p class="mt-2 text-text-muted line-clamp-6">{{ step.rawObservation }}</p>
+          }
+        </div>
+        }
+        }
       </div>
-      } @else {
-      <p class="mt-1.5 text-text-muted whitespace-pre-line">{{ step.content }}</p>
-      } }
-
-      <!-- Streaming cursor on last step -->
-      @if (isLast && isStreaming()) {
-      <span class="vp-cursor" aria-label="Agent is thinking"></span>
-      }
     </div>
-    }
+  </div>
+  }
 
-    <!-- Cursor when streaming with no steps yet -->
-    @if (steps().length === 0 && isStreaming()) {
-    <div class="vp-cursor" aria-label="Agent is thinking"></div>
-    }
+  <!-- Streaming indicator -->
+  @if (isStreaming()) {
+  <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
+    <div class="flex items-center gap-3">
+      <span class="relative flex h-2.5 w-2.5">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
+      </span>
+      <span class="text-ui text-sm text-text-muted">Agent is thinking...</span>
+    </div>
   </div>
   }
 </section>

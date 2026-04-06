@@ -356,277 +356,173 @@
          ACTIVE STATE: Query in progress or results shown
          ═══════════════════════════════════════════════ -->
     @if (loading() || error() || response()) {
-    <div class="py-6" role="region" aria-live="polite" aria-label="Agent response">
-      <!-- Compact header when results are showing -->
-      <header class="mb-6">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              class="text-editorial text-xl font-semibold text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer"
-              (click)="goHome()"
-              aria-label="Back to home"
-            >
-              VoxPopuli
-            </button>
-            <span class="text-text-faint text-sm hidden sm:inline">Voice of HackerNews</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
-              (click)="goHome()"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-3.5 h-3.5"
-                aria-hidden="true"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              New question
-            </button>
-          </div>
+    <div class="py-6 flex-1 flex flex-col" role="region" aria-live="polite" aria-label="Agent response">
+      <!-- Header -->
+      <header class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <button
+            type="button"
+            class="text-editorial text-xl font-semibold text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer"
+            (click)="goHome()"
+            aria-label="Back to home"
+          >
+            VoxPopuli
+          </button>
+          <span class="text-text-faint text-sm hidden sm:inline">Voice of HackerNews</span>
         </div>
+        <button
+          type="button"
+          class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
+          (click)="goHome()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          New question
+        </button>
       </header>
 
-      <!-- Agent steps (auto-collapsed after answer, expanded during streaming) -->
-      @if (steps().length > 0 || isStreaming()) {
-      <div class="mb-4">
-        @if (stepsCollapsed() && !isStreaming()) {
-        <!-- Collapsed summary -->
+      <!-- Tab bar -->
+      <nav class="flex border-b border-border-subtle mb-6" role="tablist" aria-label="Result sections">
         <button
           type="button"
-          class="w-full flex items-center justify-between p-3 rounded-lg bg-surface-raised border border-border-subtle text-left cursor-pointer hover:border-border-default transition-colors"
-          (click)="stepsCollapsed.set(false)"
+          role="tab"
+          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          [class.text-accent-amber]="activeTab() === 'answer'"
+          [class.border-b-2]="activeTab() === 'answer'"
+          [class.border-accent-amber]="activeTab() === 'answer'"
+          [class.text-text-muted]="activeTab() !== 'answer'"
+          [class.hover:text-text-secondary]="activeTab() !== 'answer'"
+          [attr.aria-selected]="activeTab() === 'answer'"
+          (click)="activeTab.set('answer')"
         >
-          <span class="text-mono text-xs text-text-muted">
-            Agent completed in {{ steps().length }} steps
-          </span>
-          <span class="text-mono text-xs text-accent-amber">Expand</span>
+          Answer
         </button>
-        } @else {
-        <!-- Full steps view -->
-        <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
-        @if (!isStreaming() && response()) {
         <button
           type="button"
-          class="w-full text-center text-mono text-xs text-text-muted mt-2 hover:text-text-secondary cursor-pointer"
-          (click)="stepsCollapsed.set(true)"
+          role="tab"
+          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          [class.text-accent-amber]="activeTab() === 'sources'"
+          [class.border-b-2]="activeTab() === 'sources'"
+          [class.border-accent-amber]="activeTab() === 'sources'"
+          [class.text-text-muted]="activeTab() !== 'sources'"
+          [class.hover:text-text-secondary]="activeTab() !== 'sources'"
+          [attr.aria-selected]="activeTab() === 'sources'"
+          (click)="activeTab.set('sources')"
         >
-          Collapse steps
+          Sources{{ response() ? ' (' + response()!.sources.length + ')' : '' }}
         </button>
-        } }
-      </div>
-      }
-
-      <!-- Loading state (only when no steps have arrived yet) -->
-      @if (loading() && !response() && steps().length === 0) {
-      <div class="mt-4 space-y-4" aria-busy="true">
-        <!-- Context card: what's happening -->
-        <div class="rounded-xl border border-border-subtle bg-surface-raised p-5">
-          <div class="flex items-center gap-3 mb-4">
-            <span class="relative flex h-2.5 w-2.5">
-              <span
-                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"
-              ></span>
-              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
-            </span>
-            <span class="text-ui text-sm text-text-primary font-medium"
-              >Researching your question</span
-            >
-          </div>
-          <p class="text-ui text-xs text-text-muted leading-relaxed">
-            The agent is searching HackerNews, reading stories and comments, and synthesizing a
-            sourced answer. This typically takes 5-15 seconds.
-          </p>
-        </div>
-
-        <!-- Answer skeleton preview -->
-        <div class="vp-card p-5 sm:p-8">
-          <div class="space-y-3 animate-pulse">
-            <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
-            <div class="h-4 bg-surface-overlay/60 rounded w-full"></div>
-            <div class="h-4 bg-surface-overlay/60 rounded w-5/6"></div>
-            <div class="h-4 bg-surface-overlay/60 rounded w-4/5"></div>
-            <div class="h-4 bg-surface-overlay/60 rounded w-2/3"></div>
-          </div>
-          <div class="flex items-center gap-3 mt-6 pt-4 border-t border-border-subtle">
-            <div class="h-6 bg-surface-overlay/40 rounded-full w-24 animate-pulse"></div>
-            <div class="h-6 bg-surface-overlay/40 rounded-full w-20 animate-pulse"></div>
-            <div class="h-6 bg-surface-overlay/40 rounded-full w-16 animate-pulse"></div>
-          </div>
-        </div>
-
-        <!-- Source card skeletons -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <div class="rounded-xl border border-border-subtle bg-surface-raised p-4 animate-pulse">
-            <div class="h-4 bg-surface-overlay/60 rounded w-3/4 mb-3"></div>
-            <div class="h-3 bg-surface-overlay/40 rounded w-1/2"></div>
-          </div>
-          <div
-            class="rounded-xl border border-border-subtle bg-surface-raised p-4 animate-pulse hidden sm:block"
-          >
-            <div class="h-4 bg-surface-overlay/60 rounded w-2/3 mb-3"></div>
-            <div class="h-3 bg-surface-overlay/40 rounded w-1/3"></div>
-          </div>
-          <div
-            class="rounded-xl border border-border-subtle bg-surface-raised p-4 animate-pulse hidden lg:block"
-          >
-            <div class="h-4 bg-surface-overlay/60 rounded w-4/5 mb-3"></div>
-            <div class="h-3 bg-surface-overlay/40 rounded w-2/5"></div>
-          </div>
-        </div>
-      </div>
-      }
-
-      <!-- Error state -->
-      @if (error(); as errorMsg) { @if (!loading() && !response()) {
-      <div class="vp-card p-5 sm:p-6 border-trust-danger/30 mt-4" role="alert">
-        <p class="text-trust-danger text-ui font-semibold mb-1">Error</p>
-        <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
-      </div>
-      } }
-
-      <!-- Answer -->
-      @if (response(); as res) { @if (!loading()) {
-      <article class="mt-4 space-y-4">
-        <!-- Partial result warning -->
-        @if (isPartialResult()) {
-        <div
-          class="flex items-start gap-3 p-4 rounded-lg bg-trust-warning/10 border border-trust-warning/20 mb-4"
-          role="alert"
+        <button
+          type="button"
+          role="tab"
+          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          [class.text-accent-amber]="activeTab() === 'steps'"
+          [class.border-b-2]="activeTab() === 'steps'"
+          [class.border-accent-amber]="activeTab() === 'steps'"
+          [class.text-text-muted]="activeTab() !== 'steps'"
+          [class.hover:text-text-secondary]="activeTab() !== 'steps'"
+          [attr.aria-selected]="activeTab() === 'steps'"
+          (click)="activeTab.set('steps')"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="w-5 h-5 text-trust-warning shrink-0 mt-0.5"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
-            />
-          </svg>
-          <div>
-            <p class="text-ui text-sm font-semibold text-trust-warning">Partial results</p>
-            <p class="text-ui text-xs text-text-secondary mt-0.5">
-              The agent timed out or encountered an error. The answer below may be incomplete.
-            </p>
+          Steps{{ steps().length > 0 ? ' (' + steps().length + ')' : '' }}
+        </button>
+      </nav>
+
+      <!-- ─── Answer Tab ─── -->
+      @if (activeTab() === 'answer') {
+
+        <!-- Loading state -->
+        @if (loading() && !response()) {
+        <div class="mt-4 space-y-4" aria-busy="true">
+          <div class="vp-card p-5 sm:p-8">
+            <div class="space-y-3 animate-pulse">
+              <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
+              <div class="h-4 bg-surface-overlay/60 rounded w-full"></div>
+              <div class="h-4 bg-surface-overlay/60 rounded w-5/6"></div>
+              <div class="h-4 bg-surface-overlay/60 rounded w-4/5"></div>
+              <div class="h-4 bg-surface-overlay/60 rounded w-2/3"></div>
+            </div>
           </div>
         </div>
         }
 
-        <!-- Answer prose (capped height with expand toggle) -->
-        <div class="vp-card p-5 sm:p-8">
-          <div
-            class="vp-prose"
-            [class.max-h-96]="!answerExpanded()"
-            [class.overflow-hidden]="!answerExpanded()"
-          >
-            <markdown [data]="enrichedAnswer()" />
-          </div>
-          @if (!answerExpanded()) {
-          <div class="relative -mt-16 pt-16 bg-gradient-to-t from-surface-raised to-transparent">
-            <button
-              type="button"
-              class="w-full text-center text-mono text-xs text-accent-amber hover:text-accent-amber-glow cursor-pointer py-2"
-              (click)="answerExpanded.set(true)"
-            >
-              Show full answer
-            </button>
+        <!-- Error state -->
+        @if (error(); as errorMsg) { @if (!loading() && !response()) {
+        <div class="vp-card p-5 sm:p-6 border-trust-danger/30 mt-4" role="alert">
+          <p class="text-trust-danger text-ui font-semibold mb-1">Error</p>
+          <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
+        </div>
+        } }
+
+        <!-- Answer content -->
+        @if (response(); as res) { @if (!loading()) {
+        <article class="space-y-4">
+          <!-- Partial result warning -->
+          @if (res.meta.error === true || res.trust.honestyFlags.includes('agent_error_partial_results')) {
+          <div class="flex items-start gap-3 p-4 rounded-lg bg-trust-warning/10 border border-trust-warning/20" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-trust-warning shrink-0 mt-0.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <div>
+              <p class="text-ui text-sm font-semibold text-trust-warning">Partial results</p>
+              <p class="text-ui text-xs text-text-secondary mt-0.5">The agent timed out or encountered an error. The answer below may be incomplete.</p>
+            </div>
           </div>
           }
-        </div>
 
-        <!-- Trust + Meta row -->
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <app-trust-bar [trust]="res.trust" />
-          <app-meta-bar [meta]="res.meta" />
-        </div>
-
-        <!-- Source cards -->
-        @if (res.sources.length > 0) {
-        <div>
-          <h3 class="text-mono text-xs text-text-muted uppercase tracking-wider mb-3">
-            Sources ({{ res.sources.length }})
-          </h3>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            @for (source of res.sources; track source.storyId) {
-            <app-source-card [source]="source" />
-            }
+          <!-- Answer prose — full, no truncation -->
+          <div class="vp-card p-5 sm:p-8">
+            <div class="vp-prose">
+              <markdown [data]="enrichedAnswer()" />
+            </div>
           </div>
-        </div>
-        }
-      </article>
-      } }
-    </div>
 
-    <!-- Sticky input bar when results are showing -->
-    <footer class="sticky bottom-0 bg-surface-base border-t border-border-subtle py-3 mt-auto">
-      <div class="flex items-center gap-2">
-        <!-- Home button (mobile only) -->
-        <button
-          type="button"
-          class="sm:hidden shrink-0 p-2 rounded-lg border border-border-subtle text-text-muted hover:text-text-secondary hover:border-border-default transition-colors cursor-pointer"
-          (click)="goHome()"
-          aria-label="Back to home"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke-width="1.5"
-            stroke="currentColor"
-            class="w-4 h-4"
-            aria-hidden="true"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
-            />
-          </svg>
-        </button>
-        <label for="query-input-active" class="sr-only">Your question</label>
-        <input
-          id="query-input-active"
-          type="text"
-          class="vp-input flex-1 min-w-0"
-          placeholder="Ask another question..."
-          [ngModel]="query()"
-          (ngModelChange)="query.set($event)"
-          (keydown)="onKeydown($event)"
-          [attr.maxlength]="maxLength"
-          [attr.aria-disabled]="loading()"
-          [disabled]="loading()"
-          autocomplete="off"
-        />
-        <button
-          type="button"
-          class="vp-btn-primary"
-          [disabled]="submitDisabled()"
-          (click)="submit()"
-          aria-label="Submit query"
-        >
-          Ask
-        </button>
-        <span
-          class="text-mono text-xs text-text-muted whitespace-nowrap hidden sm:inline"
-          aria-label="Character count"
-        >
-          {{ charCount() }} / {{ maxLength }}
-        </span>
-      </div>
-    </footer>
+          <!-- Trust bar -->
+          <div class="border-t border-border-subtle pt-4">
+            <app-trust-bar [trust]="res.trust" />
+          </div>
+
+          <!-- Meta bar -->
+          <div class="border-t border-border-subtle pt-3">
+            <app-meta-bar [meta]="res.meta" />
+          </div>
+        </article>
+        } }
+
+      }
+
+      <!-- ─── Sources Tab ─── -->
+      @if (activeTab() === 'sources') {
+        @if (response(); as res) {
+          @if (res.sources.length > 0) {
+          <div>
+            <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
+              {{ res.sources.length }} sources
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              @for (source of res.sources; track source.storyId) {
+              <app-source-card [source]="source" />
+              }
+            </div>
+          </div>
+          } @else {
+          <p class="text-text-muted text-sm">No sources available.</p>
+          }
+        } @else {
+        <p class="text-text-muted text-sm">Sources will appear after the agent completes.</p>
+        }
+      }
+
+      <!-- ─── Steps Tab ─── -->
+      @if (activeTab() === 'steps') {
+        @if (steps().length > 0 || isStreaming()) {
+        <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+        } @else {
+        <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
+        }
+      }
+
+    </div>
     }
   </main>
 </div>

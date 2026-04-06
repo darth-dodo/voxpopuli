@@ -84,26 +84,14 @@ export class ChatComponent implements OnInit {
   /** Whether the SSE stream is actively producing events. */
   readonly isStreaming = signal(false);
 
-  /** Whether the agent steps section is collapsed in the results view. */
-  readonly stepsCollapsed = signal(false);
-
-  /** Whether the answer prose is fully expanded (removes max-height cap). */
-  readonly answerExpanded = signal(false);
+  /** Currently active tab in the result view. */
+  readonly activeTab = signal<'answer' | 'sources' | 'steps'>('steps');
 
   /** Maximum query length exposed to the template. */
   readonly maxLength = MAX_QUERY_LENGTH;
 
   /** Current character count for the counter display. */
   readonly charCount = computed(() => this.query().length);
-
-  /** Whether the response contains an error or partial results. */
-  readonly isPartialResult = computed(() => {
-    const res = this.response();
-    if (!res) return false;
-    return (
-      res.meta.error === true || res.trust.honestyFlags.includes('agent_error_partial_results')
-    );
-  });
 
   /**
    * Answer text with story IDs and usernames converted to clickable HN links.
@@ -149,8 +137,7 @@ export class ChatComponent implements OnInit {
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
-    this.stepsCollapsed.set(false);
-    this.answerExpanded.set(false);
+    this.activeTab.set('steps');
 
     this.ragService.stream(q, this.selectedProvider()).subscribe({
       next: (event: StreamEvent) => {
@@ -183,8 +170,8 @@ export class ChatComponent implements OnInit {
             this.response.set(event.response);
             this.isStreaming.set(false);
             this.loading.set(false);
-            // Auto-collapse agent steps when answer arrives
-            this.stepsCollapsed.set(true);
+            // Auto-switch to answer tab when answer arrives
+            this.activeTab.set('answer');
             break;
           case 'error':
             this.error.set(event.message);
@@ -225,7 +212,6 @@ export class ChatComponent implements OnInit {
     this.steps.set([]);
     this.loading.set(false);
     this.isStreaming.set(false);
-    this.stepsCollapsed.set(false);
-    this.answerExpanded.set(false);
+    this.activeTab.set('steps');
   }
 }
