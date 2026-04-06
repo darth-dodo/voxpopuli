@@ -1,5 +1,6 @@
-import { Component, inject, signal, computed } from '@angular/core';
+import { Component, type OnInit, inject, signal, computed, model } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MarkdownComponent } from 'ngx-markdown';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
 import { RagService, StreamEvent } from '../../services/rag.service';
 import { AgentStepsComponent } from '../agent-steps/agent-steps.component';
@@ -25,6 +26,7 @@ const MAX_QUERY_LENGTH = 500;
   standalone: true,
   imports: [
     FormsModule,
+    MarkdownComponent,
     AgentStepsComponent,
     SourceCardComponent,
     TrustBarComponent,
@@ -33,8 +35,33 @@ const MAX_QUERY_LENGTH = 500;
   ],
   templateUrl: './chat.component.html',
 })
-export class ChatComponent {
+export class ChatComponent implements OnInit {
   private readonly ragService = inject(RagService);
+
+  /** Current theme ('dark' | 'light'). */
+  readonly theme = signal<'dark' | 'light'>('dark');
+
+  /** Example queries displayed on the landing page. */
+  readonly exampleQueries = [
+    'What are the top trends on HN this week?',
+    'How does HN feel about Tailwind v4?',
+    'What Show HN projects got the most traction?',
+    'Compare React vs Vue sentiment on HackerNews',
+    "What's the sentiment on AI code assistants?",
+    'Most controversial HN discussions this month?',
+  ];
+
+  /** Toggle between dark and light themes. */
+  toggleTheme(): void {
+    const next = this.theme() === 'dark' ? 'light' : 'dark';
+    this.theme.set(next);
+    document.documentElement.className = next;
+  }
+
+  /** Initialize default theme on document root. */
+  ngOnInit(): void {
+    document.documentElement.className = 'dark';
+  }
 
   /** Current query string bound to the input field. */
   readonly query = signal('');
@@ -49,7 +76,7 @@ export class ChatComponent {
   readonly response = signal<AgentResponse | null>(null);
 
   /** Currently selected LLM provider. */
-  readonly selectedProvider = signal('groq');
+  readonly selectedProvider = model('groq');
 
   /** Agent reasoning steps accumulated during streaming. */
   readonly steps = signal<AgentStep[]>([]);
@@ -57,11 +84,48 @@ export class ChatComponent {
   /** Whether the SSE stream is actively producing events. */
   readonly isStreaming = signal(false);
 
+  /** Whether the agent steps section is collapsed in the results view. */
+  readonly stepsCollapsed = signal(false);
+
+  /** Whether the answer prose is fully expanded (removes max-height cap). */
+  readonly answerExpanded = signal(false);
+
   /** Maximum query length exposed to the template. */
   readonly maxLength = MAX_QUERY_LENGTH;
 
   /** Current character count for the counter display. */
   readonly charCount = computed(() => this.query().length);
+
+  /** Whether the response contains an error or partial results. */
+  readonly isPartialResult = computed(() => {
+    const res = this.response();
+    if (!res) return false;
+    return (
+      res.meta.error === true || res.trust.honestyFlags.includes('agent_error_partial_results')
+    );
+  });
+
+  /**
+   * Answer text with story IDs and usernames converted to clickable HN links.
+   * - Story references like "Story 12345" or "(12345)" become links to HN items
+   * - Usernames after "by" or "user" become links to HN user profiles
+   */
+  readonly enrichedAnswer = computed(() => {
+    const res = this.response();
+    if (!res) return '';
+    let text = res.answer;
+
+    // Convert story ID references: "Story 12345", "story 12345", "(12345)", "[12345]"
+    text = text.replace(
+      /(?:(?:[Ss]tory\s+)(\d{5,10})|\[(\d{5,10})\]|\((\d{5,10})\))/g,
+      (match, id1, id2, id3) => {
+        const id = id1 ?? id2 ?? id3;
+        return `[${match}](https://news.ycombinator.com/item?id=${id})`;
+      },
+    );
+
+    return text;
+  });
 
   /** Whether the submit button should be disabled. */
   readonly submitDisabled = computed(
@@ -85,6 +149,8 @@ export class ChatComponent {
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
+    this.stepsCollapsed.set(false);
+    this.answerExpanded.set(false);
 
     this.ragService.stream(q, this.selectedProvider()).subscribe({
       next: (event: StreamEvent) => {
@@ -117,6 +183,8 @@ export class ChatComponent {
             this.response.set(event.response);
             this.isStreaming.set(false);
             this.loading.set(false);
+            // Auto-collapse agent steps when answer arrives
+            this.stepsCollapsed.set(true);
             break;
           case 'error':
             this.error.set(event.message);
@@ -147,5 +215,17 @@ export class ChatComponent {
       event.preventDefault();
       this.submit();
     }
+  }
+
+  /** Reset to the landing page state. */
+  goHome(): void {
+    this.query.set('');
+    this.response.set(null);
+    this.error.set(null);
+    this.steps.set([]);
+    this.loading.set(false);
+    this.isStreaming.set(false);
+    this.stepsCollapsed.set(false);
+    this.answerExpanded.set(false);
   }
 }
