@@ -356,7 +356,12 @@
          ACTIVE STATE: Query in progress or results shown
          ═══════════════════════════════════════════════ -->
     @if (loading() || error() || response()) {
-    <div class="py-6 flex-1 flex flex-col" role="region" aria-live="polite" aria-label="Agent response">
+    <div
+      class="py-6 flex-1 flex flex-col"
+      role="region"
+      aria-live="polite"
+      aria-label="Agent response"
+    >
       <!-- Header -->
       <header class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-3">
@@ -375,7 +380,15 @@
           class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
           (click)="goHome()"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-3.5 h-3.5"
+            aria-hidden="true"
+          >
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
           New question
@@ -383,7 +396,11 @@
       </header>
 
       <!-- Tab bar -->
-      <nav class="flex border-b border-border-subtle mb-6" role="tablist" aria-label="Result sections">
+      <nav
+        class="flex border-b border-border-subtle mb-6"
+        role="tablist"
+        aria-label="Result sections"
+      >
         <button
           type="button"
           role="tab"
@@ -431,97 +448,106 @@
       <!-- ─── Answer Tab ─── -->
       @if (activeTab() === 'answer') {
 
-        <!-- Loading state -->
-        @if (loading() && !response()) {
-        <div class="mt-4 space-y-4" aria-busy="true">
-          <div class="vp-card p-5 sm:p-8">
-            <div class="space-y-3 animate-pulse">
-              <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
-              <div class="h-4 bg-surface-overlay/60 rounded w-full"></div>
-              <div class="h-4 bg-surface-overlay/60 rounded w-5/6"></div>
-              <div class="h-4 bg-surface-overlay/60 rounded w-4/5"></div>
-              <div class="h-4 bg-surface-overlay/60 rounded w-2/3"></div>
-            </div>
+      <!-- Loading state -->
+      @if (loading() && !response()) {
+      <div class="mt-4 space-y-4" aria-busy="true">
+        <div class="vp-card p-5 sm:p-8">
+          <div class="space-y-3 animate-pulse">
+            <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
+            <div class="h-4 bg-surface-overlay/60 rounded w-full"></div>
+            <div class="h-4 bg-surface-overlay/60 rounded w-5/6"></div>
+            <div class="h-4 bg-surface-overlay/60 rounded w-4/5"></div>
+            <div class="h-4 bg-surface-overlay/60 rounded w-2/3"></div>
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- Error state -->
+      @if (error(); as errorMsg) { @if (!loading() && !response()) {
+      <div class="vp-card p-5 sm:p-6 border-trust-danger/30 mt-4" role="alert">
+        <p class="text-trust-danger text-ui font-semibold mb-1">Error</p>
+        <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
+      </div>
+      } }
+
+      <!-- Answer content -->
+      @if (response(); as res) { @if (!loading()) {
+      <article class="space-y-4">
+        <!-- Partial result warning -->
+        @if (res.meta.error === true ||
+        res.trust.honestyFlags.includes('agent_error_partial_results')) {
+        <div
+          class="flex items-start gap-3 p-4 rounded-lg bg-trust-warning/10 border border-trust-warning/20"
+          role="alert"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5 text-trust-warning shrink-0 mt-0.5"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+            />
+          </svg>
+          <div>
+            <p class="text-ui text-sm font-semibold text-trust-warning">Partial results</p>
+            <p class="text-ui text-xs text-text-secondary mt-0.5">
+              The agent timed out or encountered an error. The answer below may be incomplete.
+            </p>
           </div>
         </div>
         }
 
-        <!-- Error state -->
-        @if (error(); as errorMsg) { @if (!loading() && !response()) {
-        <div class="vp-card p-5 sm:p-6 border-trust-danger/30 mt-4" role="alert">
-          <p class="text-trust-danger text-ui font-semibold mb-1">Error</p>
-          <p class="text-text-secondary text-sm">{{ errorMsg }}</p>
+        <!-- Answer prose — full, no truncation -->
+        <div class="vp-card p-5 sm:p-8">
+          <div class="vp-prose">
+            <markdown [data]="enrichedAnswer()" />
+          </div>
         </div>
-        } }
 
-        <!-- Answer content -->
-        @if (response(); as res) { @if (!loading()) {
-        <article class="space-y-4">
-          <!-- Partial result warning -->
-          @if (res.meta.error === true || res.trust.honestyFlags.includes('agent_error_partial_results')) {
-          <div class="flex items-start gap-3 p-4 rounded-lg bg-trust-warning/10 border border-trust-warning/20" role="alert">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-trust-warning shrink-0 mt-0.5" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-            </svg>
-            <div>
-              <p class="text-ui text-sm font-semibold text-trust-warning">Partial results</p>
-              <p class="text-ui text-xs text-text-secondary mt-0.5">The agent timed out or encountered an error. The answer below may be incomplete.</p>
-            </div>
-          </div>
-          }
+        <!-- Trust bar -->
+        <div class="border-t border-border-subtle pt-4">
+          <app-trust-bar [trust]="res.trust" />
+        </div>
 
-          <!-- Answer prose — full, no truncation -->
-          <div class="vp-card p-5 sm:p-8">
-            <div class="vp-prose">
-              <markdown [data]="enrichedAnswer()" />
-            </div>
-          </div>
-
-          <!-- Trust bar -->
-          <div class="border-t border-border-subtle pt-4">
-            <app-trust-bar [trust]="res.trust" />
-          </div>
-
-          <!-- Meta bar -->
-          <div class="border-t border-border-subtle pt-3">
-            <app-meta-bar [meta]="res.meta" />
-          </div>
-        </article>
-        } }
-
-      }
+        <!-- Meta bar -->
+        <div class="border-t border-border-subtle pt-3">
+          <app-meta-bar [meta]="res.meta" />
+        </div>
+      </article>
+      } } }
 
       <!-- ─── Sources Tab ─── -->
-      @if (activeTab() === 'sources') {
-        @if (response(); as res) {
-          @if (res.sources.length > 0) {
-          <div>
-            <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
-              {{ res.sources.length }} sources
-            </p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              @for (source of res.sources; track source.storyId) {
-              <app-source-card [source]="source" />
-              }
-            </div>
-          </div>
-          } @else {
-          <p class="text-text-muted text-sm">No sources available.</p>
+      @if (activeTab() === 'sources') { @if (response(); as res) { @if (res.sources.length > 0) {
+      <div>
+        <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
+          {{ res.sources.length }} sources
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          @for (source of res.sources; track source.storyId) {
+          <app-source-card [source]="source" />
           }
-        } @else {
-        <p class="text-text-muted text-sm">Sources will appear after the agent completes.</p>
-        }
-      }
+        </div>
+      </div>
+      } @else {
+      <p class="text-text-muted text-sm">No sources available.</p>
+      } } @else {
+      <p class="text-text-muted text-sm">Sources will appear after the agent completes.</p>
+      } }
 
       <!-- ─── Steps Tab ─── -->
-      @if (activeTab() === 'steps') {
-        @if (steps().length > 0 || isStreaming()) {
-        <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
-        } @else {
-        <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
-        }
-      }
-
+      @if (activeTab() === 'steps') { @if (steps().length > 0 || isStreaming()) {
+      <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+      } @else {
+      <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
+      } }
     </div>
     }
   </main>
