@@ -409,9 +409,9 @@ describe('ChunkerService', () => {
     });
 
     it('works with provider-specific budgets', () => {
-      // Claude: 80k, Mistral: 100k, Groq: 50k (minus 7.5k reserved)
+      // Claude: 80k, Mistral: 100k, Groq/Qwen3: 131k (minus 7.5k reserved)
       const claudeBudget = 80000 - 7500;
-      const groqBudget = 50000 - 7500;
+      const groqBudget = 131000 - 7500;
 
       const claudeCtx = service.buildContext([smallStory], [topComment], claudeBudget);
       const groqCtx = service.buildContext([smallStory], [topComment], groqBudget);

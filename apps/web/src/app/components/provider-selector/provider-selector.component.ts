@@ -26,7 +26,7 @@ export class ProviderSelectorComponent {
 
   /** Available LLM providers. */
   readonly providers: readonly ProviderOption[] = [
-    { id: 'groq', name: 'Groq', speed: 'Fastest', cost: 'Free tier' },
+    { id: 'groq', name: 'Qwen3', speed: 'Fastest', cost: 'Free tier' },
     { id: 'mistral', name: 'Mistral', speed: 'Moderate', cost: 'Low' },
     { id: 'claude', name: 'Claude', speed: 'Slower', cost: 'Higher' },
   ] as const;

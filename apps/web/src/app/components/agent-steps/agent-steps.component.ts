@@ -1,20 +1,11 @@
 import { Component, computed, input, signal } from '@angular/core';
 import type { AgentStep } from '@voxpopuli/shared-types';
 
-/** Maximum number of agent steps allowed per run. */
-const MAX_STEPS = 7;
-
-/** Line count threshold above which observation content is collapsed by default. */
-const COLLAPSE_LINE_THRESHOLD = 3;
-
 /**
- * Displays a vertical timeline of ReAct agent reasoning steps in a
- * terminal-style container. Each step renders with a typed badge
- * (thought / action / observation) and contextual content.
- *
- * Observation content is collapsible when it exceeds three lines.
- * The entire step list can be collapsed via the header toggle.
- * A blinking cursor appears after the last step while streaming.
+ * Displays agent reasoning steps as human-readable cards.
+ * Each step shows a numbered label, icon, summary, and optional
+ * observation result. A "Show raw" toggle reveals the original
+ * tool call syntax for debugging.
  */
 @Component({
   selector: 'app-agent-steps',
@@ -28,26 +19,67 @@ export class AgentStepsComponent {
   /** Whether the agent is still producing steps. */
   readonly isStreaming = input<boolean>(false);
 
-  /** Whether the entire step list is collapsed. */
-  readonly collapsed = signal(false);
+  /** Set of step indices whose raw details are expanded. */
+  readonly expandedRaw = signal<Set<number>>(new Set());
 
-  /** Set of step indices whose observation content is expanded. */
-  readonly expandedObservations = signal<Set<number>>(new Set());
+  /**
+   * Group consecutive action+observation pairs into logical steps.
+   * Thoughts are standalone. An action followed by an observation
+   * forms one logical step.
+   */
+  readonly groupedSteps = computed(() => {
+    const raw = this.steps();
+    const groups: GroupedStep[] = [];
+    let stepNum = 1;
 
-  /** Human-readable step counter, e.g. "Step 3 / 7". */
-  readonly stepCounter = computed(() => {
-    const count = this.steps().length;
-    return `Step ${count} / ${MAX_STEPS}`;
+    for (let i = 0; i < raw.length; i++) {
+      const step = raw[i];
+
+      if (step.type === 'thought') {
+        groups.push({
+          number: stepNum++,
+          type: 'thought',
+          summary: step.content,
+          icon: 'thought',
+          observation: undefined,
+          rawAction: undefined,
+          rawObservation: undefined,
+        });
+      } else if (step.type === 'action') {
+        const nextStep = i + 1 < raw.length ? raw[i + 1] : undefined;
+        const observation = nextStep?.type === 'observation' ? nextStep.content : undefined;
+        if (nextStep?.type === 'observation') i++; // skip the observation
+
+        groups.push({
+          number: stepNum++,
+          type: 'action',
+          summary: this.summarizeAction(step),
+          icon: this.iconForTool(step.toolName),
+          observation: observation ? this.summarizeObservation(observation) : undefined,
+          rawAction: this.formatRawAction(step),
+          rawObservation: observation,
+        });
+      }
+      // standalone observations (rare) get shown as-is
+      else if (step.type === 'observation') {
+        groups.push({
+          number: stepNum++,
+          type: 'observation',
+          summary: this.summarizeObservation(step.content),
+          icon: 'search',
+          observation: undefined,
+          rawAction: undefined,
+          rawObservation: step.content,
+        });
+      }
+    }
+
+    return groups;
   });
 
-  /** Toggle visibility of the entire step list. */
-  toggleCollapsed(): void {
-    this.collapsed.update((v) => !v);
-  }
-
-  /** Toggle expand/collapse for a specific observation step. */
-  toggleObservation(index: number): void {
-    this.expandedObservations.update((set) => {
+  /** Toggle raw details for a specific step. */
+  toggleRaw(index: number): void {
+    this.expandedRaw.update((set) => {
       const next = new Set(set);
       if (next.has(index)) {
         next.delete(index);
@@ -58,26 +90,88 @@ export class AgentStepsComponent {
     });
   }
 
-  /** Whether a given observation index is currently expanded. */
-  isObservationExpanded(index: number): boolean {
-    return this.expandedObservations().has(index);
+  /** Whether raw details are shown for a given step. */
+  isRawExpanded(index: number): boolean {
+    return this.expandedRaw().has(index);
   }
 
-  /** Whether an observation's content exceeds the collapse threshold. */
-  isLongObservation(content: string): boolean {
-    return content.split('\n').length > COLLAPSE_LINE_THRESHOLD;
+  /** Convert an action step into a human-readable summary. */
+  private summarizeAction(step: AgentStep): string {
+    const toolName = step.toolName ?? '';
+    const input = step.toolInput ?? {};
+
+    switch (toolName) {
+      case 'search_hn': {
+        const query = (input['query'] as string) ?? '*';
+        return `Searched HN for "${query}"`;
+      }
+      case 'get_story': {
+        const id = input['id'] ?? input['storyId'] ?? '';
+        return `Fetched story #${id}`;
+      }
+      case 'get_comments': {
+        const id = input['storyId'] ?? input['id'] ?? '';
+        return `Fetched comments for story #${id}`;
+      }
+      default:
+        return `Called ${toolName || 'unknown tool'}`;
+    }
   }
 
-  /**
-   * Format tool input as a compact inline string.
-   * e.g. `{ query: "tailwind", max: 5 }` becomes `query: "tailwind", max: 5`
-   */
-  formatToolInput(toolInput: Record<string, unknown> | undefined): string {
-    if (!toolInput) return '';
-    return Object.entries(toolInput)
-      .map(([key, value]) =>
-        typeof value === 'string' ? `${key}: "${value}"` : `${key}: ${String(value)}`,
-      )
-      .join(', ');
+  /** Summarize an observation into a short one-liner. */
+  private summarizeObservation(content: string): string {
+    if (!content || content.trim() === '') return 'No results';
+    if (content.includes('No results found')) return 'No results found';
+
+    // Count stories in observation
+    const storyMatches = content.match(/\[\d+\]/g);
+    if (storyMatches) {
+      return `Found ${storyMatches.length} stories`;
+    }
+
+    // Count comments
+    const commentMatch = content.match(/(\d+)\s*comments?/i);
+    if (commentMatch) {
+      return `Read ${commentMatch[1]} comments`;
+    }
+
+    // Truncate long observations
+    const firstLine = content.split('\n')[0].trim();
+    return firstLine.length > 80 ? firstLine.substring(0, 77) + '...' : firstLine;
   }
+
+  /** Determine icon type based on tool name. */
+  private iconForTool(toolName: string | undefined): 'search' | 'read' | 'thought' {
+    switch (toolName) {
+      case 'search_hn':
+        return 'search';
+      case 'get_story':
+      case 'get_comments':
+        return 'read';
+      default:
+        return 'thought';
+    }
+  }
+
+  /** Format raw action for debugging display. */
+  private formatRawAction(step: AgentStep): string {
+    if (!step.toolName) return step.content;
+    const args = step.toolInput
+      ? Object.entries(step.toolInput)
+          .map(([k, v]) => (typeof v === 'string' ? `${k}: "${v}"` : `${k}: ${String(v)}`))
+          .join(', ')
+      : '';
+    return `${step.toolName}(${args})`;
+  }
+}
+
+/** A logical grouping of agent steps for display. */
+interface GroupedStep {
+  number: number;
+  type: 'thought' | 'action' | 'observation';
+  summary: string;
+  icon: 'search' | 'read' | 'thought';
+  observation: string | undefined;
+  rawAction: string | undefined;
+  rawObservation: string | undefined;
 }

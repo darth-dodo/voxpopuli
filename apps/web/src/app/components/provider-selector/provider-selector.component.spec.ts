@@ -31,7 +31,7 @@ describe('ProviderSelectorComponent', () => {
   it('should display provider names', () => {
     const buttons = fixture.nativeElement.querySelectorAll('button[role="radio"]');
     const names = Array.from(buttons).map((b) => (b as HTMLElement).textContent?.trim());
-    expect(names).toEqual(['Groq', 'Mistral', 'Claude']);
+    expect(names).toEqual(['Qwen3', 'Mistral', 'Claude']);
   });
 
   it('should expose activeProvider computed for the selected provider', () => {

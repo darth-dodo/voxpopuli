@@ -57,7 +57,7 @@ describe('GroqProvider', () => {
     const provider: LlmProviderInterface = new GroqProvider(config);
 
     expect(provider.name).toBe('groq');
-    expect(provider.maxContextTokens).toBe(128_000);
+    expect(provider.maxContextTokens).toBe(131_000);
   });
 
   it('getModel() returns a ChatGroq instance', () => {
@@ -212,7 +212,7 @@ describe('LlmService', () => {
 
   it('getMaxContextTokens() returns correct budget for groq', async () => {
     const service = await buildService({ LLM_PROVIDER: 'groq' });
-    expect(service.getMaxContextTokens()).toBe(128_000);
+    expect(service.getMaxContextTokens()).toBe(131_000);
   });
 
   it('getMaxContextTokens() returns correct budget for claude', async () => {
