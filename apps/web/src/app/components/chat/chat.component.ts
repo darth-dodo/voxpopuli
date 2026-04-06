@@ -115,6 +115,40 @@ export class ChatComponent implements OnInit {
     return text;
   });
 
+  /**
+   * Extract a readable summary from collected steps when the agent
+   * errors out without producing a final answer.
+   */
+  readonly collectedContext = computed(() => {
+    const allSteps = this.steps();
+    if (allSteps.length === 0) return null;
+
+    const observations = allSteps
+      .filter((s) => s.type === 'observation')
+      .map((s) => s.content)
+      .filter((c) => c && !c.includes('No results found'));
+
+    if (observations.length === 0) return null;
+
+    // Extract story titles from observations
+    const titles: string[] = [];
+    for (const obs of observations) {
+      const matches = obs.match(/\] "([^"]+)"/g);
+      if (matches) {
+        for (const m of matches) {
+          const title = m.replace(/^\] "/, '').replace(/"$/, '');
+          if (!titles.includes(title)) titles.push(title);
+        }
+      }
+    }
+
+    return {
+      stepCount: allSteps.length,
+      storyCount: titles.length,
+      titles: titles.slice(0, 5),
+    };
+  });
+
   /** Whether the submit button should be disabled. */
   readonly submitDisabled = computed(
     () =>
@@ -177,6 +211,7 @@ export class ChatComponent implements OnInit {
             this.error.set(event.message);
             this.isStreaming.set(false);
             this.loading.set(false);
+            this.activeTab.set('answer');
             break;
         }
       },
@@ -186,6 +221,7 @@ export class ChatComponent implements OnInit {
         this.error.set(message);
         this.isStreaming.set(false);
         this.loading.set(false);
+        this.activeTab.set('answer');
       },
       complete: () => {
         this.isStreaming.set(false);
@@ -202,6 +238,11 @@ export class ChatComponent implements OnInit {
       event.preventDefault();
       this.submit();
     }
+  }
+
+  /** Retry the current query. */
+  retry(): void {
+    this.submit();
   }
 
   /** Reset to the landing page state. */
