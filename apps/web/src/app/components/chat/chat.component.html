@@ -1,9 +1,9 @@
 <div class="min-h-screen bg-surface-base flex flex-col">
   <!-- Theme toggle — top right, always visible -->
-  <div class="fixed top-4 right-4 z-50">
+  <div class="fixed top-5 right-5 z-50">
     <button
       type="button"
-      class="p-1.5 rounded-full text-text-faint hover:text-text-secondary transition-colors cursor-pointer"
+      class="p-2.5 rounded-xl border border-border-subtle bg-surface-raised hover:bg-surface-overlay hover:border-border-default text-text-secondary hover:text-text-primary transition-all cursor-pointer shadow-sm"
       (click)="toggleTheme()"
       [attr.aria-label]="theme() === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'"
     >
@@ -15,7 +15,7 @@
         viewBox="0 0 24 24"
         stroke-width="1.5"
         stroke="currentColor"
-        class="w-4 h-4"
+        class="w-5 h-5"
         aria-hidden="true"
       >
         <path
@@ -32,7 +32,7 @@
         viewBox="0 0 24 24"
         stroke-width="1.5"
         stroke="currentColor"
-        class="w-4 h-4"
+        class="w-5 h-5"
         aria-hidden="true"
       >
         <path
