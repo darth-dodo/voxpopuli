@@ -46,8 +46,8 @@ export class ChatComponent implements OnInit {
     'What are the top trends on HN this week?',
     'How does HN feel about Tailwind v4?',
     'What Show HN projects got the most traction?',
-    'Compare React vs Vue sentiment on HackerNews',
-    "What's the sentiment on AI code assistants?",
+    'Best HN discussions about remote work?',
+    'What are devs saying about Rust adoption?',
     'Most controversial HN discussions this month?',
   ];
 
