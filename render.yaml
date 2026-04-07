@@ -47,4 +47,4 @@ envVarGroups:
       - key: SENTRY_DSN
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://voxpopuli-web-1o3v.onrender.com
