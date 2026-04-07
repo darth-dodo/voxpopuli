@@ -40,7 +40,11 @@ async function bootstrap() {
 
   // CORS: allow Angular frontend (dev or production via FRONTEND_URL)
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:4200');
-  app.enableCors({ origin: frontendUrl });
+  app.enableCors({
+    origin: frontendUrl,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type'],
+  });
 
   // Enable graceful shutdown hooks
   app.enableShutdownHooks();

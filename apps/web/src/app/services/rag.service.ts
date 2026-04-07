@@ -97,6 +97,15 @@ export class RagService {
       for (const eventType of EVENT_TYPES) {
         eventSource.addEventListener(eventType, (event: MessageEvent) => {
           try {
+            if (event.data === undefined || event.data === null) {
+              // CORS-blocked EventSource may fire listeners with undefined data
+              const message = 'Unable to connect to the API. This may be a CORS or network issue.';
+              this.error.set(message);
+              this.loading.set(false);
+              subscriber.error(new Error(message));
+              eventSource.close();
+              return;
+            }
             const data: unknown = JSON.parse(event.data);
             const streamEvent = this.parseStreamEvent(eventType, data);
             subscriber.next(streamEvent);
