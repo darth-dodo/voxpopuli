@@ -52,9 +52,9 @@
          ═══════════════════════════════════════════════ -->
     @if (!loading() && !error() && !response()) {
 
-    <!-- SECTION 1: Hero -->
+    <!-- SECTION 1: Hero + Examples (centered as a unit) -->
     <section
-      class="flex-1 flex flex-col items-center justify-center text-center pt-12 sm:pt-24 pb-8 sm:pb-16"
+      class="min-h-[calc(100vh-2rem)] flex flex-col items-center justify-center text-center py-8 sm:py-16"
     >
       <p
         class="text-mono text-[10px] sm:text-xs tracking-[0.25em] uppercase text-accent-amber mb-2 sm:mb-4"
@@ -120,23 +120,24 @@
           <app-provider-selector [(selectedProvider)]="selectedProvider" />
         </div>
       </div>
-    </section>
 
-    <!-- SECTION 2: Example questions -->
-    <section
-      class="pb-8 sm:pb-16 max-w-3xl mx-auto w-full px-2 sm:px-0"
-      aria-label="Example questions"
-    >
-      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-        @for (q of exampleQueries; track q) {
-        <button
-          type="button"
-          class="vp-card vp-card--interactive p-4 text-left"
-          (click)="query.set(q)"
-        >
-          <p class="text-ui text-sm text-text-secondary leading-relaxed">{{ q }}</p>
-        </button>
-        }
+      <!-- Example questions (inside hero for vertical centering) -->
+      <div
+        class="w-full max-w-3xl mt-8 sm:mt-12 px-2 sm:px-0"
+        role="region"
+        aria-label="Example questions"
+      >
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          @for (q of exampleQueries; track q) {
+          <button
+            type="button"
+            class="vp-card vp-card--interactive p-4 text-left"
+            (click)="query.set(q)"
+          >
+            <p class="text-ui text-sm text-text-secondary leading-relaxed">{{ q }}</p>
+          </button>
+          }
+        </div>
       </div>
     </section>
 

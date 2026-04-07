@@ -101,7 +101,7 @@ npx tsx evals/run-eval.ts # Run eval harness
 | Constraint            | Value                                                   |
 | --------------------- | ------------------------------------------------------- |
 | Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit) |
-| Agent timeout         | 60s                                                     |
+| Agent timeout         | 180s                                                    |
 | Concurrent agents     | 5 (semaphore)                                           |
 | Comment cap per story | 30                                                      |
 | Query max length      | 500 chars                                               |

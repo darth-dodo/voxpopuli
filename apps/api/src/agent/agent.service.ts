@@ -28,7 +28,7 @@ const MAX_STEPS = 7;
 const RECURSION_LIMIT = MAX_STEPS * 2 + 1;
 
 /** Global timeout per agent run in milliseconds. */
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 180_000;
 
 /**
  * Core service orchestrating the VoxPopuli ReAct agent loop.
@@ -36,7 +36,7 @@ const TIMEOUT_MS = 60_000;
  * Uses LangChain's `createAgent` with the active LLM provider,
  * HnService-backed tools, and the agent system prompt.
  *
- * Constraints: max 7 steps, 60s timeout, 5 concurrent runs.
+ * Constraints: max 7 steps, 180s timeout, 5 concurrent runs.
  */
 @Injectable()
 export class AgentService {
