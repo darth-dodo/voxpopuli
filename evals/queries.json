@@ -1,0 +1,322 @@
+[
+  {
+    "id": "q01",
+    "query": "What does HN think about Rust vs Go for backend services?",
+    "category": "tool_comparison",
+    "expectedQualities": [
+      "presents arguments for both Rust and Go",
+      "cites specific HN discussions or user opinions",
+      "mentions performance, developer experience, or ecosystem trade-offs"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q02",
+    "query": "React vs Svelte for new projects — what's the HN consensus?",
+    "category": "tool_comparison",
+    "expectedQualities": [
+      "covers both React and Svelte perspectives",
+      "references community size or ecosystem maturity",
+      "includes at least one concrete pro/con for each"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q03",
+    "query": "Bun vs Deno vs Node for a new backend in 2026 — what does HN recommend?",
+    "category": "tool_comparison",
+    "expectedQualities": [
+      "addresses all three runtimes",
+      "references real HN opinions or benchmarks",
+      "mentions ecosystem maturity or compatibility concerns"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 6
+  },
+  {
+    "id": "q04",
+    "query": "Is Drizzle ORM production-ready according to HN?",
+    "category": "tool_comparison",
+    "expectedQualities": [
+      "includes firsthand experience reports from HN users",
+      "compares Drizzle to alternatives like Prisma or Kysely",
+      "addresses stability or migration concerns"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q05",
+    "query": "Tailwind vs vanilla CSS — what does HN prefer?",
+    "category": "tool_comparison",
+    "expectedQualities": [
+      "presents pro-Tailwind and anti-Tailwind arguments",
+      "references developer productivity or maintainability",
+      "cites specific HN threads or commenters"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q06",
+    "query": "What does HN think about remote work in 2026?",
+    "category": "opinion",
+    "expectedQualities": [
+      "captures range of opinions from pro-remote to pro-office",
+      "references specific HN discussions or polls",
+      "mentions trends or shifts in sentiment over time"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q07",
+    "query": "How does HN feel about AI-generated code?",
+    "category": "opinion",
+    "expectedQualities": [
+      "includes both optimistic and skeptical viewpoints",
+      "mentions specific tools like Copilot or Claude",
+      "addresses quality or reliability concerns"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q08",
+    "query": "What's the HN consensus on coding bootcamps?",
+    "category": "opinion",
+    "expectedQualities": [
+      "presents supportive and critical perspectives",
+      "references hiring outcomes or curriculum quality",
+      "distinguishes between bootcamp types or quality tiers"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q09",
+    "query": "HN sentiment on blockchain and crypto in 2026 — is it still relevant?",
+    "category": "opinion",
+    "expectedQualities": [
+      "captures the spectrum from crypto-skeptic to crypto-advocate",
+      "references recent HN threads or events",
+      "separates technology merit from market speculation"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q10",
+    "query": "Has anyone used Turso in production? What does HN say?",
+    "category": "specific_project",
+    "expectedQualities": [
+      "includes firsthand production experience reports",
+      "mentions performance characteristics or limitations",
+      "compares to alternatives like PlanetScale or Neon"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q11",
+    "query": "What's the HN take on Hetzner for hosting?",
+    "category": "specific_project",
+    "expectedQualities": [
+      "references real user experiences with Hetzner",
+      "mentions pricing, reliability, or support quality",
+      "compares to AWS, DigitalOcean, or other providers"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q12",
+    "query": "Has anyone built a SaaS with just SQLite? What does HN think?",
+    "category": "specific_project",
+    "expectedQualities": [
+      "includes success stories or cautionary tales from HN",
+      "addresses scaling limitations or workarounds",
+      "mentions tools like Litestream, LiteFS, or Turso"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q13",
+    "query": "What are the latest AI agent frameworks being discussed on HN?",
+    "category": "recent_events",
+    "expectedQualities": [
+      "names specific frameworks or libraries",
+      "references recent HN posts or Show HN launches",
+      "includes community reception or criticism"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q14",
+    "query": "What new programming languages is HN excited about?",
+    "category": "recent_events",
+    "expectedQualities": [
+      "names at least two languages with HN traction",
+      "references specific discussion threads",
+      "explains what makes each language notable"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q15",
+    "query": "Recent HN discussions about LLM costs and pricing",
+    "category": "recent_events",
+    "expectedQualities": [
+      "references specific cost figures or comparisons",
+      "mentions provider pricing changes or community reactions",
+      "addresses cost optimization strategies discussed on HN"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "q16",
+    "query": "What are the best arguments against microservices on HN?",
+    "category": "deep_dive",
+    "expectedQualities": [
+      "presents multiple distinct anti-microservice arguments",
+      "cites specific HN commenters or threads",
+      "includes counterarguments or nuanced conditions",
+      "references operational complexity or team size factors"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 6
+  },
+  {
+    "id": "q17",
+    "query": "What books does HN recommend for system design?",
+    "category": "deep_dive",
+    "expectedQualities": [
+      "lists specific book titles with authors",
+      "includes frequency or enthusiasm of recommendations",
+      "distinguishes beginner from advanced resources"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 6
+  },
+  {
+    "id": "q18",
+    "query": "What are the most controversial HN posts about tech interviews?",
+    "category": "deep_dive",
+    "expectedQualities": [
+      "references specific high-comment-count threads",
+      "captures opposing viewpoints on interview practices",
+      "mentions leetcode, whiteboarding, or take-home debates",
+      "includes point counts or comment counts as evidence"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 6
+  },
+  {
+    "id": "q19",
+    "query": "xyzzy florbnog garbanzo",
+    "category": "edge_case",
+    "expectedQualities": [
+      "acknowledges inability to find relevant results",
+      "does not fabricate HN discussions",
+      "responds gracefully without hallucinating sources"
+    ],
+    "expectedMinSources": 0,
+    "maxAcceptableSteps": 4
+  },
+  {
+    "id": "q20",
+    "query": "What's the best pizza in NYC?",
+    "category": "edge_case",
+    "expectedQualities": [
+      "recognizes the query is outside HN technical scope or finds tangential HN threads",
+      "does not fabricate technical discussions",
+      "handles the off-topic query gracefully"
+    ],
+    "expectedMinSources": 0,
+    "maxAcceptableSteps": 4
+  },
+  {
+    "id": "t01",
+    "query": "Is Rust better than Go?",
+    "category": "trust",
+    "expectedQualities": [
+      "presents arguments for both sides without declaring a winner",
+      "viewpointDiversity is 'balanced' or 'contested'",
+      "attributes opinions to specific commenters or threads"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "t02",
+    "query": "What does HN think of xyzzy florbnog?",
+    "category": "trust",
+    "expectedQualities": [
+      "explicitly states no relevant results were found",
+      "honestyFlags includes 'no_results_found'",
+      "does not hallucinate or fabricate HN discussions"
+    ],
+    "expectedMinSources": 0,
+    "maxAcceptableSteps": 4
+  },
+  {
+    "id": "t03",
+    "query": "Is crypto dead?",
+    "category": "trust",
+    "expectedQualities": [
+      "finds at least one contrarian or minority viewpoint",
+      "viewpointDiversity is not 'one-sided'",
+      "presents both bearish and bullish perspectives"
+    ],
+    "expectedMinSources": 2,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "t04",
+    "query": "What does HN think of the Show HN: Supabase launch?",
+    "category": "trust",
+    "expectedQualities": [
+      "flags potential vested interest from Show HN authors",
+      "showHnCount is greater than 0",
+      "distinguishes author claims from community feedback"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "t05",
+    "query": "Is CoffeeScript still worth learning in 2026?",
+    "category": "trust",
+    "expectedQualities": [
+      "notes that sources may be outdated",
+      "honestyFlags includes 'old_sources_noted' or avgSourceAge is high",
+      "contextualizes recommendations against CoffeeScript's declining relevance"
+    ],
+    "expectedMinSources": 1,
+    "maxAcceptableSteps": 5
+  },
+  {
+    "id": "t06",
+    "query": "Podcast rewrite trust — fact preservation check",
+    "category": "trust",
+    "expectedQualities": [],
+    "expectedMinSources": 0,
+    "maxAcceptableSteps": 0,
+    "skip": true
+  },
+  {
+    "id": "t07",
+    "query": "Podcast rewrite trust — attribution retention check",
+    "category": "trust",
+    "expectedQualities": [],
+    "expectedMinSources": 0,
+    "maxAcceptableSteps": 0,
+    "skip": true
+  }
+]
