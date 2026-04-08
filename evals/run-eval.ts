@@ -3,6 +3,8 @@ import 'dotenv/config';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Command } from 'commander';
+import type { AgentResponse } from '@voxpopuli/shared-types';
 import type { EvalRunResult, EvalScore, EvalReport } from './types';
 import { loadQueries, syncToLangSmith } from './dataset';
 import { scoreRun, buildReport, printReport, printComparison } from './score';
@@ -13,33 +15,47 @@ const __dirname = dirname(__filename);
 const EVAL_API_URL = process.env.EVAL_API_URL || 'http://localhost:3000';
 
 // ---------------------------------------------------------------------------
-// CLI argument parsing
+// CLI
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): {
+const program = new Command()
+  .name('voxpopuli-eval')
+  .description('Evaluation harness for the VoxPopuli RAG agent')
+  .version('1.0.0')
+  .option('-p, --provider <name>', 'LLM provider to evaluate', process.env.LLM_PROVIDER || 'groq')
+  .option('-c, --compare <providers>', 'compare multiple providers (comma-separated)', (val) =>
+    val.split(',').map((s) => s.trim()),
+  )
+  .option('-q, --query <id>', 'run a single query by ID')
+  .option('-C, --category <name>', 'filter queries by category')
+  .option('--list', 'list available queries and exit')
+  .option('--dry-run', 'show what would run without calling the API')
+  .option('--no-langsmith', 'skip LangSmith dataset sync')
+  .parse();
+
+const opts = program.opts<{
   provider: string;
-  compare: string[] | null;
-  queryId: string | null;
-} {
-  let provider = process.env.LLM_PROVIDER || 'groq';
-  let compare: string[] | null = null;
-  let queryId: string | null = null;
+  compare?: string[];
+  query?: string;
+  category?: string;
+  list?: boolean;
+  dryRun?: boolean;
+  langsmith: boolean;
+}>();
 
-  for (let i = 2; i < argv.length; i++) {
-    switch (argv[i]) {
-      case '--provider':
-        provider = argv[++i];
-        break;
-      case '--compare':
-        compare = argv[++i].split(',');
-        break;
-      case '--query':
-        queryId = argv[++i];
-        break;
-    }
+// ---------------------------------------------------------------------------
+// API health check
+// ---------------------------------------------------------------------------
+
+async function checkApiHealth(apiUrl: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiUrl}/api/health`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
-
-  return { provider, compare, queryId };
 }
 
 // ---------------------------------------------------------------------------
@@ -53,16 +69,11 @@ async function runQuery(query: string, provider: string, apiUrl: string): Promis
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, provider }),
-      signal: AbortSignal.timeout(180_000), // 3 min timeout matching agent timeout
+      signal: AbortSignal.timeout(180_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    const response = (await res.json()) as import('@voxpopuli/shared-types').AgentResponse;
-    return {
-      queryId: '',
-      query,
-      response,
-      durationMs: performance.now() - start,
-    };
+    const response = (await res.json()) as AgentResponse;
+    return { queryId: '', query, response, durationMs: performance.now() - start };
   } catch (err) {
     return {
       queryId: '',
@@ -88,19 +99,60 @@ function saveReport(report: EvalReport, provider: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+function elapsed(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function statusIcon(weighted: number, hasError: boolean): string {
+  if (hasError) return '\u2716'; // ✖
+  return weighted >= 0.6 ? '\u2714' : '\u25CB'; // ✔ or ○
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const { provider, compare, queryId } = parseArgs(process.argv);
-
   // Load and filter queries
   let queries = loadQueries();
 
-  if (queryId) {
-    queries = queries.filter((q) => q.id === queryId);
+  // --list: show available queries and exit
+  if (opts.list) {
+    console.log(`\nAvailable queries (${queries.length} total):\n`);
+    const categories = new Map<string, typeof queries>();
+    for (const q of queries) {
+      const cat = categories.get(q.category) ?? [];
+      cat.push(q);
+      categories.set(q.category, cat);
+    }
+    for (const [cat, qs] of categories) {
+      console.log(`  ${cat} (${qs.length}):`);
+      for (const q of qs) {
+        const skip = q.skip ? ' [skip]' : '';
+        console.log(`    ${q.id.padEnd(6)} ${q.query.substring(0, 70)}${skip}`);
+      }
+    }
+    console.log('');
+    return;
+  }
+
+  // Apply filters
+  if (opts.query) {
+    queries = queries.filter((q) => q.id === opts.query);
     if (queries.length === 0) {
-      console.error(`No query found with id "${queryId}"`);
+      console.error(`No query found with id "${opts.query}"`);
+      process.exit(1);
+    }
+  }
+
+  if (opts.category) {
+    queries = queries.filter((q) => q.category === opts.category);
+    if (queries.length === 0) {
+      const cats = [...new Set(loadQueries().map((q) => q.category))];
+      console.error(`No queries in category "${opts.category}". Available: ${cats.join(', ')}`);
       process.exit(1);
     }
   }
@@ -108,29 +160,79 @@ async function main(): Promise<void> {
   // Skip queries marked with skip: true
   queries = queries.filter((q) => !q.skip);
 
-  // Sync dataset to LangSmith (optional)
-  await syncToLangSmith(queries);
+  if (queries.length === 0) {
+    console.log('No queries to run.');
+    return;
+  }
 
-  // Determine providers to evaluate
-  const providers = compare ?? [provider];
+  // --dry-run: show what would run and exit
+  if (opts.dryRun) {
+    const providers = opts.compare ?? [opts.provider];
+    console.log(
+      `\nDry run — would execute ${queries.length} queries against: ${providers.join(', ')}`,
+    );
+    console.log(`API: ${EVAL_API_URL}\n`);
+    for (const q of queries) {
+      console.log(`  ${q.id.padEnd(6)} ${q.query.substring(0, 70)}`);
+    }
+    console.log('');
+    return;
+  }
+
+  // Health check
+  const healthy = await checkApiHealth(EVAL_API_URL);
+  if (!healthy) {
+    console.error(`\nAPI not reachable at ${EVAL_API_URL}`);
+    console.error('Start the API first: npx nx serve api\n');
+    process.exit(1);
+  }
+
+  // LangSmith sync
+  if (opts.langsmith) {
+    await syncToLangSmith(queries);
+  }
+
+  // Run evals
+  const providers = opts.compare ?? [opts.provider];
   const reports: EvalReport[] = [];
 
   for (const p of providers) {
-    console.log(`\nRunning eval for provider: ${p} (${queries.length} queries)`);
+    console.log(`\nRunning eval for provider: ${p} (${queries.length} queries)\n`);
 
     const scores: EvalScore[] = [];
+    let passed = 0;
+    let failed = 0;
+    let errors = 0;
 
     for (let i = 0; i < queries.length; i++) {
       const q = queries[i];
-      const label = q.query.length > 60 ? q.query.substring(0, 60) + '...' : q.query;
-      console.log(`  [${i + 1}/${queries.length}] ${q.id}: ${label}`);
+      const label = q.query.length > 55 ? q.query.substring(0, 55) + '...' : q.query;
+      process.stdout.write(
+        `  [${String(i + 1).padStart(2)}/${queries.length}] ${q.id.padEnd(5)} ${label} `,
+      );
 
       const result = await runQuery(q.query, p, EVAL_API_URL);
       result.queryId = q.id;
 
       const score = await scoreRun(result, q, p);
       scores.push(score);
+
+      const icon = statusIcon(score.weighted, !!result.error);
+      const time = elapsed(result.durationMs);
+
+      if (result.error) {
+        errors++;
+        console.log(`${icon} ERR ${time}`);
+      } else if (score.weighted >= 0.6) {
+        passed++;
+        console.log(`${icon} ${score.weighted.toFixed(2)} ${time}`);
+      } else {
+        failed++;
+        console.log(`${icon} ${score.weighted.toFixed(2)} ${time}`);
+      }
     }
+
+    console.log(`\n  Results: ${passed} passed, ${failed} below threshold, ${errors} errors`);
 
     const report = buildReport(scores, p);
     printReport(report);
@@ -141,12 +243,11 @@ async function main(): Promise<void> {
     reports.push(report);
   }
 
-  // Print comparison table if multiple providers
-  if (compare && reports.length > 1) {
+  if (opts.compare && reports.length > 1) {
     printComparison(reports);
   }
 
-  console.log('\nDone. Results saved to evals/results/');
+  console.log('\nDone.');
 }
 
 main().catch((err) => {
