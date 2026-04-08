@@ -938,6 +938,8 @@ Without caching, development burns through rate limits in an afternoon. Caching 
 
 Success metrics (Section 15) are aspirational without tooling to measure them. The eval harness catches regressions when you change the system prompt, swap providers, or modify chunking.
 
+**LangSmith integration:** Since VoxPopuli uses LangChain.js for the agent, LangSmith provides automatic tracing (every agent step, tool call, token count) and an `evaluate()` function that handles the run loop, concurrency, and result storage. The eval harness uses a hybrid approach: queries are version-controlled locally in `queries.json`, synced to a LangSmith dataset on each run, with results saved both to LangSmith (dashboard) and locally (JSON). LangSmith's free tier (5k traces/month) is sufficient.
+
 ### 12.2 Test Query Format
 
 **File:** `evals/queries.json`
@@ -980,22 +982,27 @@ Success metrics (Section 15) are aspirational without tooling to measure them. T
 | **Latency**           | Total duration vs target                    | 15%    |
 | **Cost**              | Total tokens vs $0.05 ceiling               | 10%    |
 
-**LLM-as-judge:** A separate cheap model call (Haiku or equivalent) evaluates the answer against expected qualities.
+**LLM-as-judge:** A direct Mistral API call evaluates the answer against expected qualities. Configurable via `EVAL_JUDGE_PROVIDER` env var. The judge is fully decoupled from the NestJS app -- it makes its own HTTP call to the provider's OpenAI-compatible endpoint.
 
 ### 12.4 Running Evals
 
+**Prerequisites:** Running VoxPopuli API (`npx nx serve api`), at least one LLM provider key configured. Optionally, `LANGSMITH_API_KEY` for dashboard integration.
+
 ```bash
-# Single provider
+# Single provider (uses LLM_PROVIDER from .env)
 npx tsx evals/run-eval.ts
 
 # Specific provider
-LLM_PROVIDER=groq npx tsx evals/run-eval.ts
+npx tsx evals/run-eval.ts --provider groq
+
+# Single query (for debugging)
+npx tsx evals/run-eval.ts --query q01
 
 # Compare all providers
-npx tsx evals/run-eval.ts --compare claude,mistral,groq
+npx tsx evals/run-eval.ts --compare groq,mistral,claude
 ```
 
-Results saved to `evals/results/` with timestamps. Run after every agent-related change.
+Results saved to `evals/results/` with timestamps. If `LANGSMITH_API_KEY` is set, results also appear in the LangSmith dashboard with full agent traces. Run after every agent-related change.
 
 ### 12.5 Initial Test Suite (20 queries)
 

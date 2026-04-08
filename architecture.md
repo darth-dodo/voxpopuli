@@ -550,7 +550,7 @@ evals/
 ├── score.ts                  # Score aggregation and reporting
 ├── evaluators/
 │   ├── source-accuracy.ts    # HTTP 200 checks on source URLs + Firebase IDs
-│   ├── quality-judge.ts      # LLM-as-judge (Groq) for expectedQualities
+│   ├── quality-judge.ts      # LLM-as-judge (Mistral) for expectedQualities
 │   ├── efficiency.ts         # Steps vs maxAcceptableSteps
 │   ├── latency.ts            # Duration vs provider-specific targets
 │   └── cost.ts               # Token cost vs $0.05 ceiling
@@ -703,7 +703,7 @@ LANGSMITH_PROJECT=voxpopuli-evals
 
 # Eval config
 EVAL_API_URL=http://localhost:3000
-EVAL_JUDGE_PROVIDER=groq
+EVAL_JUDGE_PROVIDER=mistral
 ```
 
 ---
@@ -733,7 +733,7 @@ EVAL_JUDGE_PROVIDER=groq
 | TTS max chars            | 2500           | ElevenLabs streaming limit               |
 | Eval query count         | 27             | 20 general + 7 trust-specific            |
 | Eval pass threshold      | 0.6 weighted   | Minimum score for a query to "pass"      |
-| Eval judge provider      | Groq           | Cheapest/fastest for LLM-as-judge calls  |
+| Eval judge provider      | Mistral        | Default for LLM-as-judge calls           |
 | Eval score weights       | 30/30/15/15/10 | Source/Quality/Efficiency/Latency/Cost   |
 | LangSmith free tier      | 5k traces/mo   | Sufficient for eval harness usage        |
 

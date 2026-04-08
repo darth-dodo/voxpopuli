@@ -6,7 +6,7 @@
 
 **Architecture:** Standalone TypeScript scripts in `evals/` that call the running API over HTTP (black-box testing). LangSmith provides the evaluation loop, tracing, and dashboard. Queries are version-controlled locally in `queries.json` and synced to a LangSmith dataset on each run. Results are saved both to LangSmith (dashboard) and locally (JSON files in `evals/results/`).
 
-**Tech Stack:** `langsmith` SDK, `tsx` runner, native `fetch` for HTTP calls, Groq as default LLM-as-judge provider.
+**Tech Stack:** `langsmith` SDK, `tsx` runner, native `fetch` for HTTP calls, Mistral as default LLM-as-judge provider.
 
 **Approach:** Hybrid (Approach B from brainstorm) — local queries + LangSmith tracing & scoring.
 
@@ -28,7 +28,7 @@ LANGSMITH_PROJECT=voxpopuli-evals
 
 # Eval config
 EVAL_API_URL=http://localhost:3000
-EVAL_JUDGE_PROVIDER=groq
+EVAL_JUDGE_PROVIDER=mistral
 ```
 
 ---
@@ -259,7 +259,7 @@ git commit -m "feat(m6): implement source accuracy evaluator with tests"
 
 **Step 1: Implement the evaluator**
 
-This evaluator uses an LLM call to check each `expectedQuality` against the answer. Uses Groq (cheapest/fastest) by default, configurable via `EVAL_JUDGE_PROVIDER` env var.
+This evaluator uses an LLM call to check each `expectedQuality` against the answer. Uses Mistral by default, configurable via `EVAL_JUDGE_PROVIDER` env var.
 
 Logic:
 
@@ -268,15 +268,15 @@ Logic:
 3. Parse response, count PRESENT / total qualities
 4. Score = present / total
 
-Alternatively, to keep it fully black-box: use the `langsmith` SDK's built-in LLM judge support if available, or make a direct Groq API call via `fetch`.
+Alternatively, to keep it fully black-box: use the `langsmith` SDK's built-in LLM judge support if available, or make a direct Mistral API call via `fetch`.
 
-**Recommended approach:** Direct Groq API call via `fetch` to `https://api.groq.com/openai/v1/chat/completions`. This keeps evals fully decoupled from the NestJS app.
+**Recommended approach:** Direct Mistral API call via `fetch` to `https://api.mistral.ai/v1/chat/completions`. This keeps evals fully decoupled from the NestJS app.
 
 Return `{ key: "quality_checklist", score: number, comment: string }` where comment lists which qualities were present/absent.
 
 **Step 2: Write a unit test**
 
-Mock the Groq API call. Test:
+Mock the Mistral API call. Test:
 
 - All qualities present → score 1.0
 - Partial → proportional
@@ -485,7 +485,7 @@ npx tsx evals/run-eval.ts --compare groq,mistral,claude  # Compare providers
 Add to Key Constraints table:
 
 ```
-| Eval judge provider   | Groq (default, configurable via EVAL_JUDGE_PROVIDER) |
+| Eval judge provider   | Mistral (default, configurable via EVAL_JUDGE_PROVIDER) |
 | Eval pass threshold   | 0.6 weighted score                                   |
 ```
 
