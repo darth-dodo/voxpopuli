@@ -532,30 +532,99 @@ Epic (Linear Project or Cycle)
 ### Milestone 6: Eval Harness
 
 **Goal:** Automated quality checks catch regressions in agent behavior.
-**Demo:** Run `npx tsx evals/run-eval.ts` and get a scored report.
+**Demo:** Run `npx tsx evals/run-eval.ts` and get a scored report. View traces and experiment comparisons in LangSmith dashboard.
+**Status:** Not started
+
+**Approach:** Hybrid -- local `queries.json` (version-controlled) + LangSmith for tracing, evaluation loop, and dashboard. Results saved both to LangSmith and locally in `evals/results/`.
+
+**Dependencies:** `langsmith` SDK, `tsx`, `dotenv`. LangSmith free tier (5k traces/month).
+
+#### Project Structure
+
+```
+evals/
+├── queries.json              # 27 test queries (20 general + 7 trust)
+├── types.ts                  # EvalQuery, EvalRunResult, EvalScore, EvalReport
+├── run-eval.ts               # CLI entry: loads queries, runs agent, scores, reports
+├── dataset.ts                # LangSmith dataset sync helper
+├── score.ts                  # Score aggregation and reporting
+├── evaluators/
+│   ├── source-accuracy.ts    # HTTP 200 checks on source URLs + Firebase IDs
+│   ├── quality-judge.ts      # LLM-as-judge (Groq) for expectedQualities
+│   ├── efficiency.ts         # Steps vs maxAcceptableSteps
+│   ├── latency.ts            # Duration vs provider-specific targets
+│   └── cost.ts               # Token cost vs $0.05 ceiling
+│   └── __tests__/            # Unit tests for all evaluators
+├── results/                  # Timestamped JSON reports (.gitignored)
+└── tsconfig.json             # Standalone TS config for tsx
+```
 
 #### Epic 6.1: Evaluation System
 
-- **Story: Create eval test queries**
+- **Story: Install eval dependencies** (AI-TBD)
 
-  - Write 20 queries in `evals/queries.json`
-  - 5 categories: tool comparisons, opinion, specific projects, recent events, edge cases
-  - Each with `expectedQualities`, `expectedMinSources`, `maxAcceptableSteps`
+  - Add `langsmith`, `tsx`, `dotenv` as devDependencies
+  - Create `evals/tsconfig.json` extending `tsconfig.base.json`
+  - Add `eval` and `eval:compare` npm scripts
+  - Create `evals/results/.gitignore`
 
-- **Story: Implement eval runner**
+- **Story: Create eval test queries** (AI-TBD)
 
-  - `evals/run-eval.ts` -- run each query through the agent
-  - Collect AgentResponse + timing + token usage
-  - Support `--compare` flag for multi-provider comparison
-  - Save timestamped results to `evals/results/`
+  - Write 27 queries in `evals/queries.json`
+  - 7 categories: tool comparisons (5), opinion (4), specific projects (3), recent events (3), deep-dive (3), edge cases (2), trust (7)
+  - Each with `id`, `query`, `category`, `expectedQualities`, `expectedMinSources`, `maxAcceptableSteps`
+  - Trust queries t06-t07 (podcast rewrite) deferred to M5
 
-- **Story: Implement eval scoring**
-  - `evals/score.ts` -- score each response
-  - Source accuracy (HTTP 200 check on URLs)
-  - Quality checklist (LLM-as-judge call)
-  - Efficiency (steps vs maxAcceptableSteps)
-  - Latency and cost scoring
-  - Weighted aggregate score
+- **Story: Write eval type definitions** (AI-TBD)
+
+  - `EvalQuery`, `EvalRunResult`, `EvalScore`, `EvalReport` in `evals/types.ts`
+  - Import `AgentResponse` from `@voxpopuli/shared-types`
+
+- **Story: Implement source accuracy evaluator** (AI-TBD)
+
+  - HTTP HEAD checks on `AgentSource.url`
+  - Firebase API verification of `AgentSource.storyId`
+  - `Promise.allSettled` with 5s timeout per request
+  - Unit tests with mocked fetch
+
+- **Story: Implement LLM-as-judge quality checklist evaluator** (AI-TBD)
+
+  - Direct Groq API call (decoupled from NestJS)
+  - Checks each `expectedQuality` as PRESENT/ABSENT
+  - Configurable judge provider via `EVAL_JUDGE_PROVIDER` env var
+  - Unit tests with mocked Groq API
+
+- **Story: Implement efficiency, latency, and cost evaluators** (AI-TBD)
+
+  - Efficiency: linear scoring against `maxAcceptableSteps`
+  - Latency: tiered scoring (6s/13s/30s thresholds per provider)
+  - Cost: token-based estimation against $0.05 ceiling
+  - Unit tests for all three
+
+- **Story: Implement eval runner with LangSmith integration** (AI-TBD)
+
+  - `run-eval.ts` CLI: `--provider`, `--compare`, `--query` flags
+  - `dataset.ts`: sync `queries.json` to LangSmith dataset
+  - Calls `evaluate()` from `langsmith/evaluation` when API key present
+  - Falls back to local-only mode without LangSmith
+  - Saves results to `evals/results/{timestamp}-{provider}.json`
+
+- **Story: Implement score aggregation and reporting** (AI-TBD)
+
+  - Weighted scoring: source (30%), quality (30%), efficiency (15%), latency (15%), cost (10%)
+  - Summary table printed to stdout
+  - `--compare` mode: side-by-side provider comparison table
+
+- **Story: Add LangSmith tracing to agent service** (AI-TBD)
+
+  - No code changes -- LangChain auto-traces when `LANGSMITH_TRACING=true`
+  - Add LangSmith env vars to `.env.example`
+  - Verify traces appear in LangSmith dashboard
+
+- **Story: Update documentation for M6** (AI-TBD)
+
+  - Update `architecture.md`, `product.md`, `CLAUDE.md`
+  - Add eval commands to development docs
 
 ---
 
@@ -569,20 +638,22 @@ graph LR
     M3 --> M5["M5: Voice<br/>Output"]
     M3 --> M6["M6: Eval<br/>Harness"]
     M4 --> M5
+    M3 --> M7["M7: Deploy &<br/>Observability"]
 
     style M1 fill:#d1fae5,stroke:#065f46
     style M2 fill:#d1fae5,stroke:#065f46
-    style M3 fill:#fef3c7,stroke:#92400e
-    style M4 fill:#dbeafe,stroke:#1e40af
+    style M3 fill:#d1fae5,stroke:#065f46
+    style M4 fill:#d1fae5,stroke:#065f46
     style M5 fill:#ede9fe,stroke:#5b21b6
     style M6 fill:#fce7f3,stroke:#be185d
+    style M7 fill:#d1fae5,stroke:#065f46
 ```
 
 **Critical path:** M1 -> M2 -> M3 -> M4
 
 **Parallel after M3:** M5 (voice) and M6 (evals) can run in parallel with M4, but M5's frontend depends on M4.
 
-**Current status:** M1 and M2 complete. M3 (Agent Core) is next on the critical path.
+**Current status:** M1-M4 complete. M7 (Deploy) ~87% done. M6 (Eval Harness) is next.
 
 ---
 
@@ -590,18 +661,19 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone                 | Stories | Depends On | Status      |
-| ----- | ------------------------- | ------- | ---------- | ----------- |
-| 1     | M1: Scaffold & Data Layer | 16      | --         | COMPLETE    |
-| 2     | M2: LLM & Chunker         | 8       | M1         | COMPLETE    |
-| 3     | M3: Agent Core            | 8       | M2         | Not started |
-| 4     | M6: Eval Harness          | 3       | M3         | Not started |
-| 5     | M4: Frontend              | 6       | M3         | Not started |
-| 6     | M5: Voice Output          | 5       | M3, M4     | Not started |
+| Order | Milestone                  | Stories | Depends On | Status      |
+| ----- | -------------------------- | ------- | ---------- | ----------- |
+| 1     | M1: Scaffold & Data Layer  | 16      | --         | COMPLETE    |
+| 2     | M2: LLM & Chunker          | 8       | M1         | COMPLETE    |
+| 3     | M3: Agent Core             | 14      | M2         | COMPLETE    |
+| 4     | M4: Frontend               | 22      | M3         | COMPLETE    |
+| 5     | M7: Deploy & Observability | 13      | M3         | ~87%        |
+| 6     | M6: Eval Harness           | 10      | M3         | Not started |
+| 7     | M5: Voice Output           | 5       | M3, M4     | Not started |
 
-**Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
+**Why evals now?** With M3 (agent) and M4 (frontend) complete and M7 (deploy) nearly done, the eval harness is the highest-impact next milestone. It catches regressions when tweaking the system prompt, chunker, or token budgets. LangSmith integration provides tracing and a dashboard for free since VoxPopuli already uses LangChain.js.
 
-**Total: 6 milestones, 12 epics, 46 stories.**
+**Total: 7 milestones, ~80 stories.**
 
 ---
 
@@ -623,33 +695,47 @@ ELEVENLABS_MODEL=eleven_multilingual_v2
 
 # Server
 PORT=3000
+
+# LangSmith (optional -- leave empty to disable tracing and eval dashboard)
+LANGSMITH_API_KEY=
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=voxpopuli-evals
+
+# Eval config
+EVAL_API_URL=http://localhost:3000
+EVAL_JUDGE_PROVIDER=groq
 ```
 
 ---
 
 ## 7. Key Technical Constraints
 
-| Constraint               | Value        | Rationale                                |
-| ------------------------ | ------------ | ---------------------------------------- |
-| Max agent steps          | 7            | Cost + latency cap                       |
-| Agent timeout            | 60s          | Prevent runaway loops                    |
-| Concurrent agents        | 5            | Prevent cost blowout                     |
-| Comment cap              | 30 per story | Firebase API latency                     |
-| Query max length         | 500 chars    | Input sanity                             |
-| Rate limit (per IP)      | 10 req/min   | Abuse prevention                         |
-| Rate limit (global)      | 60 req/min   | Cost protection                          |
-| Cache TTL (search)       | 15 min       | Freshness vs cost                        |
-| Cache TTL (stories)      | 1 hour       | Stable data                              |
-| Cache TTL (comments)     | 30 min       | Semi-stable data                         |
-| Cache TTL (query result) | 10 min       | Token savings                            |
-| Context window (Claude)  | 200k tokens  | `claude-sonnet-4-20250514` via LangChain |
-| Context window (Mistral) | 262k tokens  | `mistral-large-latest` via LangChain     |
-| Context window (Groq)    | 128k tokens  | `llama-3.3-70b-versatile` via LangChain  |
-| Token budget (Claude)    | 80k of 200k  | Conservative headroom                    |
-| Token budget (Mistral)   | 100k of 262k | Conservative headroom                    |
-| Token budget (Groq)      | 50k of 128k  | Conservative headroom                    |
-| Token estimation         | 1 char / 4   | Character-based, no tiktoken dependency  |
-| TTS max chars            | 2500         | ElevenLabs streaming limit               |
+| Constraint               | Value          | Rationale                                |
+| ------------------------ | -------------- | ---------------------------------------- |
+| Max agent steps          | 7              | Cost + latency cap                       |
+| Agent timeout            | 60s            | Prevent runaway loops                    |
+| Concurrent agents        | 5              | Prevent cost blowout                     |
+| Comment cap              | 30 per story   | Firebase API latency                     |
+| Query max length         | 500 chars      | Input sanity                             |
+| Rate limit (per IP)      | 10 req/min     | Abuse prevention                         |
+| Rate limit (global)      | 60 req/min     | Cost protection                          |
+| Cache TTL (search)       | 15 min         | Freshness vs cost                        |
+| Cache TTL (stories)      | 1 hour         | Stable data                              |
+| Cache TTL (comments)     | 30 min         | Semi-stable data                         |
+| Cache TTL (query result) | 10 min         | Token savings                            |
+| Context window (Claude)  | 200k tokens    | `claude-sonnet-4-20250514` via LangChain |
+| Context window (Mistral) | 262k tokens    | `mistral-large-latest` via LangChain     |
+| Context window (Groq)    | 128k tokens    | `llama-3.3-70b-versatile` via LangChain  |
+| Token budget (Claude)    | 80k of 200k    | Conservative headroom                    |
+| Token budget (Mistral)   | 100k of 262k   | Conservative headroom                    |
+| Token budget (Groq)      | 50k of 128k    | Conservative headroom                    |
+| Token estimation         | 1 char / 4     | Character-based, no tiktoken dependency  |
+| TTS max chars            | 2500           | ElevenLabs streaming limit               |
+| Eval query count         | 27             | 20 general + 7 trust-specific            |
+| Eval pass threshold      | 0.6 weighted   | Minimum score for a query to "pass"      |
+| Eval judge provider      | Groq           | Cheapest/fastest for LLM-as-judge calls  |
+| Eval score weights       | 30/30/15/15/10 | Source/Quality/Efficiency/Latency/Cost   |
+| LangSmith free tier      | 5k traces/mo   | Sufficient for eval harness usage        |
 
 ---
 
