@@ -5,10 +5,7 @@ import type { EvaluatorResult } from '../types';
  *
  * Score = 1.0 if steps <= max, linearly decreasing to 0 at 2x max.
  */
-export function evaluateEfficiency(
-  stepCount: number,
-  maxAcceptableSteps: number,
-): EvaluatorResult {
+export function evaluateEfficiency(stepCount: number, maxAcceptableSteps: number): EvaluatorResult {
   let score: number;
 
   if (stepCount <= maxAcceptableSteps) {

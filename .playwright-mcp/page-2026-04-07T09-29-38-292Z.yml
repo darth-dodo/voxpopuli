@@ -1,0 +1,53 @@
+- generic [ref=e4]:
+  - button "Switch to light theme" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+  - main [ref=e9]:
+    - region "Agent response" [ref=e110]:
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - button "Back to home" [ref=e113] [cursor=pointer]: VoxPopuli
+          - generic [ref=e114]: Voice of HackerNews
+        - button "New question" [ref=e115] [cursor=pointer]:
+          - img [ref=e116]
+          - text: New question
+      - tablist "Result sections" [ref=e118]:
+        - tab "Answer" [selected] [ref=e119] [cursor=pointer]
+        - tab "Sources (10)" [ref=e142] [cursor=pointer]
+        - tab "Steps (4)" [ref=e143] [cursor=pointer]
+      - article [ref=e144]:
+        - alert [ref=e145]:
+          - img [ref=e146]
+          - generic [ref=e148]:
+            - paragraph [ref=e149]: Partial results
+            - paragraph [ref=e150]: The agent timed out or encountered an error. The answer below may be incomplete.
+        - generic [ref=e153]:
+          - paragraph [ref=e154]: "The agent encountered an error after 4 steps (timed out). Here's what was found so far:"
+          - paragraph [ref=e155]: "[search_hn] === STORIES ==="
+          - paragraph [ref=e156]:
+            - link "[47542570]" [ref=e157] [cursor=pointer]:
+              - /url: https://news.ycombinator.com/item?id=47542570
+            - text: "\"Show HN: SpedFind – An open-source internet speed test (React/Python and CLI)\" by nishalk (3 points) Text: Hi HN,"
+          - paragraph [ref=e158]: I built SpedFind because I wanted a highly accurate ne...
+          - paragraph [ref=e159]:
+            - text: "[get_comments] No comments found for"
+            - link "story 47426865" [ref=e160] [cursor=pointer]:
+              - /url: https://news.ycombinator.com/item?id=47426865
+            - text: .
+        - generic [ref=e162]:
+          - group "Trust indicators" [ref=e163]:
+            - generic [ref=e164]:
+              - img [ref=e165]
+              - generic [ref=e167]: 0/10 verified
+            - generic [ref=e168]:
+              - img [ref=e169]
+              - generic [ref=e171]: 0% recent
+            - generic [ref=e172]:
+              - img [ref=e173]
+              - generic [ref=e175]: one-sided
+          - generic [ref=e177]: agent_error_partial_results
+        - generic [ref=e180]:
+          - generic [ref=e181]: groq
+          - generic [ref=e182]: ·
+          - generic [ref=e183]: 0 tokens
+          - generic [ref=e184]: ·
+          - generic [ref=e185]: 60,006ms

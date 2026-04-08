@@ -44,13 +44,9 @@ export async function evaluateSourceAccuracy(
     return { key: 'source_accuracy', score: 0, comment: 'No sources in response' };
   }
 
-  const results = await Promise.allSettled(
-    sources.map((s) => verifyStory(s.storyId)),
-  );
+  const results = await Promise.allSettled(sources.map((s) => verifyStory(s.storyId)));
 
-  const verified = results.filter(
-    (r) => r.status === 'fulfilled' && r.value === true,
-  ).length;
+  const verified = results.filter((r) => r.status === 'fulfilled' && r.value === true).length;
 
   const score = verified / sources.length;
 

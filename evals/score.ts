@@ -7,11 +7,11 @@ import { evaluateCost } from './evaluators/cost';
 
 /** Weight distribution across evaluator dimensions. */
 export const WEIGHTS = {
-  sourceAccuracy: 0.30,
-  qualityChecklist: 0.30,
+  sourceAccuracy: 0.3,
+  qualityChecklist: 0.3,
   efficiency: 0.15,
   latency: 0.15,
-  cost: 0.10,
+  cost: 0.1,
 } as const;
 
 /**
@@ -108,8 +108,7 @@ export function buildReport(scores: EvalScore[], provider: string): EvalReport {
     };
   }
 
-  const sum = (fn: (s: EvalScore) => number) =>
-    scores.reduce((acc, s) => acc + fn(s), 0);
+  const sum = (fn: (s: EvalScore) => number) => scores.reduce((acc, s) => acc + fn(s), 0);
 
   const avgWeighted = sum((s) => s.weighted) / n;
   const avgSourceAccuracy = sum((s) => s.sourceAccuracy) / n;
@@ -149,14 +148,20 @@ export function printReport(report: EvalReport): void {
   console.log(`${timestamp}`);
   console.log(`Queries: ${queries} | Pass Rate: ${summary.passRate.toFixed(1)}%\n`);
 
-  const header = pad('Query', 10) +
-    pad('Source', 8) + pad('Quality', 8) + pad('Effic.', 8) +
-    pad('Latency', 8) + pad('Cost', 8) + pad('Total', 8);
+  const header =
+    pad('Query', 10) +
+    pad('Source', 8) +
+    pad('Quality', 8) +
+    pad('Effic.', 8) +
+    pad('Latency', 8) +
+    pad('Cost', 8) +
+    pad('Total', 8);
   console.log(header);
   console.log(sep);
 
   for (const s of scores) {
-    const row = pad(s.queryId, 10) +
+    const row =
+      pad(s.queryId, 10) +
       pad(fmt(s.sourceAccuracy), 8) +
       pad(fmt(s.qualityChecklist), 8) +
       pad(fmt(s.efficiency), 8) +
@@ -167,7 +172,8 @@ export function printReport(report: EvalReport): void {
   }
 
   console.log(sep);
-  const avg = pad('AVERAGE', 10) +
+  const avg =
+    pad('AVERAGE', 10) +
     pad(fmt(summary.avgSourceAccuracy), 8) +
     pad(fmt(summary.avgQualityChecklist), 8) +
     pad(fmt(summary.avgEfficiency), 8) +
@@ -188,8 +194,7 @@ export function printComparison(reports: EvalReport[]): void {
   console.log('\nVoxPopuli Provider Comparison');
   console.log(sep);
 
-  const header = pad('Metric', 20) +
-    reports.map((r) => pad(r.provider, 12)).join('');
+  const header = pad('Metric', 20) + reports.map((r) => pad(r.provider, 12)).join('');
   console.log(header);
   console.log(sep);
 
@@ -204,11 +209,14 @@ export function printComparison(reports: EvalReport[]): void {
   ];
 
   for (const [label, fn] of metrics) {
-    const row = pad(label, 20) +
-      reports.map((r) => {
-        const val = fn(r.summary);
-        return pad(label === 'Pass Rate (%)' ? val.toFixed(1) : fmt(val), 12);
-      }).join('');
+    const row =
+      pad(label, 20) +
+      reports
+        .map((r) => {
+          const val = fn(r.summary);
+          return pad(label === 'Pass Rate (%)' ? val.toFixed(1) : fmt(val), 12);
+        })
+        .join('');
     console.log(row);
   }
 

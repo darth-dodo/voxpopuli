@@ -34,10 +34,7 @@ const DEFAULT_THRESHOLDS: LatencyThreshold[] = [
  * Each provider has different acceptable latency bands reflecting
  * their expected response characteristics.
  */
-export function evaluateLatency(
-  durationMs: number,
-  provider: string,
-): EvaluatorResult {
+export function evaluateLatency(durationMs: number, provider: string): EvaluatorResult {
   const thresholds = PROVIDER_THRESHOLDS[provider] ?? DEFAULT_THRESHOLDS;
   let score = 0.0;
 

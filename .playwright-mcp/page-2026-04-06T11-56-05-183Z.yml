@@ -1,0 +1,28 @@
+- generic [ref=e4]:
+  - button "Switch to light theme" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+  - main [ref=e9]:
+    - region "Agent response" [ref=e110]:
+      - generic [ref=e112]:
+        - generic [ref=e113]:
+          - button "Back to home" [ref=e114] [cursor=pointer]: VoxPopuli
+          - generic [ref=e115]: Voice of HackerNews
+        - button "New question" [ref=e117] [cursor=pointer]:
+          - img [ref=e118]
+          - text: New question
+      - region "Agent reasoning steps" [ref=e122]:
+        - generic [ref=e123]:
+          - generic [ref=e124]: Step 0 / 7
+          - button "Collapse" [expanded] [ref=e125] [cursor=pointer]
+        - list "Reasoning steps" [ref=e126]:
+          - generic "Agent is thinking" [ref=e127]: ▊
+      - generic [ref=e129]:
+        - generic [ref=e134]: Researching your question
+        - paragraph [ref=e135]: The agent is searching HackerNews, reading stories and comments, and synthesizing a sourced answer. This typically takes 5-15 seconds.
+    - generic [ref=e158]:
+      - generic [ref=e159]: Your question
+      - textbox "Your question" [disabled] [ref=e160]:
+        - /placeholder: Ask another question...
+        - text: What are the top trends on HN this week?
+      - button "Submit query" [disabled] [ref=e161]: Ask
+      - generic "Character count" [ref=e162]: 40 / 500

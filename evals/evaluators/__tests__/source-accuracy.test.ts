@@ -72,10 +72,7 @@ describe('evaluateSourceAccuracy', () => {
   });
 
   it('returns score 1.0 when all sources verify', async () => {
-    const sources = [
-      makeSource({ storyId: 111 }),
-      makeSource({ storyId: 222 }),
-    ];
+    const sources = [makeSource({ storyId: 111 }), makeSource({ storyId: 222 })];
     const response = makeResponse(sources);
 
     vi.stubGlobal(
@@ -103,7 +100,8 @@ describe('evaluateSourceAccuracy', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn()
+      vi
+        .fn()
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({ id: 111, title: 'Story 1' }),
@@ -126,16 +124,10 @@ describe('evaluateSourceAccuracy', () => {
   });
 
   it('returns score 0 when fetch throws/times out for all sources', async () => {
-    const sources = [
-      makeSource({ storyId: 111 }),
-      makeSource({ storyId: 222 }),
-    ];
+    const sources = [makeSource({ storyId: 111 }), makeSource({ storyId: 222 })];
     const response = makeResponse(sources);
 
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('Network timeout')),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network timeout')));
 
     const result = await evaluateSourceAccuracy(response);
 

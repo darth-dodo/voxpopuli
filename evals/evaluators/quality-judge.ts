@@ -30,9 +30,7 @@ export async function evaluateQualityChecklist(
     return { key, score: 0, comment: 'No MISTRAL_API_KEY configured' };
   }
 
-  const qualitiesList = expectedQualities
-    .map((q, i) => `${i + 1}. ${q}`)
-    .join('\n');
+  const qualitiesList = expectedQualities.map((q, i) => `${i + 1}. ${q}`).join('\n');
 
   const systemPrompt =
     'You are an eval judge. Given an answer and a list of expected qualities, evaluate each quality as PRESENT or ABSENT. Respond with ONLY a JSON array of objects: [{"quality": "...", "verdict": "PRESENT"|"ABSENT"}]';
@@ -69,9 +67,7 @@ export async function evaluateQualityChecklist(
   const total = expectedQualities.length;
   const score = presentCount / total;
 
-  const details = verdicts
-    .map((v) => `${v.quality}: ${v.verdict}`)
-    .join(', ');
+  const details = verdicts.map((v) => `${v.quality}: ${v.verdict}`).join(', ');
 
   return {
     key,

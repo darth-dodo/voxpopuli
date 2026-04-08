@@ -14,9 +14,7 @@ function makeSource(overrides: Partial<AgentSource> = {}): AgentSource {
   };
 }
 
-function makeResponse(
-  overrides: Partial<AgentResponse> = {},
-): AgentResponse {
+function makeResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
   return {
     answer: 'Rust and Go are both popular on HN. Story #123 discusses Rust adoption.',
     steps: [],

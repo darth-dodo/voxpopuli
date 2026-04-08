@@ -52,7 +52,14 @@ function makeResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
       { type: 'observation', content: 'results', timestamp: Date.now() },
     ],
     sources: [
-      { storyId: 123, title: 'Story 1', url: 'https://hn.com/1', author: 'a', points: 100, commentCount: 10 },
+      {
+        storyId: 123,
+        title: 'Story 1',
+        url: 'https://hn.com/1',
+        author: 'a',
+        points: 100,
+        commentCount: 10,
+      },
     ],
     meta: {
       provider: 'groq',
@@ -89,11 +96,7 @@ beforeEach(() => {
 
 describe('scoreRun', () => {
   it('returns all zeros when response is null', async () => {
-    const result = await scoreRun(
-      makeRunResult({ response: null }),
-      makeQuery(),
-      'groq',
-    );
+    const result = await scoreRun(makeRunResult({ response: null }), makeQuery(), 'groq');
 
     expect(result.queryId).toBe('q01');
     expect(result.sourceAccuracy).toBe(0);
@@ -112,8 +115,16 @@ describe('scoreRun', () => {
   });
 
   it('calls all evaluators and computes weighted score for valid response', async () => {
-    mockedSourceAccuracy.mockResolvedValue({ key: 'source_accuracy', score: 0.8, comment: '4/5 verified' });
-    mockedQualityChecklist.mockResolvedValue({ key: 'quality_checklist', score: 0.6, comment: '3/5 present' });
+    mockedSourceAccuracy.mockResolvedValue({
+      key: 'source_accuracy',
+      score: 0.8,
+      comment: '4/5 verified',
+    });
+    mockedQualityChecklist.mockResolvedValue({
+      key: 'quality_checklist',
+      score: 0.6,
+      comment: '3/5 present',
+    });
     mockedEfficiency.mockReturnValue({ key: 'efficiency', score: 1.0, comment: '3 steps' });
     mockedLatency.mockReturnValue({ key: 'latency', score: 0.7, comment: '4.0s' });
     mockedCost.mockReturnValue({ key: 'cost', score: 0.9, comment: '$0.002' });
@@ -124,7 +135,10 @@ describe('scoreRun', () => {
 
     // Verify evaluators called with correct args
     expect(mockedSourceAccuracy).toHaveBeenCalledWith(runResult.response);
-    expect(mockedQualityChecklist).toHaveBeenCalledWith(runResult.response, query.expectedQualities);
+    expect(mockedQualityChecklist).toHaveBeenCalledWith(
+      runResult.response,
+      query.expectedQualities,
+    );
     expect(mockedEfficiency).toHaveBeenCalledWith(3, query.maxAcceptableSteps);
     expect(mockedLatency).toHaveBeenCalledWith(runResult.durationMs, 'groq');
     expect(mockedCost).toHaveBeenCalledWith(5000, 1000, 'groq');
@@ -143,7 +157,11 @@ describe('scoreRun', () => {
   });
 
   it('collects evaluator comments in details', async () => {
-    mockedSourceAccuracy.mockResolvedValue({ key: 'source_accuracy', score: 1.0, comment: '5/5 verified' });
+    mockedSourceAccuracy.mockResolvedValue({
+      key: 'source_accuracy',
+      score: 1.0,
+      comment: '5/5 verified',
+    });
     mockedQualityChecklist.mockResolvedValue({ key: 'quality_checklist', score: 1.0 });
     mockedEfficiency.mockReturnValue({ key: 'efficiency', score: 1.0, comment: '2 steps' });
     mockedLatency.mockReturnValue({ key: 'latency', score: 1.0 });
@@ -175,9 +193,33 @@ describe('buildReport', () => {
 
   it('computes correct averages across all scores', () => {
     const scores: EvalScore[] = [
-      makeScore({ queryId: 'q01', sourceAccuracy: 0.9, qualityChecklist: 0.8, efficiency: 1.0, latency: 0.7, cost: 0.9, weighted: 0.86 }),
-      makeScore({ queryId: 'q02', sourceAccuracy: 0.6, qualityChecklist: 0.5, efficiency: 0.8, latency: 0.3, cost: 0.7, weighted: 0.57 }),
-      makeScore({ queryId: 'q03', sourceAccuracy: 0.3, qualityChecklist: 0.9, efficiency: 0.6, latency: 1.0, cost: 0.8, weighted: 0.63 }),
+      makeScore({
+        queryId: 'q01',
+        sourceAccuracy: 0.9,
+        qualityChecklist: 0.8,
+        efficiency: 1.0,
+        latency: 0.7,
+        cost: 0.9,
+        weighted: 0.86,
+      }),
+      makeScore({
+        queryId: 'q02',
+        sourceAccuracy: 0.6,
+        qualityChecklist: 0.5,
+        efficiency: 0.8,
+        latency: 0.3,
+        cost: 0.7,
+        weighted: 0.57,
+      }),
+      makeScore({
+        queryId: 'q03',
+        sourceAccuracy: 0.3,
+        qualityChecklist: 0.9,
+        efficiency: 0.6,
+        latency: 1.0,
+        cost: 0.8,
+        weighted: 0.63,
+      }),
     ];
 
     const report = buildReport(scores, 'groq');
@@ -195,9 +237,9 @@ describe('buildReport', () => {
 
   it('computes passRate correctly', () => {
     const scores: EvalScore[] = [
-      makeScore({ queryId: 'q01', weighted: 0.8 }),   // pass
-      makeScore({ queryId: 'q02', weighted: 0.5 }),   // fail
-      makeScore({ queryId: 'q03', weighted: 0.65 }),   // pass
+      makeScore({ queryId: 'q01', weighted: 0.8 }), // pass
+      makeScore({ queryId: 'q02', weighted: 0.5 }), // fail
+      makeScore({ queryId: 'q03', weighted: 0.65 }), // pass
     ];
 
     const report = buildReport(scores, 'groq');

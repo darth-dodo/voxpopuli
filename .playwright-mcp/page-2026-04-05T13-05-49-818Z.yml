@@ -1,0 +1,23 @@
+- generic [ref=e4]:
+  - button "Switch to light theme" [ref=e6] [cursor=pointer]:
+    - img [ref=e7]
+  - main [ref=e9]:
+    - region "Agent response" [ref=e110]:
+      - generic [ref=e111]:
+        - generic [ref=e112]:
+          - heading "VoxPopuli" [level=1] [ref=e113]
+          - generic [ref=e114]: Voice of Hacker News
+        - radiogroup "LLM provider" [ref=e116]:
+          - radio "Groq" [checked] [ref=e117] [cursor=pointer]
+          - radio "Mistral" [ref=e118] [cursor=pointer]
+          - radio "Claude" [ref=e119] [cursor=pointer]
+      - alert [ref=e120]:
+        - paragraph [ref=e121]: Error
+        - paragraph [ref=e122]: GROQ_API_KEY is required when using the Groq provider
+    - generic [ref=e124]:
+      - generic [ref=e125]: Your question
+      - textbox "Your question" [ref=e126]:
+        - /placeholder: Ask another question...
+        - text: What are the top AI startups on HN?
+      - button "Submit query" [ref=e127] [cursor=pointer]: Ask
+      - generic "Character count" [ref=e128]: 35 / 500
