@@ -156,15 +156,17 @@ Comments are where the real knowledge lives. The agent:
 
 The Retriever collects raw HN data and **compacts** it into themed evidence groups (~600 tokens from 30+ comments). The Synthesizer extracts 3-5 insights ranked by evidence strength. The Writer turns structured analysis into readable prose with citations. No raw HN data crosses the Retriever boundary.
 
-**Strategic provider allocation:**
+**Provider allocation:**
 
-| Agent       | Default Provider                      | Why                                                            |
-| ----------- | ------------------------------------- | -------------------------------------------------------------- |
-| Retriever   | **Groq** (Llama 3.3 70B)              | Speed. Multiple tool calls need fast inference.                |
-| Synthesizer | **Claude** (claude-sonnet-4-20250514) | Reasoning depth. Pattern extraction needs the strongest model. |
-| Writer      | **Mistral** (mistral-large-latest)    | Cost-optimized. Structured prose from structured input.        |
+By default, all three agents use the **globally selected provider** (the `LLM_PROVIDER` env var or the UI provider selector). This keeps behavior consistent with the single-agent path and avoids requiring multiple API keys.
 
-Configurable per request via `PipelineConfig.providerMap`. Three preset profiles available: `quality` (Groq/Claude/Mistral), `speed` (all Groq), `cost` (all Mistral).
+| Agent       | Default Provider        | `optimized` Preset Provider           | Why (optimized)                                                |
+| ----------- | ----------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| Retriever   | Global (`LLM_PROVIDER`) | **Groq** (Llama 3.3 70B)              | Speed. Multiple tool calls need fast inference.                |
+| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-sonnet-4-20250514) | Reasoning depth. Pattern extraction needs the strongest model. |
+| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-large-latest)    | Cost-optimized. Structured prose from structured input.        |
+
+Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (Groq/Claude/Mistral split), `speed` (all Groq), `cost` (all Mistral).
 
 **Feature flag:** `PipelineConfig.useMultiAgent` controls rollout. When `false`, falls back to the legacy single ReAct agent.
 
@@ -878,7 +880,8 @@ The multi-agent pipeline is configured via `PipelineConfig`:
 
 ```typescript
 interface PipelineConfig {
-  providerMap: {
+  providerMap?: {
+    // Optional — defaults to global LLM_PROVIDER for all stages
     retriever: LlmProvider;
     synthesizer: LlmProvider;
     writer: LlmProvider;
@@ -893,13 +896,16 @@ interface PipelineConfig {
 }
 ```
 
+When `providerMap` is not specified, all three stages use the globally selected `LLM_PROVIDER`. This ensures the pipeline respects the same provider the user chose in the UI or env config.
+
 **Preset profiles:**
 
-| Profile   | Retriever | Synthesizer | Writer  | Timeout | Use Case              |
-| --------- | --------- | ----------- | ------- | ------- | --------------------- |
-| `quality` | Groq      | Claude      | Mistral | 30s     | Best output quality   |
-| `speed`   | Groq      | Groq        | Groq    | 15s     | Fastest response      |
-| `cost`    | Mistral   | Mistral     | Mistral | 25s     | Lowest cost per query |
+| Profile     | Retriever       | Synthesizer     | Writer          | Timeout | Use Case                         |
+| ----------- | --------------- | --------------- | --------------- | ------- | -------------------------------- |
+| `default`   | Global provider | Global provider | Global provider | 25s     | Consistent with global selection |
+| `optimized` | Groq            | Claude          | Mistral         | 30s     | Best output quality (multi-key)  |
+| `speed`     | Groq            | Groq            | Groq            | 15s     | Fastest response                 |
+| `cost`      | Mistral         | Mistral         | Mistral         | 25s     | Lowest cost per query            |
 
 **SSE event protocol:**
 
@@ -1391,11 +1397,20 @@ export interface AgentResponse {
 
 // Pipeline types (Orchestrator)
 export interface PipelineConfig {
-  providerMap: { retriever: LlmProvider; synthesizer: LlmProvider; writer: LlmProvider };
+  /** Optional — when omitted, all stages use the global LLM_PROVIDER. */
+  providerMap?: { retriever: LlmProvider; synthesizer: LlmProvider; writer: LlmProvider };
   tokenBudgets: { retriever: number; synthesizer: number; writer: number };
   timeoutMs: number;
   useMultiAgent: boolean;
 }
+
+/** Presets resolve providerMap at runtime from LLM_PROVIDER when set to 'global'. */
+export const PIPELINE_PRESETS = {
+  default: { providerMap: undefined }, // all stages use global LLM_PROVIDER
+  optimized: { providerMap: { retriever: 'groq', synthesizer: 'claude', writer: 'mistral' } },
+  speed: { providerMap: { retriever: 'groq', synthesizer: 'groq', writer: 'groq' } },
+  cost: { providerMap: { retriever: 'mistral', synthesizer: 'mistral', writer: 'mistral' } },
+} as const;
 
 export type PipelineStage = 'retriever' | 'synthesizer' | 'writer';
 export type StageStatus = 'started' | 'progress' | 'done' | 'error';
@@ -1562,7 +1577,7 @@ export interface Claim {
 - [ ] SynthesizerAgent: single-pass analysis
 - [ ] WriterAgent: single-pass prose composition
 - [ ] OrchestratorService: pipeline coordination + SSE events
-- [ ] PipelineConfig presets: quality, speed, cost
+- [ ] PipelineConfig presets: default (global provider), optimized, speed, cost
 - [ ] Feature flag: `useMultiAgent` (OFF by default initially)
 - [ ] Fallback to legacy ReAct on pipeline error
 - [ ] Angular: PipelineEvent SSE integration in agent steps timeline
