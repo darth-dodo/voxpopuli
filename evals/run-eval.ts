@@ -32,6 +32,7 @@ const program = new Command()
   .option('--list', 'list available queries and exit')
   .option('--dry-run', 'show what would run without calling the API')
   .option('--no-langsmith', 'skip LangSmith dataset sync')
+  .option('-t, --timeout <seconds>', 'per-query timeout in seconds', '300')
   .parse();
 
 const opts = program.opts<{
@@ -42,6 +43,7 @@ const opts = program.opts<{
   list?: boolean;
   dryRun?: boolean;
   langsmith: boolean;
+  timeout: string;
 }>();
 
 // ---------------------------------------------------------------------------
@@ -63,14 +65,19 @@ async function checkApiHealth(apiUrl: string): Promise<boolean> {
 // API call helper
 // ---------------------------------------------------------------------------
 
-async function runQuery(query: string, provider: string, apiUrl: string): Promise<EvalRunResult> {
+async function runQuery(
+  query: string,
+  provider: string,
+  apiUrl: string,
+  timeoutMs: number,
+): Promise<EvalRunResult> {
   const start = performance.now();
   try {
     const res = await fetch(`${apiUrl}/api/rag/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, provider }),
-      signal: AbortSignal.timeout(180_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const response = (await res.json()) as AgentResponse;
@@ -196,9 +203,12 @@ async function main(): Promise<void> {
   // Run evals
   const providers = opts.compare ?? [opts.provider];
   const reports: EvalReport[] = [];
+  const timeoutMs = parseInt(opts.timeout, 10) * 1000;
 
   for (const p of providers) {
-    console.log(`\nRunning eval for provider: ${p} (${queries.length} queries)\n`);
+    console.log(
+      `\nRunning eval for provider: ${p} (${queries.length} queries, ${opts.timeout}s timeout)\n`,
+    );
 
     const scores: EvalScore[] = [];
     let passed = 0;
@@ -212,7 +222,7 @@ async function main(): Promise<void> {
         `  [${String(i + 1).padStart(2)}/${queries.length}] ${q.id.padEnd(5)} ${label} `,
       );
 
-      const result = await runQuery(q.query, p, EVAL_API_URL);
+      const result = await runQuery(q.query, p, EVAL_API_URL, timeoutMs);
       result.queryId = q.id;
 
       const score = await scoreRun(result, q, p);
