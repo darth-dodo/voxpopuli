@@ -896,16 +896,9 @@ interface PipelineConfig {
 }
 ```
 
-When `providerMap` is not specified, all three stages use the globally selected `LLM_PROVIDER`. This ensures the pipeline respects the same provider the user chose in the UI or env config.
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
 
-**Preset profiles:**
-
-| Profile     | Retriever       | Synthesizer     | Writer          | Timeout | Use Case                         |
-| ----------- | --------------- | --------------- | --------------- | ------- | -------------------------------- |
-| `default`   | Global provider | Global provider | Global provider | 25s     | Consistent with global selection |
-| `optimized` | Groq            | Claude          | Mistral         | 30s     | Best output quality (multi-key)  |
-| `speed`     | Groq            | Groq            | Groq            | 15s     | Fastest response                 |
-| `cost`      | Mistral         | Mistral         | Mistral         | 25s     | Lowest cost per query            |
+Per-stage provider splitting (e.g., Groq for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
 
 **SSE event protocol:**
 
@@ -1404,13 +1397,8 @@ export interface PipelineConfig {
   useMultiAgent: boolean;
 }
 
-/** Presets resolve providerMap at runtime from LLM_PROVIDER when set to 'global'. */
-export const PIPELINE_PRESETS = {
-  default: { providerMap: undefined }, // all stages use global LLM_PROVIDER
-  optimized: { providerMap: { retriever: 'groq', synthesizer: 'claude', writer: 'mistral' } },
-  speed: { providerMap: { retriever: 'groq', synthesizer: 'groq', writer: 'groq' } },
-  cost: { providerMap: { retriever: 'mistral', synthesizer: 'mistral', writer: 'mistral' } },
-} as const;
+// Default config: all stages use global LLM_PROVIDER. Additional presets
+// (optimized, speed, cost) deferred until eval data justifies per-stage splitting.
 
 export type PipelineStage = 'retriever' | 'synthesizer' | 'writer';
 export type StageStatus = 'started' | 'progress' | 'done' | 'error';

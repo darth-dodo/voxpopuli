@@ -307,30 +307,13 @@ Query → OrchestratorService.run(query, config)
   └── WriterAgent.compose(query, analysis, bundle)  →  AgentResponse
 ```
 
-**Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets (including `synthesizerInput` for bundle size guarding), and timeout. Default: all agents use the global `LLM_PROVIDER`. Presets: `default`, `optimized` (Groq/Claude/Mistral), `speed` (all Groq), `cost` (all Mistral), `eval` (clean eval runs).
+**Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets (including `synthesizerInput` for bundle size guarding), and timeout.
 
-**Pipeline presets:**
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
 
-| Preset      | `providerMap`                                                         | `synthesizerInput` | `timeoutMs` | Notes                                    |
-| ----------- | --------------------------------------------------------------------- | ------------------ | ----------- | ---------------------------------------- |
-| `default`   | `undefined` (global provider)                                         | 4000               | 25000       | Standard operation                       |
-| `optimized` | `{ retriever: 'groq', synthesizer: 'claude', writer: 'mistral' }`     | 4000               | 30000       | Best quality (multi-key)                 |
-| `speed`     | `{ retriever: 'groq', synthesizer: 'groq', writer: 'groq' }`          | 3000               | 15000       | Fastest response                         |
-| `cost`      | `{ retriever: 'mistral', synthesizer: 'mistral', writer: 'mistral' }` | 4000               | 25000       | Lowest cost                              |
-| `eval`      | `undefined` (global provider)                                         | 4000               | 60000       | Eval harness (no cache, verbose logging) |
+Additional presets (`optimized`, `speed`, `cost`) are deferred until eval data shows a need for per-stage provider splitting. The eval harness can use cache bypass via environment variable (`CACHE_DISABLED=true`) rather than a dedicated preset.
 
-#### The `eval` Preset
-
-Used exclusively by the M6 eval harness. Differences from `default`:
-
-| Setting       | `default`                | `eval`                              |
-| ------------- | ------------------------ | ----------------------------------- |
-| Timeout       | 30s                      | 60s (no premature aborts)           |
-| Caching       | Enabled                  | **Disabled** (fresh data every run) |
-| Logging       | Standard                 | **Verbose** (raw LLM I/O logged)    |
-| Intermediates | Discarded after response | **Persisted** to `evals/results/`   |
-
-This preset exists so the eval harness gets clean, uncached results with full intermediate data for debugging. Without it, eval runs would hit cached responses, producing misleadingly fast timing and potentially stale answers.
+**Eval mode:** The eval harness disables caching via `CACHE_DISABLED=true` environment variable and uses the default pipeline config with extended timeout (60s). No dedicated preset needed.
 
 **Feature flag:** `PipelineConfig.useMultiAgent` (default: `false` during rollout). When `false`, falls back to legacy `AgentService`.
 
@@ -363,24 +346,9 @@ The `detail` field is a free-form string for SSE simplicity, but both backend em
 
 **Error detail (any stage):** The error message string. Frontend displays as-is.
 
-**Frontend rendering guidance:**
-
-| Stage       | Icon | Progress Display                   | Done Display                  |
-| ----------- | ---- | ---------------------------------- | ----------------------------- |
-| Retriever   | 🔍   | Show each search term as it fires  | "{n} themes from {m} sources" |
-| Synthesizer | 🧠   | Pulsing indicator + "Analyzing..." | "{n} insights found"          |
-| Writer      | ✍️   | Pulsing indicator + "Composing..." | "{n} sections"                |
-
 #### Bundle Size Guard
 
-Before passing the `EvidenceBundle` to the Synthesizer, the Orchestrator checks `bundle.tokenCount` against the Synthesizer's input budget (`config.tokenBudgets.synthesizerInput`, default 4000 tokens).
-
-If oversized, the Orchestrator trims the bundle:
-
-1. **Phase 1:** Within each theme, drop evidence items with `relevance < 0.3`
-2. **Phase 2:** If still over budget, drop themes with fewest evidence items (keep at least 2)
-
-**Why this lives in the Orchestrator, not the Retriever:** The Retriever's job is to collect and compact as much as it finds. The Orchestrator enforces the pipeline's token budget. Separation of concerns -- the Retriever doesn't know (and shouldn't know) the Synthesizer's capacity.
+Before passing the `EvidenceBundle` to the Synthesizer, the Orchestrator validates that `bundle.tokenCount` does not exceed 4000 tokens. If oversized, the Orchestrator truncates to the highest-relevance themes. Implementation details deferred to M8 implementation.
 
 #### Orchestrator Failure Modes
 
@@ -402,6 +370,17 @@ The pipeline can fail at three points. Each has a different recovery strategy:
 - `sources` = `bundle.allSources`
 
 This ensures the user always gets something useful, even if the Writer agent is down. The response won't be polished prose, but it will contain the actual analysis.
+
+#### JSON Parse Safety
+
+The Synthesizer and Writer both depend on parsing structured JSON from LLM output. LLMs sometimes return invalid JSON (trailing commas, markdown fencing, hallucinated fields). The Orchestrator must:
+
+1. Strip markdown code fences (` ```json ... ``` `) before parsing
+2. Attempt `JSON.parse()` with a try/catch
+3. On parse failure, retry the agent once with an appended "Respond with valid JSON only" instruction
+4. Validate parsed output against the expected interface (check required fields exist)
+
+This is more likely to fail in practice than bundle size overflow or partial pipeline failure.
 
 #### Retriever Agent
 
@@ -809,7 +788,7 @@ Epic (Linear Project or Cycle)
 
 - **Story: Define pipeline types** (AI-TBD)
   - `PipelineConfig`, `PipelineEvent`, `PipelineResult`, `PipelineStage`, `StageStatus`
-  - `PIPELINE_PRESETS` constant: `default`, `optimized`, `speed`, `cost`, `eval`
+  - Default pipeline configuration (single preset; additional presets deferred)
   - `tokenBudgets.synthesizerInput` field for bundle size guarding
 
 #### Epic 8.2: Agent Implementation
@@ -907,10 +886,11 @@ Epic (Linear Project or Cycle)
   - Compare quality scores, latency, cost
   - Decision gate: enable by default only if multi-agent wins on quality
 
-- **Story: Add eval pipeline preset** (AI-TBD)
+- **Story: Implement JSON parse safety in Orchestrator** (AI-TBD)
 
-  - Cache bypass, verbose logging, 60s timeout
-  - Wire into eval harness runner
+  - Strip markdown fences, try/catch parse, retry on failure
+  - Validate required fields on parsed output
+  - Test: malformed JSON → retry → success; total garbage → fallback
 
 - **Story: Update documentation** (AI-TBD)
   - Update CLAUDE.md with new module structure and conventions
@@ -1016,7 +996,7 @@ PORT=3000
 | Token budget (Groq)             | 50k of 128k                 | Conservative headroom                            |
 | Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
 | TTS max chars                   | 2500                        | ElevenLabs streaming limit                       |
-| Pipeline timeout                | 30s (quality), 15s (speed)  | Per-preset timeout cap                           |
+| Pipeline timeout                | 30s default                 | Global pipeline timeout cap                      |
 | Retriever max iterations        | 8                           | ReAct loop safety cap                            |
 | Retriever dry-well exit         | 3 consecutive empty results | Prevent wasting iterations on undiscussed topics |
 | Retriever compaction truncation | 50k chars                   | Prevent blowing compactor context window         |
@@ -1024,7 +1004,6 @@ PORT=3000
 | Synthesizer insight cap         | 5                           | Prevent unfocused analysis                       |
 | Writer section cap              | 4                           | Prevent rambling responses                       |
 | Pipeline output tokens          | 2000/1500/1000              | Retriever/Synthesizer/Writer budgets             |
-| Pipeline preset: eval           | 60s timeout, no cache       | Clean eval runs with full intermediate logging   |
 
 ---
 
