@@ -449,8 +449,28 @@
       <!-- ─── Answer Tab ─── -->
       @if (activeTab() === 'answer') {
 
+      <!-- Pipeline token streaming answer -->
+      @if (isPipelineMode() && tokenContent()) {
+      <div class="mt-4">
+        <div class="vp-card p-5 sm:p-8">
+          <div class="vp-prose">
+            <markdown [data]="tokenContent()" />
+          </div>
+          @if (isStreaming()) {
+          <div class="mt-3 flex items-center gap-2">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+            </span>
+            <span class="text-mono text-xs text-text-muted">Streaming...</span>
+          </div>
+          }
+        </div>
+      </div>
+      }
+
       <!-- Loading state -->
-      @if (loading() && !response()) {
+      @if (loading() && !response() && !tokenContent()) {
       <div class="mt-4 space-y-4" aria-busy="true">
         <div class="vp-card p-5 sm:p-8">
           <div class="space-y-3 animate-pulse">
@@ -603,7 +623,7 @@
 
       <!-- ─── Steps Tab ─── -->
       @if (activeTab() === 'steps') { @if (steps().length > 0 || isStreaming()) {
-      <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+      <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" [pipelineEvents]="pipelineEvents()" [isPipelineMode]="isPipelineMode()" />
       } @else {
       <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
       } }

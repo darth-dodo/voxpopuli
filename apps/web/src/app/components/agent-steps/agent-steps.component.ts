@@ -19,6 +19,40 @@ export class AgentStepsComponent {
   /** Whether the agent is still producing steps. */
   readonly isStreaming = input<boolean>(false);
 
+  /** Pipeline stage events from multi-agent mode. */
+  readonly pipelineEvents = input<
+    Array<{ stage: string; status: string; detail: string; elapsed: number }>
+  >([]);
+
+  /** Whether the component should render pipeline timeline instead of ReAct steps. */
+  readonly isPipelineMode = input<boolean>(false);
+
+  /** Pipeline stages grouped by name, ordered retriever → synthesizer → writer. */
+  readonly pipelineStages = computed(() => {
+    const events = this.pipelineEvents();
+    const stageMap = new Map<
+      string,
+      { name: string; status: string; detail: string; elapsed: number }
+    >();
+
+    for (const event of events) {
+      stageMap.set(event.stage, {
+        name: event.stage,
+        status: event.status,
+        detail: event.detail,
+        elapsed: event.elapsed,
+      });
+    }
+
+    const stages: Array<{ name: string; status: string; detail: string; elapsed: number }> = [];
+    for (const name of ['retriever', 'synthesizer', 'writer']) {
+      const stage = stageMap.get(name);
+      if (stage) stages.push(stage);
+    }
+
+    return stages;
+  });
+
   /** Set of step indices whose raw details are expanded. */
   readonly expandedRaw = signal<Set<number>>(new Set());
 

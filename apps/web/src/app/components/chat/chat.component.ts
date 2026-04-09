@@ -84,6 +84,17 @@ export class ChatComponent implements OnInit {
   /** Whether the SSE stream is actively producing events. */
   readonly isStreaming = signal(false);
 
+  /** Pipeline stage events accumulated during multi-agent streaming. */
+  readonly pipelineEvents = signal<
+    Array<{ stage: string; status: string; detail: string; elapsed: number }>
+  >([]);
+
+  /** Whether the current stream is using multi-agent pipeline mode. */
+  readonly isPipelineMode = signal(false);
+
+  /** Token content accumulated during pipeline streaming. */
+  readonly tokenContent = signal('');
+
   /** Currently active tab in the result view. */
   readonly activeTab = signal<'answer' | 'sources' | 'steps'>('steps');
 
@@ -171,6 +182,9 @@ export class ChatComponent implements OnInit {
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
+    this.pipelineEvents.set([]);
+    this.isPipelineMode.set(false);
+    this.tokenContent.set('');
     this.activeTab.set('steps');
 
     this.ragService.stream(q, this.selectedProvider()).subscribe({
@@ -206,6 +220,21 @@ export class ChatComponent implements OnInit {
             this.loading.set(false);
             // Auto-switch to answer tab when answer arrives
             this.activeTab.set('answer');
+            break;
+          case 'pipeline':
+            this.isPipelineMode.set(true);
+            this.pipelineEvents.update((events) => [
+              ...events,
+              {
+                stage: event.stage,
+                status: event.status,
+                detail: event.detail,
+                elapsed: event.elapsed,
+              },
+            ]);
+            break;
+          case 'token':
+            this.tokenContent.update((content) => content + event.content);
             break;
           case 'error':
             this.error.set(event.message);
@@ -251,6 +280,9 @@ export class ChatComponent implements OnInit {
     this.response.set(null);
     this.error.set(null);
     this.steps.set([]);
+    this.pipelineEvents.set([]);
+    this.isPipelineMode.set(false);
+    this.tokenContent.set('');
     this.loading.set(false);
     this.isStreaming.set(false);
     this.activeTab.set('steps');
