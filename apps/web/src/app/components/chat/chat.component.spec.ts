@@ -185,7 +185,7 @@ describe('ChatComponent', () => {
   it('should call ragService.stream with the trimmed query and selected provider', () => {
     component.query.set('  trending topics  ');
     component.submit();
-    expect(ragServiceStub.stream).toHaveBeenCalledWith('trending topics', 'groq');
+    expect(ragServiceStub.stream).toHaveBeenCalledWith('trending topics', 'groq', true);
   });
 
   it('should submit on Enter keydown', () => {
