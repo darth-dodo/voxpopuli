@@ -8,6 +8,7 @@ import type { AgentResponse } from '@voxpopuli/shared-types';
 import type { EvalRunResult, EvalScore, EvalReport } from './types';
 import { loadQueries, syncToLangSmith } from './dataset';
 import { scoreRun, buildReport, printReport, printComparison } from './score';
+import { postScoresToLangSmith } from './feedback';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -216,6 +217,11 @@ async function main(): Promise<void> {
 
       const score = await scoreRun(result, q, p);
       scores.push(score);
+
+      // Post scores to LangSmith as feedback (non-blocking)
+      if (opts.langsmith) {
+        postScoresToLangSmith(score, q, p).catch(() => {});
+      }
 
       const icon = statusIcon(score.weighted, !!result.error);
       const time = elapsed(result.durationMs);
