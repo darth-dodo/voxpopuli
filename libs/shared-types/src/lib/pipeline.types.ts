@@ -35,7 +35,7 @@ export const PipelineConfigSchema = z.object({
       synthesizerInput: z.number().default(4000),
       writer: z.number().default(1000),
     })
-    .default({}),
+    .default(() => ({ retriever: 2000, synthesizer: 1500, synthesizerInput: 4000, writer: 1000 })),
   timeout: z.number().default(30000),
 });
 export type PipelineConfig = z.infer<typeof PipelineConfigSchema>;
