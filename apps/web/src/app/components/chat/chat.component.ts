@@ -187,7 +187,7 @@ export class ChatComponent implements OnInit {
     this.tokenContent.set('');
     this.activeTab.set('steps');
 
-    this.ragService.stream(q, this.selectedProvider()).subscribe({
+    this.ragService.stream(q, this.selectedProvider(), true).subscribe({
       next: (event: StreamEvent) => {
         switch (event.type) {
           case 'thought':
