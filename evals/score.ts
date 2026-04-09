@@ -23,6 +23,7 @@ export async function scoreRun(
   result: EvalRunResult,
   query: EvalQuery,
   provider: string,
+  skipJudge = false,
 ): Promise<EvalScore> {
   const { response } = result;
 
@@ -39,10 +40,12 @@ export async function scoreRun(
     };
   }
 
-  const [srcResult, qualResult] = await Promise.all([
-    evaluateSourceAccuracy(response),
-    evaluateQualityChecklist(response, query.expectedQualities),
-  ]);
+  const srcPromise = evaluateSourceAccuracy(response);
+  const qualPromise = skipJudge
+    ? Promise.resolve({ key: 'quality_checklist', score: 0, comment: 'skipped (--no-judge)' })
+    : evaluateQualityChecklist(response, query.expectedQualities);
+
+  const [srcResult, qualResult] = await Promise.all([srcPromise, qualPromise]);
 
   const effResult = evaluateEfficiency(response.steps.length, query.maxAcceptableSteps);
   const latResult = evaluateLatency(result.durationMs, provider);

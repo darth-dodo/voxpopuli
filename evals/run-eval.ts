@@ -33,6 +33,8 @@ const program = new Command()
   .option('--dry-run', 'show what would run without calling the API')
   .option('--no-langsmith', 'skip LangSmith dataset sync')
   .option('-t, --timeout <seconds>', 'per-query timeout in seconds', '300')
+  .option('-n, --concurrency <n>', 'max parallel queries (API supports up to 5)', '3')
+  .option('--no-judge', 'skip LLM-as-judge (faster, scores only source/efficiency/latency/cost)')
   .parse();
 
 const opts = program.opts<{
@@ -44,6 +46,8 @@ const opts = program.opts<{
   dryRun?: boolean;
   langsmith: boolean;
   timeout: string;
+  concurrency: string;
+  judge: boolean;
 }>();
 
 // ---------------------------------------------------------------------------
@@ -204,51 +208,88 @@ async function main(): Promise<void> {
   const providers = opts.compare ?? [opts.provider];
   const reports: EvalReport[] = [];
   const timeoutMs = parseInt(opts.timeout, 10) * 1000;
+  const concurrency = Math.min(parseInt(opts.concurrency, 10), 5);
+  const skipJudge = !opts.judge;
 
   for (const p of providers) {
     console.log(
-      `\nRunning eval for provider: ${p} (${queries.length} queries, ${opts.timeout}s timeout)\n`,
+      `\nRunning eval for provider: ${p} (${queries.length} queries, concurrency=${concurrency}${
+        skipJudge ? ', no-judge' : ''
+      })\n`,
     );
 
-    const scores: EvalScore[] = [];
+    const scores: EvalScore[] = new Array(queries.length);
+    let completed = 0;
     let passed = 0;
     let failed = 0;
     let errors = 0;
+    const startTime = performance.now();
 
-    for (let i = 0; i < queries.length; i++) {
-      const q = queries[i];
-      const label = q.query.length > 55 ? q.query.substring(0, 55) + '...' : q.query;
-      process.stdout.write(
-        `  [${String(i + 1).padStart(2)}/${queries.length}] ${q.id.padEnd(5)} ${label} `,
+    // Process queries in batches of `concurrency`
+    for (let batch = 0; batch < queries.length; batch += concurrency) {
+      const batchQueries = queries.slice(batch, batch + concurrency);
+
+      const batchResults = await Promise.allSettled(
+        batchQueries.map(async (q, batchIdx) => {
+          const idx = batch + batchIdx;
+          const result = await runQuery(q.query, p, EVAL_API_URL, timeoutMs);
+          result.queryId = q.id;
+
+          const score = await scoreRun(result, q, p, skipJudge);
+          scores[idx] = score;
+
+          // Post scores to LangSmith as feedback (non-blocking)
+          if (opts.langsmith) {
+            // eslint-disable-next-line @typescript-eslint/no-empty-function
+            postScoresToLangSmith(score, q, p).catch(() => {});
+          }
+
+          return { result, score, idx };
+        }),
       );
 
-      const result = await runQuery(q.query, p, EVAL_API_URL, timeoutMs);
-      result.queryId = q.id;
+      // Print results for this batch
+      for (const settled of batchResults) {
+        completed++;
+        if (settled.status === 'rejected') {
+          errors++;
+          console.log(
+            `  [${String(completed).padStart(2)}/${queries.length}] ??? \u2716 ERR: ${
+              settled.reason
+            }`,
+          );
+          continue;
+        }
 
-      const score = await scoreRun(result, q, p);
-      scores.push(score);
+        const { result, score } = settled.value;
+        const q = queries[settled.value.idx];
+        const label = q.query.length > 50 ? q.query.substring(0, 50) + '...' : q.query;
+        const icon = statusIcon(score.weighted, !!result.error);
+        const time = elapsed(result.durationMs);
 
-      // Post scores to LangSmith as feedback (non-blocking)
-      if (opts.langsmith) {
-        postScoresToLangSmith(score, q, p).catch(() => {});
-      }
-
-      const icon = statusIcon(score.weighted, !!result.error);
-      const time = elapsed(result.durationMs);
-
-      if (result.error) {
-        errors++;
-        console.log(`${icon} ERR ${time}`);
-      } else if (score.weighted >= 0.6) {
-        passed++;
-        console.log(`${icon} ${score.weighted.toFixed(2)} ${time}`);
-      } else {
-        failed++;
-        console.log(`${icon} ${score.weighted.toFixed(2)} ${time}`);
+        if (result.error) {
+          errors++;
+          console.log(
+            `  [${String(completed).padStart(2)}/${queries.length}] ${q.id.padEnd(
+              5,
+            )} ${icon} ERR ${time}`,
+          );
+        } else {
+          if (score.weighted >= 0.6) passed++;
+          else failed++;
+          console.log(
+            `  [${String(completed).padStart(2)}/${queries.length}] ${q.id.padEnd(
+              5,
+            )} ${icon} ${score.weighted.toFixed(2)} ${time}  ${label}`,
+          );
+        }
       }
     }
 
-    console.log(`\n  Results: ${passed} passed, ${failed} below threshold, ${errors} errors`);
+    const totalTime = elapsed(performance.now() - startTime);
+    console.log(
+      `\n  Results: ${passed} passed, ${failed} below threshold, ${errors} errors (${totalTime} total)`,
+    );
 
     const report = buildReport(scores, p);
     printReport(report);
