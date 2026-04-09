@@ -18,6 +18,16 @@ apps/api/src/          # NestJS backend (agent, cache, chunker, hn, llm, rag, tt
     system-prompt.ts   #     Agent system prompt with claim taxonomy
     trust.ts           #     computeTrustMetadata — source verification, recency, diversity
     partial-response.ts #    buildPartialResponse — graceful degradation on LLM failure
+    orchestrator.service.ts  #   OrchestratorService — LangGraph pipeline coordinator
+    nodes/                   #   Pipeline agent nodes
+      retriever.node.ts      #     ReAct collection + compaction → EvidenceBundle
+      synthesizer.node.ts    #     EvidenceBundle → AnalysisResult
+      writer.node.ts         #     AnalysisResult → AgentResponseV2
+    prompts/                 #   Pipeline agent system prompts
+      retriever.prompt.ts    #     ReAct collection strategy
+      compactor.prompt.ts    #     Raw data → structured EvidenceBundle
+      synthesizer.prompt.ts  #     Bundle → insights + contradictions
+      writer.prompt.ts       #     Analysis → editorial prose
   rag/                 #   RagController — POST /query, GET /stream (SSE), rate limiting
     filters/           #     HttpExceptionFilter — global structured error responses
     dto/               #     RagQueryDto — input validation
@@ -130,6 +140,9 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 | Eval score weights    | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10% |
 | Eval concurrency      | 3 default, 5 max                                               |
 | Eval timeout          | 300s default per query                                         |
+| Pipeline feature flag | `useMultiAgent` query param on SSE endpoint, default `false`   |
+| Pipeline stages       | Retriever (ReAct+compact) → Synthesizer → Writer               |
+| Pipeline timeout      | 30s default (configurable via PipelineConfig)                  |
 
 ## Environment Variables
 
@@ -156,6 +169,8 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 17. **Eval queries.json is the source of truth.** The LangSmith dataset is synced from this file on each run. Edit queries in the JSON file, not the LangSmith UI.
 18. **LLM judge strips markdown fences.** If you change the judge provider, verify it handles fencing correctly -- some providers wrap JSON output in triple-backtick blocks.
 19. **Agent token tracking uses LangChain `usage_metadata`.** If tokens show as 0, the provider may not report them.
+20. **Don't mix pipeline and legacy event types.** The frontend detects pipeline mode from `pipeline` SSE events. Legacy `thought`/`action`/`observation` events come from the Retriever's inner ReAct loop within the pipeline — they coexist, not replace.
+21. **LangGraph Annotation types must match node return types.** If you change what a node returns, update the StateGraph annotation. Zod 4's `.default()` on nested objects needs a factory function, not `{}`.
 
 ## Architecture Decision Records
 
