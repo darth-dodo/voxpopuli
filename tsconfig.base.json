@@ -15,7 +15,10 @@
     "target": "es2022",
     "baseUrl": ".",
     "paths": {
-      "@voxpopuli/shared-types": ["libs/shared-types/src/index.ts"]
+      "@voxpopuli/shared-types": ["libs/shared-types/src/index.ts"],
+      "@langchain/langgraph/prebuilt": [
+        "node_modules/@langchain/langgraph/dist/prebuilt/index.d.ts"
+      ]
     }
   }
 }
