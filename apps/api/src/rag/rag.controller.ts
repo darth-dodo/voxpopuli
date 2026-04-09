@@ -14,7 +14,9 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import type { AgentResponse } from '@voxpopuli/shared-types';
+import { PipelineConfigSchema } from '@voxpopuli/shared-types';
 import { AgentService } from '../agent/agent.service';
+import { OrchestratorService } from '../agent/orchestrator.service';
 import { CacheService } from '../cache/cache.service';
 import { RagQueryDto } from './dto/rag-query.dto';
 
@@ -40,7 +42,11 @@ export class RagController {
   /** Simple global rate limiter — timestamps of recent requests. */
   private readonly requestTimestamps: number[] = [];
 
-  constructor(private readonly agent: AgentService, private readonly cache: CacheService) {}
+  constructor(
+    private readonly agent: AgentService,
+    private readonly orchestrator: OrchestratorService,
+    private readonly cache: CacheService,
+  ) {}
 
   /**
    * Execute a RAG query and return the full agent response.
@@ -80,6 +86,7 @@ export class RagController {
   stream(
     @Query('query') query: string,
     @Query('provider') provider?: string,
+    @Query('useMultiAgent') useMultiAgent?: string,
   ): Observable<MessageEvent> {
     if (!query || query.length > 500) {
       throw new HttpException(
@@ -90,6 +97,17 @@ export class RagController {
 
     this.enforceRateLimit();
 
+    if (useMultiAgent === 'true') {
+      return this.streamMultiAgent(query, provider);
+    }
+
+    return this.streamLegacy(query, provider);
+  }
+
+  /**
+   * Legacy streaming path — delegates to AgentService.runStream().
+   */
+  private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       const generator = this.agent.runStream(query, { provider });
 
@@ -122,6 +140,78 @@ export class RagController {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.logger.error(`Stream error: ${message}`, err instanceof Error ? err.stack : '');
+          subscriber.next({
+            type: 'error',
+            data: JSON.stringify({ message }),
+          } as MessageEvent);
+          subscriber.complete();
+        }
+      })();
+    });
+  }
+
+  /**
+   * Multi-agent pipeline streaming path — delegates to OrchestratorService.runWithFallback().
+   *
+   * Maps pipeline events to SSE types:
+   * - `kind: 'pipeline'` → SSE type `pipeline`
+   * - `kind: 'step'`     → SSE type matching `step.type` (thought/action/observation)
+   * - `kind: 'token'`    → SSE type `token`
+   * - `kind: 'complete'` → SSE type `answer`
+   */
+  private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((subscriber) => {
+      const parsed = PipelineConfigSchema.safeParse({
+        providerMap: provider
+          ? { retriever: provider, synthesizer: provider, writer: provider }
+          : undefined,
+      });
+      const config = parsed.success ? parsed.data : PipelineConfigSchema.parse({});
+
+      const generator = this.orchestrator.runWithFallback(query, config);
+
+      (async () => {
+        try {
+          for await (const event of generator) {
+            if (event.kind === 'pipeline') {
+              subscriber.next({
+                type: 'pipeline',
+                data: JSON.stringify(event.event),
+              } as MessageEvent);
+            } else if (event.kind === 'step') {
+              subscriber.next({
+                type: event.step.type,
+                data: JSON.stringify({
+                  content: event.step.content,
+                  toolName: event.step.toolName,
+                  toolInput: event.step.toolInput,
+                  timestamp: event.step.timestamp,
+                }),
+              } as MessageEvent);
+            } else if (event.kind === 'token') {
+              subscriber.next({
+                type: 'token',
+                data: JSON.stringify({ content: event.content }),
+              } as MessageEvent);
+            } else if (event.kind === 'complete') {
+              subscriber.next({
+                type: 'answer',
+                data: JSON.stringify({
+                  answer: event.response.answer,
+                  sources: event.response.sources,
+                  trust: event.response.trust,
+                  meta: event.response.meta,
+                }),
+              } as MessageEvent);
+            }
+          }
+          subscriber.complete();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.error(
+            `Multi-agent stream error: ${message}`,
+            err instanceof Error ? err.stack : '',
+          );
           subscriber.next({
             type: 'error',
             data: JSON.stringify({ message }),

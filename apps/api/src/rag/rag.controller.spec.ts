@@ -4,6 +4,7 @@ import { lastValueFrom, toArray } from 'rxjs';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
 import { RagController } from './rag.controller';
 import { AgentService } from '../agent/agent.service';
+import { OrchestratorService } from '../agent/orchestrator.service';
 import { CacheService } from '../cache/cache.service';
 
 // Mock LLM providers to avoid loading @langchain/* ESM packages
@@ -83,16 +84,19 @@ async function* mockRunStream(
 describe('RagController', () => {
   let controller: RagController;
   let agentService: { run: jest.Mock; runStream: jest.Mock };
+  let orchestratorService: { runWithFallback: jest.Mock };
   let cacheService: { getOrSet: jest.Mock };
 
   beforeEach(async () => {
     agentService = { run: jest.fn(), runStream: jest.fn() };
+    orchestratorService = { runWithFallback: jest.fn() };
     cacheService = { getOrSet: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RagController],
       providers: [
         { provide: AgentService, useValue: agentService },
+        { provide: OrchestratorService, useValue: orchestratorService },
         { provide: CacheService, useValue: cacheService },
       ],
     }).compile();
