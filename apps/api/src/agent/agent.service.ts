@@ -141,6 +141,8 @@ export class AgentService {
 
       let finalAnswer = '';
       let actionCount = 0;
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
 
       try {
         for await (const event of stream) {
@@ -156,6 +158,13 @@ export class AgentService {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const lastMsg = messages[messages.length - 1] as any;
           if (!lastMsg) continue;
+
+          // Track token usage from LangChain's usage_metadata on AI messages
+          if (lastMsg.usage_metadata) {
+            const usage = lastMsg.usage_metadata;
+            if (usage.input_tokens) totalInputTokens += usage.input_tokens;
+            if (usage.output_tokens) totalOutputTokens += usage.output_tokens;
+          }
 
           // Tool call — record and yield as action step
           if (lastMsg.tool_calls?.length) {
@@ -287,8 +296,8 @@ export class AgentService {
           trust: computeTrustMetadata(steps, sources, finalAnswer),
           meta: {
             provider: options?.provider ?? this.llm.getProviderName(),
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
+            totalInputTokens,
+            totalOutputTokens,
             durationMs,
             cached: false,
           },

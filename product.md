@@ -938,6 +938,8 @@ Without caching, development burns through rate limits in an afternoon. Caching 
 
 Success metrics (Section 15) are aspirational without tooling to measure them. The eval harness catches regressions when you change the system prompt, swap providers, or modify chunking.
 
+**LangSmith integration:** Since VoxPopuli uses LangChain.js for the agent, LangSmith provides automatic tracing (every agent step, tool call, token count) and an `evaluate()` function that handles the run loop, concurrency, and result storage. The eval harness uses a hybrid approach: queries are version-controlled locally in `queries.json`, synced to a LangSmith dataset on each run, with results saved both to LangSmith (dashboard) and locally (JSON). LangSmith's free tier (5k traces/month) is sufficient.
+
 ### 12.2 Test Query Format
 
 **File:** `evals/queries.json`
@@ -980,33 +982,56 @@ Success metrics (Section 15) are aspirational without tooling to measure them. T
 | **Latency**           | Total duration vs target                    | 15%    |
 | **Cost**              | Total tokens vs $0.05 ceiling               | 10%    |
 
-**LLM-as-judge:** A separate cheap model call (Haiku or equivalent) evaluates the answer against expected qualities.
+**LLM-as-judge:** A direct Mistral API call evaluates the answer against expected qualities. Configurable via `EVAL_JUDGE_PROVIDER` env var. The judge strips markdown fences from LLM responses and is fully decoupled from the NestJS app -- it makes its own HTTP call to the provider's OpenAI-compatible endpoint. When LangSmith is enabled, individual evaluator scores are posted as feedback to each trace.
 
 ### 12.4 Running Evals
 
+**Prerequisites:** Running VoxPopuli API (`npx nx serve api`), at least one LLM provider key configured. Optionally, `LANGSMITH_API_KEY` for dashboard integration.
+
+**CLI** (commander-based):
+
 ```bash
-# Single provider
-npx tsx evals/run-eval.ts
-
-# Specific provider
-LLM_PROVIDER=groq npx tsx evals/run-eval.ts
-
-# Compare all providers
-npx tsx evals/run-eval.ts --compare claude,mistral,groq
+npx tsx evals/run-eval.ts --help              # Show all options
+npx tsx evals/run-eval.ts --list              # Browse queries by category
+npx tsx evals/run-eval.ts -p mistral          # Single provider
+npx tsx evals/run-eval.ts -p mistral -n 5     # Max parallelism
+npx tsx evals/run-eval.ts --no-judge -n 5     # Fast mode (skip LLM-as-judge)
+npx tsx evals/run-eval.ts -C trust            # Trust queries only
+npx tsx evals/run-eval.ts -q q01              # Single query debug
+npx tsx evals/run-eval.ts --dry-run           # Preview without running
+npx tsx evals/run-eval.ts -c groq,mistral     # Compare providers
 ```
 
-Results saved to `evals/results/` with timestamps. Run after every agent-related change.
+| Flag                | Default            | Description                               |
+| ------------------- | ------------------ | ----------------------------------------- |
+| `-p, --provider`    | `LLM_PROVIDER` env | Provider to evaluate                      |
+| `-c, --compare`     | —                  | Comma-separated providers to compare      |
+| `-q, --query`       | —                  | Run a single query by ID                  |
+| `-C, --category`    | —                  | Filter queries by category                |
+| `--list`            | —                  | List all queries grouped by category      |
+| `--dry-run`         | —                  | Preview matched queries without executing |
+| `-n, --concurrency` | 3                  | Parallel query execution (max 5)          |
+| `--timeout`         | 300s               | Per-query timeout                         |
+| `--no-judge`        | —                  | Skip LLM-as-judge quality evaluator       |
+| `--no-langsmith`    | —                  | Disable LangSmith integration             |
 
-### 12.5 Initial Test Suite (20 queries)
+**Pass threshold:** 0.6 weighted score. Results saved to `evals/results/` with timestamps. If `LANGSMITH_API_KEY` is set, results also appear in the LangSmith dashboard with full agent traces and per-evaluator feedback scores. Run after every agent-related change.
 
-| Category           | Count | Examples                                |
-| ------------------ | ----- | --------------------------------------- |
-| Tool comparisons   | 5     | "Rust vs Go", "React vs Svelte"         |
-| Opinion/sentiment  | 4     | "What does HN think about remote work?" |
-| Specific projects  | 3     | "Has anyone used Turso in production?"  |
-| Recent events      | 3     | "Latest AI agent frameworks"            |
-| Deep-dive requests | 3     | "Best arguments against microservices"  |
-| Edge cases         | 2     | Gibberish input, non-HN questions       |
+**Token tracking:** The agent reports real token counts from LangChain `usage_metadata`, enabling accurate cost scoring.
+
+### 12.5 Test Suite (27 queries: 20 general + 7 trust)
+
+| Category           | Count | Examples                                                                                              |
+| ------------------ | ----- | ----------------------------------------------------------------------------------------------------- |
+| Tool comparisons   | 5     | "Rust vs Go", "React vs Svelte"                                                                       |
+| Opinion/sentiment  | 4     | "What does HN think about remote work?"                                                               |
+| Specific projects  | 3     | "Has anyone used Turso in production?"                                                                |
+| Recent events      | 3     | "Latest AI agent frameworks"                                                                          |
+| Deep-dive requests | 3     | "Best arguments against microservices"                                                                |
+| Edge cases         | 2     | Gibberish input, non-HN questions                                                                     |
+| Trust (M5)         | 7     | Source verification, consensus honesty, recency awareness (t06/t07 skipped pending M5 implementation) |
+
+**First real run (Mistral):** 52% pass rate (13/25 passed). Baseline for regression tracking.
 
 ---
 

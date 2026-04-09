@@ -136,7 +136,7 @@ voxpopuli/
 |       +-- services/      # rag.service.ts
 +-- libs/
 |   +-- shared-types/src/  # All shared interfaces (AgentResponse, AgentStep, etc.)
-+-- evals/                 # queries.json, run-eval.ts, score.ts, results/
++-- evals/                 # Eval harness: queries.json, run-eval.ts, evaluators/, feedback.ts, results/
 ```
 
 ---
@@ -247,7 +247,7 @@ The ReAct loop. See product.md Section 3.3 for the pattern and Section 8 for too
 | `run(query, options)`       | Execute full ReAct loop, return AgentResponse |
 | `executeTool(name, params)` | Dispatch to HnService, return chunked results |
 
-**Constraints:** Max 7 steps, 60s global timeout, 5 concurrent runs (semaphore).
+**Constraints:** Max 7 steps, 180s global timeout, 5 concurrent runs (semaphore).
 
 **Tools:** `search_hn`, `get_story`, `get_comments`. Defined in `tools.ts`, system prompt in `system-prompt.ts`.
 
@@ -446,7 +446,7 @@ Epic (Linear Project or Cycle)
 - **Story: Implement AgentService.run()** (AI-118) -- DONE
   - Uses LangChain `createAgent` (v1.2+) instead of `createReactAgent` + `AgentExecutor`
   - Streaming via `.stream()` with `streamMode: "values"`
-  - Max 7 steps via `recursionLimit`, 60s timeout via `AbortSignal.timeout()`
+  - Max 7 steps via `recursionLimit`, 180s timeout via `AbortSignal.timeout()`
   - Concurrent run semaphore (max 5, simple counter)
   - Returns `AgentResponse` with steps, sources, trust metadata
 - **Story: Implement trust metadata** (AI-160) -- DONE (source verification, recency, viewpoint diversity, Show HN detection, honesty flags)
@@ -529,33 +529,161 @@ Epic (Linear Project or Cycle)
 
 ---
 
-### Milestone 6: Eval Harness
+### Milestone 6: Eval Harness -- COMPLETE
 
 **Goal:** Automated quality checks catch regressions in agent behavior.
-**Demo:** Run `npx tsx evals/run-eval.ts` and get a scored report.
+**Demo:** Run `npx tsx evals/run-eval.ts --provider groq` and get a scored report with per-query pass/fail, weighted scores, and timing. View traces and experiment comparisons in LangSmith dashboard.
+**Status:** DONE -- first real run: 52% pass rate (13/25 passed), 32 evaluator unit tests.
+
+**Approach:** Hybrid -- local `queries.json` (version-controlled) + LangSmith for tracing, feedback sync, and dashboard. Results saved both to LangSmith and locally in `evals/results/`.
+
+**Dependencies:** `langsmith` SDK, `tsx`, `dotenv`, `commander`. LangSmith free tier (5k traces/month).
+
+**CLI usage:**
+
+```bash
+# Run all queries against default provider
+npx tsx evals/run-eval.ts
+
+# Run against a specific provider
+npx tsx evals/run-eval.ts --provider groq
+
+# Run a single query by ID
+npx tsx evals/run-eval.ts --query q01
+
+# Filter by category
+npx tsx evals/run-eval.ts --category trust
+
+# Compare two providers side-by-side
+npx tsx evals/run-eval.ts --compare groq,mistral
+
+# Fast mode (skip LLM-as-judge)
+npx tsx evals/run-eval.ts --no-judge
+
+# List available queries
+npx tsx evals/run-eval.ts --list
+
+# Dry run (show what would execute)
+npx tsx evals/run-eval.ts --dry-run
+
+# Custom timeout and concurrency
+npx tsx evals/run-eval.ts --timeout 600 --concurrency 5
+
+# Disable LangSmith sync
+npx tsx evals/run-eval.ts --no-langsmith
+```
+
+**Commander CLI flags:**
+
+| Flag                  | Alias | Default         | Description                       |
+| --------------------- | ----- | --------------- | --------------------------------- |
+| `--provider <name>`   | `-p`  | `$LLM_PROVIDER` | LLM provider to eval              |
+| `--compare <a,b>`     | `-c`  | --              | Side-by-side provider comparison  |
+| `--query <id>`        | `-q`  | --              | Run a single query by ID          |
+| `--category <name>`   | `-C`  | --              | Filter queries by category        |
+| `--list`              |       | false           | List available queries and exit   |
+| `--dry-run`           |       | false           | Show what would execute           |
+| `--no-langsmith`      |       | false           | Disable LangSmith sync            |
+| `--timeout <seconds>` | `-t`  | 300             | Per-query timeout in seconds      |
+| `--concurrency <n>`   | `-n`  | 3               | Parallel query execution (max 5)  |
+| `--no-judge`          |       | false           | Skip LLM-as-judge for faster runs |
+
+#### Project Structure
+
+```
+evals/
+├── queries.json              # 27 test queries (20 general + 7 trust)
+├── types.ts                  # EvalQuery, EvalRunResult, EvalScore, EvalReport, EvaluatorResult
+├── run-eval.ts               # CLI entry point (commander)
+├── dataset.ts                # Query loading + LangSmith dataset sync
+├── score.ts                  # Score aggregation, reporting, comparison tables
+├── feedback.ts               # Post eval scores to LangSmith as run feedback
+├── evaluators/
+│   ├── source-accuracy.ts    # Firebase URL verification
+│   ├── quality-judge.ts      # Mistral LLM-as-judge (strips markdown fences)
+│   ├── efficiency.ts         # Steps vs maxAcceptableSteps
+│   ├── latency.ts            # Provider-aware timing tiers
+│   ├── cost.ts               # Token cost estimation vs $0.05 ceiling
+│   └── __tests__/            # 5 test files, 32 tests total
+├── results/.gitignore        # JSON results gitignored
+└── tsconfig.json
+```
 
 #### Epic 6.1: Evaluation System
 
-- **Story: Create eval test queries**
+- **Story: Install eval dependencies** -- DONE
 
-  - Write 20 queries in `evals/queries.json`
-  - 5 categories: tool comparisons, opinion, specific projects, recent events, edge cases
-  - Each with `expectedQualities`, `expectedMinSources`, `maxAcceptableSteps`
+  - Added `langsmith`, `tsx`, `dotenv`, `commander` as devDependencies
+  - Created `evals/tsconfig.json` extending `tsconfig.base.json`
+  - Added `eval` and `eval:compare` npm scripts
+  - Created `evals/results/.gitignore`
 
-- **Story: Implement eval runner**
+- **Story: Create eval test queries** -- DONE
 
-  - `evals/run-eval.ts` -- run each query through the agent
-  - Collect AgentResponse + timing + token usage
-  - Support `--compare` flag for multi-provider comparison
-  - Save timestamped results to `evals/results/`
+  - 27 queries in `evals/queries.json`
+  - 7 categories: tool comparisons (5), opinion (4), specific projects (3), recent events (3), deep-dive (3), edge cases (2), trust (7)
+  - Each with `id`, `query`, `category`, `expectedQualities`, `expectedMinSources`, `maxAcceptableSteps`
+  - Trust queries t06-t07 (podcast rewrite) deferred to M5
 
-- **Story: Implement eval scoring**
-  - `evals/score.ts` -- score each response
-  - Source accuracy (HTTP 200 check on URLs)
-  - Quality checklist (LLM-as-judge call)
-  - Efficiency (steps vs maxAcceptableSteps)
-  - Latency and cost scoring
-  - Weighted aggregate score
+- **Story: Write eval type definitions** -- DONE
+
+  - `EvalQuery`, `EvalRunResult`, `EvalScore`, `EvalReport`, `EvaluatorResult` in `evals/types.ts`
+  - Import `AgentResponse` from `@voxpopuli/shared-types`
+
+- **Story: Implement source accuracy evaluator** -- DONE
+
+  - Firebase URL verification of `AgentSource.url`
+  - `Promise.allSettled` with 5s timeout per request
+  - Unit tests with mocked fetch
+
+- **Story: Implement LLM-as-judge quality checklist evaluator** -- DONE
+
+  - Mistral LLM-as-judge (decoupled from NestJS)
+  - Checks each `expectedQuality` as PRESENT/ABSENT
+  - Strips markdown code fences from Mistral responses before JSON parsing
+  - Configurable judge provider via `EVAL_JUDGE_PROVIDER` env var
+  - `--no-judge` flag skips LLM-as-judge for faster iteration
+  - Unit tests with mocked API
+
+- **Story: Implement efficiency, latency, and cost evaluators** -- DONE
+
+  - Efficiency: linear scoring against `maxAcceptableSteps`
+  - Latency: provider-aware tiered scoring (6s/13s/30s thresholds)
+  - Cost: token-based estimation using real token counts from LangChain `usage_metadata`
+  - 32 unit tests total across evaluator test suite
+
+- **Story: Implement eval runner with Commander CLI** -- DONE
+
+  - `run-eval.ts` CLI via Commander with full flag set (see CLI flags table above)
+  - Health check verifies API is reachable before running
+  - Parallel execution with configurable concurrency (default 3, max 5 to match API semaphore)
+  - Per-query output: status icons (pass/fail/error), weighted score, elapsed time
+  - Summary: pass/fail/error counts with overall pass rate
+  - `dataset.ts`: sync `queries.json` to LangSmith dataset
+  - Falls back to local-only mode without LangSmith API key
+  - Saves results to `evals/results/{timestamp}-{provider}.json`
+
+- **Story: Implement score aggregation and reporting** -- DONE
+
+  - Weighted scoring: source (30%), quality (30%), efficiency (15%), latency (15%), cost (10%)
+  - Summary table with pass/fail/error counts printed to stdout
+  - `--compare` mode: side-by-side provider comparison table
+
+- **Story: Implement LangSmith feedback sync** -- DONE
+
+  - `feedback.ts`: posts eval scores as feedback on matching LangSmith runs
+  - LangChain auto-traces when `LANGSMITH_TRACING=true` (no code changes needed)
+  - LangSmith env vars added to `.env.example`
+
+- **Story: Add token tracking to agent service** -- DONE
+
+  - Agent now reports real token counts from LangChain `usage_metadata`
+  - Previously hardcoded to 0, now tracks actual input/output tokens per run
+
+- **Story: Update documentation for M6** -- IN PROGRESS
+
+  - Update `architecture.md`, `product.md`, `CLAUDE.md`
+  - Add eval commands to development docs
 
 ---
 
@@ -569,20 +697,22 @@ graph LR
     M3 --> M5["M5: Voice<br/>Output"]
     M3 --> M6["M6: Eval<br/>Harness"]
     M4 --> M5
+    M3 --> M7["M7: Deploy &<br/>Observability"]
 
     style M1 fill:#d1fae5,stroke:#065f46
     style M2 fill:#d1fae5,stroke:#065f46
-    style M3 fill:#fef3c7,stroke:#92400e
-    style M4 fill:#dbeafe,stroke:#1e40af
+    style M3 fill:#d1fae5,stroke:#065f46
+    style M4 fill:#d1fae5,stroke:#065f46
     style M5 fill:#ede9fe,stroke:#5b21b6
-    style M6 fill:#fce7f3,stroke:#be185d
+    style M6 fill:#d1fae5,stroke:#065f46
+    style M7 fill:#d1fae5,stroke:#065f46
 ```
 
 **Critical path:** M1 -> M2 -> M3 -> M4
 
 **Parallel after M3:** M5 (voice) and M6 (evals) can run in parallel with M4, but M5's frontend depends on M4.
 
-**Current status:** M1 and M2 complete. M3 (Agent Core) is next on the critical path.
+**Current status:** M1-M4 and M6 complete. M7 (Deploy) ~87% done. M5 (Voice Output) is next.
 
 ---
 
@@ -590,18 +720,19 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone                 | Stories | Depends On | Status      |
-| ----- | ------------------------- | ------- | ---------- | ----------- |
-| 1     | M1: Scaffold & Data Layer | 16      | --         | COMPLETE    |
-| 2     | M2: LLM & Chunker         | 8       | M1         | COMPLETE    |
-| 3     | M3: Agent Core            | 8       | M2         | Not started |
-| 4     | M6: Eval Harness          | 3       | M3         | Not started |
-| 5     | M4: Frontend              | 6       | M3         | Not started |
-| 6     | M5: Voice Output          | 5       | M3, M4     | Not started |
+| Order | Milestone                  | Stories | Depends On | Status      |
+| ----- | -------------------------- | ------- | ---------- | ----------- |
+| 1     | M1: Scaffold & Data Layer  | 16      | --         | COMPLETE    |
+| 2     | M2: LLM & Chunker          | 8       | M1         | COMPLETE    |
+| 3     | M3: Agent Core             | 14      | M2         | COMPLETE    |
+| 4     | M4: Frontend               | 22      | M3         | COMPLETE    |
+| 5     | M7: Deploy & Observability | 13      | M3         | ~87%        |
+| 6     | M6: Eval Harness           | 12      | M3         | COMPLETE    |
+| 7     | M5: Voice Output           | 5       | M3, M4     | Not started |
 
-**Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
+**Why evals now?** With M3 (agent) and M4 (frontend) complete and M7 (deploy) nearly done, the eval harness is the highest-impact next milestone. It catches regressions when tweaking the system prompt, chunker, or token budgets. LangSmith integration provides tracing and a dashboard for free since VoxPopuli already uses LangChain.js.
 
-**Total: 6 milestones, 12 epics, 46 stories.**
+**Total: 7 milestones, ~80 stories.**
 
 ---
 
@@ -623,33 +754,49 @@ ELEVENLABS_MODEL=eleven_multilingual_v2
 
 # Server
 PORT=3000
+
+# LangSmith (optional -- leave empty to disable tracing and eval dashboard)
+LANGSMITH_API_KEY=
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=voxpopuli-evals
+
+# Eval config
+EVAL_API_URL=http://localhost:3000
+EVAL_JUDGE_PROVIDER=mistral
 ```
 
 ---
 
 ## 7. Key Technical Constraints
 
-| Constraint               | Value        | Rationale                                |
-| ------------------------ | ------------ | ---------------------------------------- |
-| Max agent steps          | 7            | Cost + latency cap                       |
-| Agent timeout            | 60s          | Prevent runaway loops                    |
-| Concurrent agents        | 5            | Prevent cost blowout                     |
-| Comment cap              | 30 per story | Firebase API latency                     |
-| Query max length         | 500 chars    | Input sanity                             |
-| Rate limit (per IP)      | 10 req/min   | Abuse prevention                         |
-| Rate limit (global)      | 60 req/min   | Cost protection                          |
-| Cache TTL (search)       | 15 min       | Freshness vs cost                        |
-| Cache TTL (stories)      | 1 hour       | Stable data                              |
-| Cache TTL (comments)     | 30 min       | Semi-stable data                         |
-| Cache TTL (query result) | 10 min       | Token savings                            |
-| Context window (Claude)  | 200k tokens  | `claude-sonnet-4-20250514` via LangChain |
-| Context window (Mistral) | 262k tokens  | `mistral-large-latest` via LangChain     |
-| Context window (Groq)    | 128k tokens  | `llama-3.3-70b-versatile` via LangChain  |
-| Token budget (Claude)    | 80k of 200k  | Conservative headroom                    |
-| Token budget (Mistral)   | 100k of 262k | Conservative headroom                    |
-| Token budget (Groq)      | 50k of 128k  | Conservative headroom                    |
-| Token estimation         | 1 char / 4   | Character-based, no tiktoken dependency  |
-| TTS max chars            | 2500         | ElevenLabs streaming limit               |
+| Constraint               | Value          | Rationale                                 |
+| ------------------------ | -------------- | ----------------------------------------- |
+| Max agent steps          | 7              | Cost + latency cap                        |
+| Agent timeout            | 180s           | Prevent runaway loops                     |
+| Concurrent agents        | 5              | Prevent cost blowout                      |
+| Comment cap              | 30 per story   | Firebase API latency                      |
+| Query max length         | 500 chars      | Input sanity                              |
+| Rate limit (per IP)      | 10 req/min     | Abuse prevention                          |
+| Rate limit (global)      | 60 req/min     | Cost protection                           |
+| Cache TTL (search)       | 15 min         | Freshness vs cost                         |
+| Cache TTL (stories)      | 1 hour         | Stable data                               |
+| Cache TTL (comments)     | 30 min         | Semi-stable data                          |
+| Cache TTL (query result) | 10 min         | Token savings                             |
+| Context window (Claude)  | 200k tokens    | `claude-sonnet-4-20250514` via LangChain  |
+| Context window (Mistral) | 262k tokens    | `mistral-large-latest` via LangChain      |
+| Context window (Groq)    | 128k tokens    | `llama-3.3-70b-versatile` via LangChain   |
+| Token budget (Claude)    | 80k of 200k    | Conservative headroom                     |
+| Token budget (Mistral)   | 100k of 262k   | Conservative headroom                     |
+| Token budget (Groq)      | 50k of 128k    | Conservative headroom                     |
+| Token estimation         | 1 char / 4     | Character-based, no tiktoken dependency   |
+| TTS max chars            | 2500           | ElevenLabs streaming limit                |
+| Eval query count         | 27             | 20 general + 7 trust-specific             |
+| Eval default timeout     | 300s           | Per-query timeout (configurable via CLI)  |
+| Eval concurrency         | 3 (max 5)      | Parallel queries, capped at API semaphore |
+| Eval pass threshold      | 0.6 weighted   | Minimum score for a query to "pass"       |
+| Eval judge provider      | Mistral        | Default for LLM-as-judge calls            |
+| Eval score weights       | 30/30/15/15/10 | Source/Quality/Efficiency/Latency/Cost    |
+| LangSmith free tier      | 5k traces/mo   | Sufficient for eval harness usage         |
 
 ---
 

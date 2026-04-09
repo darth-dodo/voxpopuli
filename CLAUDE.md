@@ -41,7 +41,14 @@ apps/web/src/app/      # Angular frontend (Data Noir Editorial design system)
     rag.service.ts      #     HTTP + SSE client for RAG endpoints
 libs/shared-types/     # @voxpopuli/shared-types (all API contracts + trust framework types)
 docs/adr/              # Architecture Decision Records
-evals/                 # Evaluation harness (queries, runner, scorer)
+evals/                 # Evaluation harness (queries, runner, scorer, LangSmith integration)
+  queries.json         #   27 test queries (20 general + 7 trust-specific)
+  run-eval.ts          #   CLI entry point (commander)
+  dataset.ts           #   LangSmith dataset sync helper
+  score.ts             #   Score aggregation and reporting
+  feedback.ts          #   Post eval scores to LangSmith as run feedback
+  types.ts             #   EvalQuery, EvalRunResult, EvalScore, EvalReport
+  evaluators/          #   Custom evaluators (source-accuracy, quality-judge, efficiency, latency, cost)
 ```
 
 ## Development Commands
@@ -54,7 +61,16 @@ npx nx affected:test      # Run tests for changed code only
 npx nx affected:lint      # Lint changed code only
 npx nx build api          # Build backend
 npx nx build web          # Build frontend
-npx tsx evals/run-eval.ts # Run eval harness
+npx tsx evals/run-eval.ts               # Run eval harness (requires running API)
+npx tsx evals/run-eval.ts --help         # Show all CLI options
+npx tsx evals/run-eval.ts --list         # Browse queries by category
+npx tsx evals/run-eval.ts -p mistral     # Run with specific provider
+npx tsx evals/run-eval.ts -p groq -n 5   # Max parallelism (5 concurrent)
+npx tsx evals/run-eval.ts --no-judge     # Fast mode (skip LLM-as-judge)
+npx tsx evals/run-eval.ts -C trust       # Run only trust category
+npx tsx evals/run-eval.ts -q q01         # Single query for debugging
+npx tsx evals/run-eval.ts --dry-run      # Preview without calling API
+npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 ```
 
 ## Code Conventions
@@ -98,16 +114,22 @@ npx tsx evals/run-eval.ts # Run eval harness
 
 ## Key Constraints
 
-| Constraint            | Value                                                   |
-| --------------------- | ------------------------------------------------------- |
-| Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit) |
-| Agent timeout         | 180s                                                    |
-| Concurrent agents     | 5 (semaphore)                                           |
-| Comment cap per story | 30                                                      |
-| Query max length      | 500 chars                                               |
-| Rate limit (global)   | 60 req/min                                              |
-| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                             |
-| TTS max chars         | 2500                                                    |
+| Constraint            | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit)        |
+| Agent timeout         | 180s                                                           |
+| Concurrent agents     | 5 (semaphore)                                                  |
+| Comment cap per story | 30                                                             |
+| Query max length      | 500 chars                                                      |
+| Rate limit (global)   | 60 req/min                                                     |
+| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                                    |
+| TTS max chars         | 2500                                                           |
+| Eval query count      | 27 (20 general + 7 trust)                                      |
+| Eval pass threshold   | 0.6 weighted score                                             |
+| Eval judge provider   | Mistral (configurable via EVAL_JUDGE_PROVIDER)                 |
+| Eval score weights    | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10% |
+| Eval concurrency      | 3 default, 5 max                                               |
+| Eval timeout          | 300s default per query                                         |
 
 ## Environment Variables
 
@@ -129,6 +151,11 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 12. **Angular 21 uses Vite-based dev server.** Proxy patterns need `/api/**` glob, not `/api`.
 13. **Tailwind v4 `@theme` spacing tokens override default utilities.** Don't define `--spacing-sm/md/lg/xl` as they shadow built-in spacing scale.
 14. **`model()` is required for two-way binding.** Use `model()` for `[()]` syntax, not `signal()`. Signals are read-only from the parent's perspective.
+15. **Eval harness is black-box.** Evaluators call the API over HTTP, never import NestJS services. The one exception: the LLM-as-judge makes direct Mistral API calls (not through the VoxPopuli API).
+16. **LangSmith tracing is automatic.** Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` -- LangChain.js handles the rest. No code changes needed in the agent.
+17. **Eval queries.json is the source of truth.** The LangSmith dataset is synced from this file on each run. Edit queries in the JSON file, not the LangSmith UI.
+18. **LLM judge strips markdown fences.** If you change the judge provider, verify it handles fencing correctly -- some providers wrap JSON output in triple-backtick blocks.
+19. **Agent token tracking uses LangChain `usage_metadata`.** If tokens show as 0, the provider may not report them.
 
 ## Architecture Decision Records
 
