@@ -1,8 +1,8 @@
 # VoxPopuli — Product Specification
 
-**Version:** 2.0.0
+**Version:** 3.0.0
 **Status:** Final Draft
-**Last Updated:** April 3, 2026
+**Last Updated:** April 8, 2026
 **Author:** Abhishek Juneja
 
 > _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
@@ -11,12 +11,13 @@
 
 ## Revision Log
 
-| Version | Date       | Changes                                                                                                                                                                                            |
-| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                   |
-| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                          |
-| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq) |
-| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                      |
+| Version | Date       | Changes                                                                                                                                                                                                                                             |
+| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout |
+| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                    |
+| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                           |
+| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                  |
+| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                       |
 
 ---
 
@@ -24,7 +25,7 @@
 
 VoxPopuli is an **agentic RAG (Retrieval-Augmented Generation) system** that turns Hacker News into a queryable knowledge base. Ask a question in natural language. The agent searches HN stories, crawls comment threads, reasons about what it finds, and delivers a sourced, synthesized answer -- with full transparency into its reasoning process.
 
-It is not a chatbot wrapper. It is an autonomous research agent that decides what to search, what to read deeper, and when it has enough to answer.
+It is not a chatbot wrapper. It is a **multi-agent research pipeline** where specialized agents handle retrieval, synthesis, and composition independently -- each optimized for its cognitive task, with different LLM providers assigned per stage.
 
 **One-liner:** _"Ask anything. Get the internet's smartest crowd-sourced answer, with receipts."_
 
@@ -126,21 +127,50 @@ Comments are where the real knowledge lives. The agent:
 
 **Why 30, not 50 or 100?** Each Firebase comment fetch is an individual HTTP call. A 400-comment thread means 400 requests. At 30 comments (top-level + high-signal nested), we get the best signal-to-noise ratio while keeping comment fetch time under 3 seconds. The agent can always fetch comments from multiple stories if it needs broader coverage.
 
-### 3.3 Agentic Reasoning (ReAct Loop)
+### 3.3 Multi-Agent Pipeline
 
-The agent follows the **ReAct** pattern (Yao et al., 2022):
+**New in v3.0.** The single ReAct agent is replaced by a three-stage pipeline, each stage optimized for one cognitive task.
 
 ```
-THINK  ->  "I need opinions from practitioners, not just blog posts."
-ACT    ->  get_comments(story_id: 39201844)
-OBSERVE -> 28 comments fetched. Top comment discusses migration pain.
-THINK  ->  "I have search results + comments. Enough to answer."
-RESPOND -> Synthesized answer with citations.
+┌─────────────┐    EvidenceBundle    ┌──────────────┐    Analysis    ┌─────────────┐
+│  RETRIEVER  │ ──────────────────▶  │  SYNTHESIZER │ ────────────▶ │   WRITER    │
+│  (ReAct)    │                      │ (single-pass)│               │(single-pass)│
+│             │                      │              │               │             │
+│ Search HN   │                      │ Find patterns│               │ Craft prose │
+│ Fetch data  │                      │ Spot conflict│               │ Add structure│
+│ COMPACT     │                      │ Rate signal  │               │ Cite sources │
+└─────────────┘                      └──────────────┘               └─────────────┘
+       ▲                                                                   │
+       │                        ┌──────────────┐                           │
+       └─────────────────────── │ ORCHESTRATOR │ ◀─────────────────────────┘
+                                └──────────────┘
 ```
 
-Every step is logged and exposed to the frontend. Full transparency. No black box.
+**Why three agents:**
 
-Source: [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
+| Agent       | Needs tools?                             | Needs iteration?                   | Pattern                           |
+| ----------- | ---------------------------------------- | ---------------------------------- | --------------------------------- |
+| Retriever   | Yes (search_hn, get_story, get_comments) | Yes (may need follow-up searches)  | **ReAct loop**                    |
+| Synthesizer | No (reasons over the bundle)             | No (one pass over structured data) | **Single-pass structured output** |
+| Writer      | No (composes from analysis)              | No (one pass to compose prose)     | **Single-pass structured output** |
+
+The Retriever collects raw HN data and **compacts** it into themed evidence groups (~600 tokens from 30+ comments). The Synthesizer extracts 3-5 insights ranked by evidence strength. The Writer turns structured analysis into readable prose with citations. No raw HN data crosses the Retriever boundary.
+
+**Provider allocation:**
+
+By default, all three agents use the **globally selected provider** (the `LLM_PROVIDER` env var or the UI provider selector). This keeps behavior consistent with the single-agent path and avoids requiring multiple API keys.
+
+| Agent       | Default Provider        | `optimized` Preset Provider           | Why (optimized)                                                |
+| ----------- | ----------------------- | ------------------------------------- | -------------------------------------------------------------- |
+| Retriever   | Global (`LLM_PROVIDER`) | **Groq** (Llama 3.3 70B)              | Speed. Multiple tool calls need fast inference.                |
+| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-sonnet-4-20250514) | Reasoning depth. Pattern extraction needs the strongest model. |
+| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-large-latest)    | Cost-optimized. Structured prose from structured input.        |
+
+Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (Groq/Claude/Mistral split), `speed` (all Groq), `cost` (all Mistral).
+
+**Feature flag:** `PipelineConfig.useMultiAgent` controls rollout. When `false`, falls back to the legacy single ReAct agent.
+
+**Legacy compatibility:** The original ReAct agent (Section 3.3 in v2.0) remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path.
 
 ### 3.4 Sourced Answers
 
@@ -281,15 +311,14 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 |                                                          |
 |  +---------+  +--------------+  +----------------+      |
 |  | Chat UI |  | Agent Steps  |  | Source Cards    |     |
-|  |         |  | (live viz)   |  |                 |     |
-|  +----+----+  +------+-------+  +-------+--------+     |
-|  |  [Listen]  |      |                  |               |
-|  |  Audio     |      |                  |               |
-|  |  Player    |      |                  |               |
-+--+----+-------+------+------------------+---------------+
+|  |         |  | (pipeline    |  |                 |     |
+|  |  [Listen]  |  timeline)   |  | Trust Bar       |     |
+|  |  Audio     |              |  |                 |     |
+|  |  Player    |              |  |                 |     |
++--+----+-------+------+-------+--+-------+--------+-----+
         |              |                  |
         +--------------+------------------+
-                       | SSE / HTTP / Audio Stream
+                       | SSE (PipelineEvent) / HTTP / Audio
 +----------------------+--------------------------------------+
 |                   NestJS (api)                               |
 |                                                              |
@@ -301,22 +330,27 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 |  +---------------------------+---------------------------+   |
 |                              |                               |
 |  +---------------------------+---------------------------+   |
-|  |              Agent Service (ReAct Loop)                |  |
+|  |           Orchestrator Service                        |   |
+|  |   PipelineConfig → Retriever → Synthesizer → Writer   |   |
+|  |   SSE events at each stage transition                 |   |
+|  |   Fallback to legacy ReAct on error                   |   |
 |  +--------------------------------------------------------+  |
-|                     |                                        |
-|     +---------------+---------------+-----------+            |
-|     v               v               v           v            |
-|  +--------+  +----------+  +----------+  +-----------+      |
-|  |HN API  |  | Chunker  |  | LLM      |  | TTS       |     |
-|  |Service |  | Service  |  | Provider |  | Service   |     |
-|  |+ Cache |  |          |  |          |  |           |     |
-|  +---+----+  +----------+  +--+--+--+-+  +-----+-----+     |
-|      |                        |  |  |          |            |
-|      |                  Claude Mistral Groq  ElevenLabs     |
+|        |                |                |                    |
+|  +-----+------+  +------+-------+  +-----+------+           |
+|  | Retriever  |  | Synthesizer  |  |   Writer   |           |
+|  | (ReAct +   |  | (single-pass |  |(single-pass|           |
+|  |  Compactor)|  |  analysis)   |  |  prose)    |           |
+|  +-----+------+  +------+-------+  +-----+------+           |
+|        |                |                |                    |
+|     +--+---+        +---+---+        +---+---+               |
+|     |HN API|        | LLM   |        | LLM   |              |
+|     |+Cache|        |Service |        |Service |              |
+|     +--+---+        +--+----+        +--+----+               |
+|        |               |                |                     |
+|     Algolia       Claude/Groq      Mistral/Groq              |
+|     Firebase       (provider       (provider                  |
+|                    per stage)       per stage)                 |
 +------+------------------------------------------------------+
-       |
-       +-->  HN Algolia API (search)
-       +-->  HN Firebase API (items + comments)
 ```
 
 ### 4.2 Tech Stack
@@ -363,6 +397,10 @@ AppModule
 |       +-- run()          -> AgentResponse
 |       +-- executeTool()  -> tool results
 |       +-- imports: HnModule, ChunkerModule, LlmModule
+|   +-- RetrieverAgent (ReAct loop + compaction)
+|   +-- SynthesizerAgent (single-pass analysis)
+|   +-- WriterAgent (single-pass prose)
+|   +-- OrchestratorService (pipeline coordination)
 +-- RagModule
 |   +-- RagController
 |       +-- POST /api/rag/query
@@ -531,6 +569,38 @@ The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct pro
    +-- Answer text with inline citations
    +-- Source cards with links to HN threads
    +-- Meta bar: provider used, tokens consumed, time taken
+```
+
+### 6.1.1 Multi-Agent Pipeline Flow (v3.0)
+
+When `useMultiAgent: true` (default in v3.0):
+
+```
+1. User types: "What does HN think about Tailwind v4?"
+                    |
+2. Angular sends:   GET /api/rag/stream?query=...  (SSE)
+                    |
+3. RagController → OrchestratorService.run(query, config)
+                    |
+4. Stage 1: RETRIEVER (ReAct loop, Groq by default)
+   |  +-- search_hn("Tailwind v4") → 10 hits
+   |  +-- get_comments(39482731) → 30 comments
+   |  +-- search_hn("Tailwind CSS criticisms") → 8 hits
+   |  +-- RETRIEVAL_COMPLETE
+   |  +-- Compaction LLM call: 30+ raw items → 4 ThemeGroups (~600 tokens)
+   |  → SSE: { stage: 'retriever', status: 'done', summary: '4 themes from 47 sources' }
+                    |
+5. Stage 2: SYNTHESIZER (single-pass, Claude by default)
+   |  +-- Receives EvidenceBundle (4 themes, ~600 tokens)
+   |  +-- Extracts 3 insights, 1 contradiction, confidence: high
+   |  → SSE: { stage: 'synthesizer', status: 'done', summary: '3 insights, confidence: high' }
+                    |
+6. Stage 3: WRITER (single-pass, Mistral by default)
+   |  +-- Receives AnalysisResult + source metadata
+   |  +-- Composes headline, context, 3 sections, bottom line
+   |  → SSE: { stage: 'writer', status: 'done', summary: '3 sections' }
+                    |
+7. PipelineResult returned with intermediates for eval harness
 ```
 
 ### 6.2 Token Budget Management
@@ -804,6 +874,41 @@ LangChain handles the protocol plumbing, but we control:
 
 Source: [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/), [LangChain.js Agents](https://js.langchain.com/docs/how_to/agent_executor/)
 
+### 9.5 Pipeline Configuration (v3.0)
+
+The multi-agent pipeline is configured via `PipelineConfig`:
+
+```typescript
+interface PipelineConfig {
+  providerMap?: {
+    // Optional — defaults to global LLM_PROVIDER for all stages
+    retriever: LlmProvider;
+    synthesizer: LlmProvider;
+    writer: LlmProvider;
+  };
+  tokenBudgets: {
+    retriever: number; // ~2000 output tokens
+    synthesizer: number; // ~1500 output tokens
+    writer: number; // ~1000 output tokens
+  };
+  timeoutMs: number;
+  useMultiAgent: boolean; // Feature flag
+}
+```
+
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
+
+Per-stage provider splitting (e.g., Groq for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
+
+**SSE event protocol:**
+
+| Event           | Payload Fields                                         | When                  |
+| --------------- | ------------------------------------------------------ | --------------------- |
+| `PipelineEvent` | `stage`, `status`, `detail?`, `elapsedMs?`, `summary?` | Each stage transition |
+
+Stage values: `retriever` | `synthesizer` | `writer`
+Status values: `started` | `progress` | `done` | `error`
+
 ---
 
 ## 10. Project Structure
@@ -815,9 +920,18 @@ voxpopuli/
 |   |   +-- src/
 |   |       +-- agent/
 |   |       |   +-- agent.module.ts
-|   |       |   +-- agent.service.ts      # ReAct loop
+|   |       |   +-- agent.service.ts      # Legacy ReAct loop (fallback)
+|   |       |   +-- retriever.agent.ts    # ReAct search + compaction
+|   |       |   +-- synthesizer.agent.ts  # Single-pass analysis
+|   |       |   +-- writer.agent.ts       # Single-pass prose composition
+|   |       |   +-- orchestrator.service.ts # Pipeline coordination
 |   |       |   +-- tools.ts              # Tool definitions
-|   |       |   +-- system-prompt.ts      # Agent instructions
+|   |       |   +-- system-prompt.ts      # Legacy agent instructions
+|   |       |   +-- prompts/
+|   |       |       +-- retriever.prompt.ts
+|   |       |       +-- compactor.prompt.ts
+|   |       |       +-- synthesizer.prompt.ts
+|   |       |       +-- writer.prompt.ts
 |   |       +-- cache/
 |   |       |   +-- cache.module.ts
 |   |       |   +-- cache.service.ts      # node-cache wrapper
@@ -865,6 +979,10 @@ voxpopuli/
 |   +-- shared-types/                     # Shared TypeScript interfaces
 |       +-- src/
 |           +-- index.ts
+|           +-- evidence.types.ts         # EvidenceBundle, ThemeGroup, EvidenceItem
+|           +-- analysis.types.ts         # AnalysisResult, Insight, Contradiction
+|           +-- response.types.ts         # AgentResponse v2, ResponseSection
+|           +-- pipeline.types.ts         # PipelineConfig, PipelineEvent, PipelineResult
 |
 +-- evals/                                # Evaluation harness
 |   +-- queries.json                      # Test queries + expected qualities
@@ -927,6 +1045,26 @@ v1 uses Algolia keyword search. The agent compensates for keyword limitations by
 ### 11.6 Why cache in v1?
 
 Without caching, development burns through rate limits in an afternoon. Caching is infrastructure, not polish.
+
+### 11.7 Why Multi-Agent Pipeline over Single ReAct?
+
+The single ReAct agent handles retrieval, analysis, and composition in one loop. This creates three problems:
+
+1. **Context exhaustion.** The agent retrieves 30+ comments (~6,000 tokens of raw signal mixed with noise) then has to write the final answer with whatever reasoning budget is left.
+2. **No explicit synthesis.** The agent jumps from "here's what I found" to "here's my answer" with no structured analysis in between.
+3. **Single system prompt.** One instruction set handles search strategy, evidence evaluation, AND prose composition -- three distinct cognitive tasks.
+
+The pipeline solves this by giving each agent exactly one job, one system prompt, and one output format. The Retriever compacts raw data, so the Synthesizer never sees noise. The Synthesizer structures analysis, so the Writer never has to reason about evidence strength.
+
+**Cost impact:** Three LLM calls instead of one, but each call is smaller and more focused. With Groq (free tier) handling the Retriever and Mistral handling the Writer, only the Synthesizer uses the expensive Claude tier. Net cost is comparable to a single Claude ReAct run.
+
+### 11.8 Why Compaction as a Separate Step?
+
+The Retriever's ReAct loop collects raw HN data. A separate "compaction" LLM call after the loop converts 30+ raw comments into 3-6 themed evidence groups at ~600 tokens total. This is a separate call (not part of the ReAct loop) because:
+
+- Collection and compaction are different cognitive tasks. Mixing them degrades both.
+- Compaction has a fixed output shape (`EvidenceBundle`), making it reliable to parse.
+- The compacted bundle is the **only** thing that crosses the Retriever boundary. No raw HN data reaches the Synthesizer.
 
 ---
 
@@ -1205,6 +1343,108 @@ export interface AgentResponse {
 }
 ```
 
+### 13.9 Pipeline Types (v3.0)
+
+```typescript
+// Evidence types (Retriever output)
+export interface EvidenceItem {
+  sourceId: number;
+  sourceType: 'story' | 'comment';
+  content: string; // 1-3 sentences, NOT raw text
+  classification: 'evidence' | 'anecdote' | 'opinion' | 'consensus';
+  relevance: number; // 0.0 to 1.0
+  timestamp: string;
+  metadata: SourceMetadata;
+}
+
+export interface ThemeGroup {
+  label: string; // "Performance concerns", "Migration stories"
+  evidence: EvidenceItem[];
+  sentiment: 'positive' | 'negative' | 'mixed' | 'neutral';
+  rawSourceCount: number;
+}
+
+export interface EvidenceBundle {
+  query: string;
+  themes: ThemeGroup[];
+  totalSourcesScanned: number;
+  tokenCount: number;
+  timeRange: { earliest: string; latest: string };
+  allSources: SourceMetadata[];
+}
+
+// Analysis types (Synthesizer output)
+export interface Insight {
+  claim: string;
+  supportingThemes: number[];
+  strength: 'strong' | 'moderate' | 'weak';
+  reasoning: string;
+}
+
+export interface Contradiction {
+  positionA: string;
+  positionB: string;
+  relevantThemes: number[];
+  assessment: string;
+}
+
+export interface AnalysisResult {
+  insights: Insight[]; // 3-5, strongest first. NEVER more than 5.
+  contradictions: Contradiction[];
+  confidence: 'high' | 'medium' | 'low';
+  gaps: string[];
+  summary: string;
+}
+
+// Response types (Writer output)
+export interface ResponseSection {
+  heading: string;
+  body: string;
+  citedSources: number[];
+}
+
+export interface AgentResponse {
+  headline: string;
+  context: string;
+  sections: ResponseSection[];
+  bottomLine: string;
+  confidence: 'high' | 'medium' | 'low';
+  gaps: string[];
+  sources: SourceMetadata[];
+}
+
+// Pipeline types (Orchestrator)
+export interface PipelineConfig {
+  /** Optional — when omitted, all stages use the global LLM_PROVIDER. */
+  providerMap?: { retriever: LlmProvider; synthesizer: LlmProvider; writer: LlmProvider };
+  tokenBudgets: { retriever: number; synthesizer: number; writer: number };
+  timeoutMs: number;
+  useMultiAgent: boolean;
+}
+
+// Default config: all stages use global LLM_PROVIDER. Additional presets
+// (optimized, speed, cost) deferred until eval data justifies per-stage splitting.
+
+export type PipelineStage = 'retriever' | 'synthesizer' | 'writer';
+export type StageStatus = 'started' | 'progress' | 'done' | 'error';
+
+export interface PipelineEvent {
+  stage: PipelineStage;
+  status: StageStatus;
+  detail?: string;
+  elapsedMs?: number;
+  summary?: string;
+}
+
+export interface PipelineResult {
+  response: AgentResponse;
+  intermediates: { evidenceBundle: EvidenceBundle; analysisResult: AnalysisResult };
+  timing: Record<PipelineStage, number>;
+  tokenUsage: Record<PipelineStage, { input: number; output: number }>;
+  providersUsed: Record<PipelineStage, LlmProvider>;
+}
+```
+
 ### 13.8 Fact vs Opinion Distinction
 
 HN comments mix testable claims, personal experience, and subjective takes in the same sentence. VoxPopuli must surface this distinction at every layer.
@@ -1343,7 +1583,21 @@ export interface Claim {
 - [ ] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
 - [ ] Voice: downloadable MP3 of narrated answer
 
-### v2.0 -- Intelligence Upgrade
+### v2.0 -- Multi-Agent Pipeline (Current Scope)
+
+- [ ] Shared types: EvidenceBundle, AnalysisResult, AgentResponse v2, PipelineConfig
+- [ ] RetrieverAgent: ReAct loop + compaction
+- [ ] SynthesizerAgent: single-pass analysis
+- [ ] WriterAgent: single-pass prose composition
+- [ ] OrchestratorService: pipeline coordination + SSE events
+- [ ] PipelineConfig presets: default (global provider), optimized, speed, cost
+- [ ] Feature flag: `useMultiAgent` (OFF by default initially)
+- [ ] Fallback to legacy ReAct on pipeline error
+- [ ] Angular: PipelineEvent SSE integration in agent steps timeline
+- [ ] Integration tests: 60+ new tests
+- [ ] Eval harness: multi-agent vs single-agent comparison
+
+### v2.1 -- Intelligence Upgrade
 
 - [ ] Conversation memory (multi-turn)
 - [ ] Semantic search (embeddings + Qdrant)
