@@ -5,13 +5,9 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import { EvidenceBundleSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
+import { cleanLlmOutput } from './parse-llm-json';
 
 const MAX_REACT_ITERATIONS = 8;
-
-/** Strip markdown code fences from LLM output. */
-function stripFences(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
-}
 
 /**
  * Creates the Retriever node function for the pipeline.
@@ -91,7 +87,7 @@ async function compactWithRetry(
   const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
   try {
-    const parsed = JSON.parse(stripFences(firstContent));
+    const parsed = JSON.parse(cleanLlmOutput(firstContent));
     const result = EvidenceBundleSchema.safeParse(parsed);
     if (result.success) return result.data;
 
@@ -117,6 +113,6 @@ async function compactWithRetry(
 
   const retryAttempt = await model.invoke(messages);
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-  const parsed = JSON.parse(stripFences(retryContent));
+  const parsed = JSON.parse(cleanLlmOutput(retryContent));
   return EvidenceBundleSchema.parse(parsed);
 }

@@ -7,11 +7,7 @@ import {
   type EvidenceBundle,
 } from '@voxpopuli/shared-types';
 import { WRITER_SYSTEM_PROMPT } from '../prompts/writer.prompt';
-
-/** Strip markdown code fences from LLM output. */
-function stripFences(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
-}
+import { cleanLlmOutput } from './parse-llm-json';
 
 /**
  * Creates the Writer node function for the pipeline.
@@ -51,7 +47,7 @@ export function createWriterNode(model: BaseChatModel) {
     let response: AgentResponseV2;
 
     try {
-      const parsed = JSON.parse(stripFences(firstContent));
+      const parsed = JSON.parse(cleanLlmOutput(firstContent));
       const result = AgentResponseV2Schema.safeParse(parsed);
       if (result.success) {
         response = result.data;
@@ -68,7 +64,7 @@ export function createWriterNode(model: BaseChatModel) {
         );
         const retryAttempt = await model.invoke(messages);
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-        response = AgentResponseV2Schema.parse(JSON.parse(stripFences(retryContent)));
+        response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
     } catch {
       messages.push(
@@ -79,7 +75,7 @@ export function createWriterNode(model: BaseChatModel) {
       );
       const retryAttempt = await model.invoke(messages);
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-      response = AgentResponseV2Schema.parse(JSON.parse(stripFences(retryContent)));
+      response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
     events.push({

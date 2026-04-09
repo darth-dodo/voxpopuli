@@ -6,11 +6,7 @@ import {
   type EvidenceBundle,
 } from '@voxpopuli/shared-types';
 import { SYNTHESIZER_SYSTEM_PROMPT } from '../prompts/synthesizer.prompt';
-
-/** Strip markdown code fences from LLM output. */
-function stripFences(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
-}
+import { cleanLlmOutput } from './parse-llm-json';
 
 /**
  * Creates the Synthesizer node function for the pipeline.
@@ -44,7 +40,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
     let analysis: AnalysisResult;
 
     try {
-      const parsed = JSON.parse(stripFences(firstContent));
+      const parsed = JSON.parse(cleanLlmOutput(firstContent));
       const result = AnalysisResultSchema.safeParse(parsed);
       if (result.success) {
         analysis = result.data;
@@ -62,7 +58,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
         );
         const retryAttempt = await model.invoke(messages);
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-        analysis = AnalysisResultSchema.parse(JSON.parse(stripFences(retryContent)));
+        analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
     } catch {
       // JSON parse failed — retry
@@ -74,7 +70,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
       );
       const retryAttempt = await model.invoke(messages);
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-      analysis = AnalysisResultSchema.parse(JSON.parse(stripFences(retryContent)));
+      analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
     events.push({
