@@ -56,11 +56,24 @@ export async function evaluateQualityChecklist(
       }),
     });
 
-    const data = await res.json();
-    const content: string = data.choices[0].message.content;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => res.statusText);
+      return { key, score: 0, comment: `Mistral API error: HTTP ${res.status} — ${errText}` };
+    }
+
+    const data = (await res.json()) as {
+      choices: { message: { content: string } }[];
+    };
+    let content = data.choices[0].message.content.trim();
+
+    // Strip markdown code fences (```json ... ``` or ``` ... ```)
+    if (content.startsWith('```')) {
+      content = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+
     verdicts = JSON.parse(content) as QualityVerdict[];
-  } catch {
-    return { key, score: 0, comment: 'Failed to parse LLM judge response' };
+  } catch (err) {
+    return { key, score: 0, comment: `Failed to parse LLM judge response: ${String(err)}` };
   }
 
   const presentCount = verdicts.filter((v) => v.verdict === 'PRESENT').length;
