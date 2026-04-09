@@ -186,28 +186,28 @@ Single source of truth for all API contracts. Both apps import from `@voxpopuli/
 
 **Key interfaces:**
 
-| Interface         | Purpose                                                  |
-| ----------------- | -------------------------------------------------------- |
-| `RagQuery`        | Query request shape                                      |
-| `AgentResponse`   | Full response: answer + steps + sources + meta           |
-| `AgentStep`       | Single reasoning step (thought/action/observation)       |
-| `AgentSource`     | Story metadata with HN link                              |
-| `StoryChunk`      | Chunked story for context window                         |
-| `CommentChunk`    | Chunked comment for context window                       |
-| `ToolDefinition`  | Agent tool schema (search_hn, get_story, get_comments)   |
-| `LlmMessage`      | Provider-agnostic message format                         |
-| `LlmResponse`     | Provider-agnostic response format                        |
-| `TtsRequest`      | TTS narration request shape                              |
-| `EvidenceItem`    | Compacted insight from HN (1-3 sentences, classified)    |
-| `ThemeGroup`      | Themed group of evidence with sentiment and raw count    |
-| `EvidenceBundle`  | Retriever output: themes, sources, timeRange             |
-| `Insight`         | Synthesizer finding with claim, strength, themes         |
-| `Contradiction`   | Where sources disagree, with assessment                  |
-| `AnalysisResult`  | Synthesizer output: insights, contradictions, confidence |
-| `ResponseSection` | Writer section: heading, body, cited sources             |
-| `PipelineConfig`  | Per-agent provider map, token budgets, feature flag      |
-| `PipelineEvent`   | SSE event: stage, status, detail, elapsed                |
-| `PipelineResult`  | Full result with intermediates, timing, token usage      |
+| Interface         | Purpose                                                                        |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `RagQuery`        | Query request shape                                                            |
+| `AgentResponse`   | Full response: answer + steps + sources + meta                                 |
+| `AgentStep`       | Single reasoning step (thought/action/observation)                             |
+| `AgentSource`     | Story metadata with HN link                                                    |
+| `StoryChunk`      | Chunked story for context window                                               |
+| `CommentChunk`    | Chunked comment for context window                                             |
+| `ToolDefinition`  | Agent tool schema (search_hn, get_story, get_comments)                         |
+| `LlmMessage`      | Provider-agnostic message format                                               |
+| `LlmResponse`     | Provider-agnostic response format                                              |
+| `TtsRequest`      | TTS narration request shape                                                    |
+| `EvidenceItem`    | Compacted insight from HN (1-3 sentences, classified)                          |
+| `ThemeGroup`      | Themed group of evidence with sentiment and raw count                          |
+| `EvidenceBundle`  | Retriever output: themes, sources, timeRange                                   |
+| `Insight`         | Synthesizer finding with claim, strength, themes                               |
+| `Contradiction`   | Where sources disagree, with assessment                                        |
+| `AnalysisResult`  | Synthesizer output: insights, contradictions, confidence                       |
+| `ResponseSection` | Writer section: heading, body, cited sources                                   |
+| `PipelineConfig`  | Per-agent provider map, token budgets (incl. `synthesizerInput`), feature flag |
+| `PipelineEvent`   | SSE event: stage, status, detail, elapsed                                      |
+| `PipelineResult`  | Full result with intermediates, timing, token usage                            |
 
 ### 2.2 CacheModule
 
@@ -307,9 +307,101 @@ Query → OrchestratorService.run(query, config)
   └── WriterAgent.compose(query, analysis, bundle)  →  AgentResponse
 ```
 
-**Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets, and timeout. Default: all agents use the global `LLM_PROVIDER`. Presets: `default`, `optimized` (Groq/Claude/Mistral), `speed` (all Groq), `cost` (all Mistral).
+**Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets (including `synthesizerInput` for bundle size guarding), and timeout. Default: all agents use the global `LLM_PROVIDER`. Presets: `default`, `optimized` (Groq/Claude/Mistral), `speed` (all Groq), `cost` (all Mistral), `eval` (clean eval runs).
+
+**Pipeline presets:**
+
+| Preset      | `providerMap`                                                         | `synthesizerInput` | `timeoutMs` | Notes                                    |
+| ----------- | --------------------------------------------------------------------- | ------------------ | ----------- | ---------------------------------------- |
+| `default`   | `undefined` (global provider)                                         | 4000               | 25000       | Standard operation                       |
+| `optimized` | `{ retriever: 'groq', synthesizer: 'claude', writer: 'mistral' }`     | 4000               | 30000       | Best quality (multi-key)                 |
+| `speed`     | `{ retriever: 'groq', synthesizer: 'groq', writer: 'groq' }`          | 3000               | 15000       | Fastest response                         |
+| `cost`      | `{ retriever: 'mistral', synthesizer: 'mistral', writer: 'mistral' }` | 4000               | 25000       | Lowest cost                              |
+| `eval`      | `undefined` (global provider)                                         | 4000               | 60000       | Eval harness (no cache, verbose logging) |
+
+#### The `eval` Preset
+
+Used exclusively by the M6 eval harness. Differences from `default`:
+
+| Setting       | `default`                | `eval`                              |
+| ------------- | ------------------------ | ----------------------------------- |
+| Timeout       | 30s                      | 60s (no premature aborts)           |
+| Caching       | Enabled                  | **Disabled** (fresh data every run) |
+| Logging       | Standard                 | **Verbose** (raw LLM I/O logged)    |
+| Intermediates | Discarded after response | **Persisted** to `evals/results/`   |
+
+This preset exists so the eval harness gets clean, uncached results with full intermediate data for debugging. Without it, eval runs would hit cached responses, producing misleadingly fast timing and potentially stale answers.
 
 **Feature flag:** `PipelineConfig.useMultiAgent` (default: `false` during rollout). When `false`, falls back to legacy `AgentService`.
+
+#### PipelineEvent Detail Contracts
+
+The `detail` field is a free-form string for SSE simplicity, but both backend emitters and frontend renderers must follow these conventions:
+
+**Retriever progress details:**
+
+- `"Reformulating query..."`
+- `"Searching HN for '{searchTerm}'..."`
+- `"Fetching comments from {n} stories..."`
+- `"Compacting {n} sources into themes..."`
+
+**Retriever done summary:** `"{n} themes from {m} sources (~{t} tokens)"`
+
+**Synthesizer progress details:**
+
+- `"Analyzing {n} themes..."`
+- `"Extracting insights and contradictions..."`
+
+**Synthesizer done summary:** `"{n} insights, {m} contradictions, confidence: {level}"`
+
+**Writer progress details:**
+
+- `"Composing headline and sections..."`
+- `"Attaching citations..."`
+
+**Writer done summary:** `"{n} sections, {m} sources cited"`
+
+**Error detail (any stage):** The error message string. Frontend displays as-is.
+
+**Frontend rendering guidance:**
+
+| Stage       | Icon | Progress Display                   | Done Display                  |
+| ----------- | ---- | ---------------------------------- | ----------------------------- |
+| Retriever   | 🔍   | Show each search term as it fires  | "{n} themes from {m} sources" |
+| Synthesizer | 🧠   | Pulsing indicator + "Analyzing..." | "{n} insights found"          |
+| Writer      | ✍️   | Pulsing indicator + "Composing..." | "{n} sections"                |
+
+#### Bundle Size Guard
+
+Before passing the `EvidenceBundle` to the Synthesizer, the Orchestrator checks `bundle.tokenCount` against the Synthesizer's input budget (`config.tokenBudgets.synthesizerInput`, default 4000 tokens).
+
+If oversized, the Orchestrator trims the bundle:
+
+1. **Phase 1:** Within each theme, drop evidence items with `relevance < 0.3`
+2. **Phase 2:** If still over budget, drop themes with fewest evidence items (keep at least 2)
+
+**Why this lives in the Orchestrator, not the Retriever:** The Retriever's job is to collect and compact as much as it finds. The Orchestrator enforces the pipeline's token budget. Separation of concerns -- the Retriever doesn't know (and shouldn't know) the Synthesizer's capacity.
+
+#### Orchestrator Failure Modes
+
+The pipeline can fail at three points. Each has a different recovery strategy:
+
+| Failure Point                                 | What Happened                   | Recovery Strategy                                                                                                                                      |
+| --------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Retriever fails                               | No evidence collected           | Fall back to legacy `AgentService` via `runWithFallback()`                                                                                             |
+| Retriever succeeds, Synthesizer fails         | Evidence exists but no analysis | **Retry Synthesizer once** with same `EvidenceBundle`. If second attempt fails, fall back to legacy.                                                   |
+| Retriever + Synthesizer succeed, Writer fails | Analysis exists but no prose    | **Retry Writer once** with same `AnalysisResult`. If second attempt fails, return a raw/fallback response built directly from `AnalysisResult` fields. |
+
+**Key rule:** Never re-run the Retriever on a downstream failure. The Retriever is the slowest and most expensive stage (ReAct loop + HN API calls). If its output exists, reuse it.
+
+**Fallback response construction:** When the Writer fails after retry, `buildFallbackResponse()` constructs a minimal `AgentResponse` directly from `AnalysisResult` fields:
+
+- `headline` = `analysis.summary`
+- `sections` = one `ResponseSection` per insight (claim as heading, reasoning as body)
+- `bottomLine` = `"Analysis confidence: ${analysis.confidence}. Gaps: ${analysis.gaps.join(', ')}"`
+- `sources` = `bundle.allSources`
+
+This ensures the user always gets something useful, even if the Writer agent is down. The response won't be polished prose, but it will contain the actual analysis.
 
 #### Retriever Agent
 
@@ -319,6 +411,14 @@ The only agent with a ReAct loop (it needs tools and iteration). Two phases:
 2. **Compaction (single LLM call):** Converts raw HN data into 3-6 `ThemeGroup`s at ~600 tokens total. Each evidence item is classified (`evidence` | `anecdote` | `opinion` | `consensus`) and scored for relevance.
 
 **Critical boundary:** No raw HN data crosses into the Synthesizer. Only the compacted `EvidenceBundle` passes through.
+
+**Dry-well circuit breaker:** If the Retriever executes 3 consecutive tool calls that return zero relevant results (no stories above 5 points, no comments with substance), the ReAct loop exits early. The Retriever compacts whatever it has collected so far and returns a partial `EvidenceBundle`.
+
+This prevents burning 8 iterations on a topic HN hasn't discussed. When early exit triggers:
+
+- `themes` may be empty or sparse
+- `totalSourcesScanned` will be low
+- The Synthesizer handles this gracefully by setting `confidence: 'low'` and populating `gaps` with "Limited HN discussion found on this topic."
 
 #### Synthesizer Agent
 
@@ -333,14 +433,35 @@ No tools, no iteration. The input is complete and bounded (~600 tokens).
 
 #### Writer Agent
 
-Single-pass structured output. Receives `AnalysisResult` + `EvidenceBundle` (for source IDs), produces `AgentResponse`:
+Single-pass structured output. Receives `AnalysisResult` + `EvidenceBundle` (for source IDs only), produces `AgentResponse`.
 
-- Headline (lead with the answer)
-- Context paragraph
+- Headline (lead with the answer, not the sources)
+- Context paragraph (why this matters)
 - 2-4 themed sections with inline citations
 - Bottom line takeaway
 
-Receives the bundle alongside analysis as a citation lookup table (not for re-analysis).
+**Critical prompt constraint:** The Writer receives the `EvidenceBundle` alongside the `AnalysisResult`, but ONLY as a citation lookup table. The Writer's system prompt must explicitly prohibit re-analysis:
+
+```
+## CITATION RULES
+You receive two inputs:
+1. AnalysisResult -- this is your SOLE source of truth for claims and insights.
+2. EvidenceBundle -- this is ONLY for looking up source IDs to create citations.
+
+You MUST NOT:
+- Re-interpret evidence items in the bundle.
+- Draw conclusions that contradict or extend the AnalysisResult.
+- Add insights not present in AnalysisResult.insights.
+- Change the confidence level or gaps.
+
+If AnalysisResult says confidence is "low", your prose reflects that uncertainty.
+If AnalysisResult lists a gap, your response includes that gap as a disclaimer.
+You are a composer, not an analyst.
+```
+
+**Why this matters:** Without this constraint, the Writer will second-guess the Synthesizer. Different LLM providers will produce inconsistent answers because the Writer re-analyzes the same evidence and reaches different conclusions. The Synthesizer is the single source of truth for what the evidence means. The Writer decides how to say it.
+
+**Test case:** Pass an `AnalysisResult` with `confidence: 'low'` and an `EvidenceBundle` with strong-looking evidence. Assert that the Writer's output reflects low confidence (matches the analysis), not high confidence (re-derived from the bundle).
 
 #### Legacy AgentService (Fallback)
 
@@ -688,7 +809,8 @@ Epic (Linear Project or Cycle)
 
 - **Story: Define pipeline types** (AI-TBD)
   - `PipelineConfig`, `PipelineEvent`, `PipelineResult`, `PipelineStage`, `StageStatus`
-  - `PIPELINE_PRESETS` constant: `default`, `optimized`, `speed`, `cost`
+  - `PIPELINE_PRESETS` constant: `default`, `optimized`, `speed`, `cost`, `eval`
+  - `tokenBudgets.synthesizerInput` field for bundle size guarding
 
 #### Epic 8.2: Agent Implementation
 
@@ -712,11 +834,30 @@ Epic (Linear Project or Cycle)
   - System prompt in `prompts/writer.prompt.ts`
 
 - **Story: Implement OrchestratorService** (AI-TBD)
+
   - Sequential pipeline: Retriever → Synthesizer → Writer
   - SSE `PipelineEvent` emissions at each stage transition
   - Global timeout via `Promise.race`
   - `runWithFallback()` degrades to legacy `AgentService` on error
   - `PipelineConfig` resolution (presets + global provider default)
+
+- **Story: Implement orchestrator partial failure recovery** (AI-TBD)
+
+  - Retry Synthesizer once on failure (reuse bundle)
+  - Retry Writer once on failure (reuse analysis)
+  - `buildFallbackResponse()` from raw AnalysisResult
+  - Tests: Retriever-fail → legacy, Synth-fail → retry → fallback, Writer-fail → raw response
+
+- **Story: Implement Retriever dry-well circuit breaker** (AI-TBD)
+
+  - `shouldExitEarly()` after 3 consecutive empty tool results
+  - Partial EvidenceBundle with sparse themes
+  - Test: query about obscure topic → early exit → low confidence response
+
+- **Story: Implement bundle size guard in Orchestrator** (AI-TBD)
+  - `validateBundleSize()` before Synthesizer
+  - `trimBundle()` with relevance-based pruning
+  - Test: oversized bundle → trimmed to budget → Synthesizer succeeds
 
 #### Epic 8.3: Testing (target: 60+ tests)
 
@@ -766,6 +907,11 @@ Epic (Linear Project or Cycle)
   - Compare quality scores, latency, cost
   - Decision gate: enable by default only if multi-agent wins on quality
 
+- **Story: Add eval pipeline preset** (AI-TBD)
+
+  - Cache bypass, verbose logging, 60s timeout
+  - Wire into eval harness runner
+
 - **Story: Update documentation** (AI-TBD)
   - Update CLAUDE.md with new module structure and conventions
   - Add ADR for multi-agent pipeline design
@@ -808,17 +954,18 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone                 | Stories | Depends On | Status        |
-| ----- | ------------------------- | ------- | ---------- | ------------- |
-| 1     | M1: Scaffold & Data Layer | 16      | --         | COMPLETE      |
-| 2     | M2: LLM & Chunker         | 8       | M1         | COMPLETE      |
-| 3     | M3: Agent Core            | 8       | M2         | Not started   |
-| 4     | M6: Eval Harness          | 3       | M3         | Not started   |
-| 5     | M4: Frontend              | 6       | M3         | Not started   |
-| 6     | M5: Voice Output          | 5       | M3, M4     | Not started   |
-| 8     | M8: Multi-Agent Pipeline  | ~15     | M3, M4, M6 | Spec complete |
+| Order | Milestone                 | Stories | Depends On | Status            |
+| ----- | ------------------------- | ------- | ---------- | ----------------- |
+| 1     | M1: Scaffold & Data Layer | 16      | --         | COMPLETE          |
+| 2     | M2: LLM & Chunker         | 8       | M1         | COMPLETE          |
+| 3     | M3: Agent Core            | 14      | M2         | COMPLETE          |
+| 4     | M4: Frontend              | 6       | M3         | COMPLETE          |
+| 5     | M7: Deploy                | --      | M3, M4     | ~87%              |
+| 6     | **M6: Eval Harness**      | 3       | M3         | **NOT STARTED** ⚠ |
+| 7     | M5: Voice Output          | 5       | M3, M4     | Not started       |
+| 8     | M8: Multi-Agent Pipeline  | ~15     | M3, M4, M6 | Spec complete     |
 
-**Why evals before frontend?** The eval harness catches agent regressions early. Build it as soon as the agent works. You'll tweak the system prompt, chunker, and token budgets many times -- evals prevent you from breaking what already works.
+> **⚠ M6 is the critical blocker for M8.** The multi-agent pipeline cannot ship as default without A/B eval data proving it outperforms the legacy ReAct agent. M6 must be completed before M8 implementation begins. Recommended: start M6 immediately after M7 deploy stabilizes. M5 (voice) can run in parallel -- it does not block M8.
 
 **Total: 8 milestones, ~95 stories.**
 
@@ -848,33 +995,36 @@ PORT=3000
 
 ## 7. Key Technical Constraints
 
-| Constraint                      | Value                      | Rationale                                |
-| ------------------------------- | -------------------------- | ---------------------------------------- |
-| Max agent steps                 | 7                          | Cost + latency cap                       |
-| Agent timeout                   | 60s                        | Prevent runaway loops                    |
-| Concurrent agents               | 5                          | Prevent cost blowout                     |
-| Comment cap                     | 30 per story               | Firebase API latency                     |
-| Query max length                | 500 chars                  | Input sanity                             |
-| Rate limit (per IP)             | 10 req/min                 | Abuse prevention                         |
-| Rate limit (global)             | 60 req/min                 | Cost protection                          |
-| Cache TTL (search)              | 15 min                     | Freshness vs cost                        |
-| Cache TTL (stories)             | 1 hour                     | Stable data                              |
-| Cache TTL (comments)            | 30 min                     | Semi-stable data                         |
-| Cache TTL (query result)        | 10 min                     | Token savings                            |
-| Context window (Claude)         | 200k tokens                | `claude-sonnet-4-20250514` via LangChain |
-| Context window (Mistral)        | 262k tokens                | `mistral-large-latest` via LangChain     |
-| Context window (Groq)           | 128k tokens                | `llama-3.3-70b-versatile` via LangChain  |
-| Token budget (Claude)           | 80k of 200k                | Conservative headroom                    |
-| Token budget (Mistral)          | 100k of 262k               | Conservative headroom                    |
-| Token budget (Groq)             | 50k of 128k                | Conservative headroom                    |
-| Token estimation                | 1 char / 4                 | Character-based, no tiktoken dependency  |
-| TTS max chars                   | 2500                       | ElevenLabs streaming limit               |
-| Pipeline timeout                | 30s (quality), 15s (speed) | Per-preset timeout cap                   |
-| Retriever max iterations        | 8                          | ReAct loop safety cap                    |
-| Retriever compaction truncation | 50k chars                  | Prevent blowing compactor context window |
-| Synthesizer insight cap         | 5                          | Prevent unfocused analysis               |
-| Writer section cap              | 4                          | Prevent rambling responses               |
-| Pipeline output tokens          | 2000/1500/1000             | Retriever/Synthesizer/Writer budgets     |
+| Constraint                      | Value                       | Rationale                                        |
+| ------------------------------- | --------------------------- | ------------------------------------------------ |
+| Max agent steps                 | 7                           | Cost + latency cap                               |
+| Agent timeout                   | 60s                         | Prevent runaway loops                            |
+| Concurrent agents               | 5                           | Prevent cost blowout                             |
+| Comment cap                     | 30 per story                | Firebase API latency                             |
+| Query max length                | 500 chars                   | Input sanity                                     |
+| Rate limit (per IP)             | 10 req/min                  | Abuse prevention                                 |
+| Rate limit (global)             | 60 req/min                  | Cost protection                                  |
+| Cache TTL (search)              | 15 min                      | Freshness vs cost                                |
+| Cache TTL (stories)             | 1 hour                      | Stable data                                      |
+| Cache TTL (comments)            | 30 min                      | Semi-stable data                                 |
+| Cache TTL (query result)        | 10 min                      | Token savings                                    |
+| Context window (Claude)         | 200k tokens                 | `claude-sonnet-4-20250514` via LangChain         |
+| Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
+| Context window (Groq)           | 128k tokens                 | `llama-3.3-70b-versatile` via LangChain          |
+| Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
+| Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
+| Token budget (Groq)             | 50k of 128k                 | Conservative headroom                            |
+| Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
+| TTS max chars                   | 2500                        | ElevenLabs streaming limit                       |
+| Pipeline timeout                | 30s (quality), 15s (speed)  | Per-preset timeout cap                           |
+| Retriever max iterations        | 8                           | ReAct loop safety cap                            |
+| Retriever dry-well exit         | 3 consecutive empty results | Prevent wasting iterations on undiscussed topics |
+| Retriever compaction truncation | 50k chars                   | Prevent blowing compactor context window         |
+| Synthesizer input budget        | 4000 tokens                 | Prevent oversized bundles from choking analysis  |
+| Synthesizer insight cap         | 5                           | Prevent unfocused analysis                       |
+| Writer section cap              | 4                           | Prevent rambling responses                       |
+| Pipeline output tokens          | 2000/1500/1000              | Retriever/Synthesizer/Writer budgets             |
+| Pipeline preset: eval           | 60s timeout, no cache       | Clean eval runs with full intermediate logging   |
 
 ---
 
