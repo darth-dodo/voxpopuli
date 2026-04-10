@@ -1,206 +1,116 @@
-<!-- Pipeline Mode: Three-stage vertical stepper timeline -->
+<!-- Pipeline Mode: Clean card layout with left border accents -->
 @if (isPipelineMode()) {
 <section aria-label="Pipeline stages">
-  <!-- Total pipeline time header -->
-  @if (totalPipelineTime() > 0) {
+  <!-- Header with total time -->
   <div class="flex items-center justify-between mb-4">
     <span class="text-mono text-xs text-text-muted uppercase tracking-wider">Pipeline</span>
+    @if (totalPipelineTime() > 0) {
     <span class="text-mono text-xs text-text-muted"
-      >Total: {{ (totalPipelineTime() / 1000).toFixed(1) }}s</span
+      >{{ (totalPipelineTime() / 1000).toFixed(1) }}s total</span
     >
+    }
   </div>
-  }
 
-  <!-- Stepper timeline -->
-  <div class="relative pl-8">
-    <!-- Vertical connector line -->
-    <div class="absolute left-[11px] top-0 bottom-0 w-0.5 bg-border-subtle"></div>
-
-    @for (stage of pipelineStages(); track stage.name; let isLast = $last) {
-    <div class="relative" [class.pb-6]="!isLast">
-      <!-- Status icon on the line -->
-      <div
-        class="absolute -left-8 top-3 flex items-center justify-center w-6 h-6 rounded-full bg-surface-base ring-2 ring-border-subtle"
-      >
-        @if (stage.status === 'done') {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-3.5 h-3.5 text-trust-verified"
-          aria-hidden="true"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-        </svg>
-        } @else if (stage.status === 'error') {
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="1.5"
-          stroke="currentColor"
-          class="w-3.5 h-3.5 text-trust-danger"
-          aria-hidden="true"
-        >
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-        </svg>
-        } @else {
-        <!-- Spinner for started/progress -->
-        <span class="relative flex h-3.5 w-3.5 items-center justify-center">
-          <span
-            class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-accent-amber opacity-75"
-          ></span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
-        </span>
-        }
-      </div>
-
-      <!-- Stage card -->
-      <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
-        <div class="flex items-start gap-3">
-          <!-- Per-stage icon -->
-          <div class="shrink-0 mt-0.5">
-            @if (stage.name === 'retriever') {
-            <!-- Search / magnifying glass -->
+  <!-- Stage cards -->
+  <div class="space-y-2">
+    @for (stage of pipelineStages(); track stage.name) {
+    <div
+      class="rounded-lg bg-surface-raised overflow-hidden"
+      [class.border-l-2]="true"
+      [class.border-l-trust-verified]="stage.status === 'done'"
+      [class.border-l-accent-amber]="stage.status === 'started' || stage.status === 'progress'"
+      [class.border-l-trust-danger]="stage.status === 'error'"
+      [class.border]="true"
+      [class.border-border-subtle]="true"
+    >
+      <div class="p-4">
+        <!-- Header row: status + name + time -->
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5">
+            <!-- Status indicator -->
+            @if (stage.status === 'done') {
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              stroke-width="1.5"
+              stroke-width="2"
               stroke="currentColor"
-              class="w-4 h-4 text-accent-amber"
+              class="w-4 h-4 text-trust-verified shrink-0"
               aria-hidden="true"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-              />
+              <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
             </svg>
-            } @else if (stage.name === 'synthesizer') {
-            <!-- Lightbulb / brain -->
+            } @else if (stage.status === 'error') {
             <svg
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
-              stroke-width="1.5"
+              stroke-width="2"
               stroke="currentColor"
-              class="w-4 h-4 text-accent-amber"
+              class="w-4 h-4 text-trust-danger shrink-0"
               aria-hidden="true"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-              />
-            </svg>
-            } @else if (stage.name === 'writer') {
-            <!-- Pencil / document -->
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-4 h-4 text-accent-amber"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125"
-              />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
             } @else {
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-4 h-4 text-accent-amber"
-              aria-hidden="true"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"
-              />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-              />
-            </svg>
-            }
-          </div>
-
-          <!-- Content -->
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center justify-between gap-2 mb-1">
-              <div class="flex items-center gap-2">
-                <span
-                  class="text-mono text-xs font-semibold text-text-primary uppercase tracking-wider"
-                  >{{ stage.name }}</span
-                >
-                @if (stage.status !== 'done') {
-                <span class="text-mono text-[10px] text-text-muted">
-                  {{
-                    stage.name === 'retriever'
-                      ? 'collecting evidence'
-                      : stage.name === 'synthesizer'
-                      ? 'analyzing themes'
-                      : 'composing response'
-                  }}
-                </span>
-                }
-              </div>
-              @if (stage.elapsed > 0) {
-              <span class="text-mono text-xs text-text-muted"
-                >{{ (stage.elapsed / 1000).toFixed(1) }}s</span
-              >
-              }
-            </div>
-
-            <!-- Detail chips for done stages, plain text for in-progress -->
-            @if (stage.status === 'done') {
-            <div class="flex flex-wrap gap-2 mt-2">
-              @for (chip of (parsedStageDetails().get(stage.name) ?? []); track chip.label) {
+            <span class="relative flex h-4 w-4 items-center justify-center shrink-0">
               <span
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-overlay text-mono text-xs"
-              >
-                <span [class]="chip.color">{{ chip.value }}</span>
-                <span class="text-text-muted">{{ chip.label }}</span>
-              </span>
-              }
-            </div>
-            } @else if (stage.detail) {
-            <p class="text-ui text-sm text-text-secondary">{{ stage.detail }}</p>
+                class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-accent-amber opacity-75"
+              ></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+            </span>
             }
+            <!-- Stage name -->
+            <span
+              class="text-mono text-xs font-semibold uppercase tracking-wider"
+              [class.text-text-primary]="stage.status === 'done'"
+              [class.text-accent-amber]="stage.status !== 'done' && stage.status !== 'error'"
+              [class.text-trust-danger]="stage.status === 'error'"
+              >{{ stage.name }}</span
+            >
           </div>
+          @if (stage.elapsed > 0) {
+          <span class="text-mono text-xs text-text-muted"
+            >{{ (stage.elapsed / 1000).toFixed(1) }}s</span
+          >
+          }
         </div>
+
+        <!-- Detail: chips for done, text for in-progress/error -->
+        @if (stage.status === 'done') {
+        <div class="flex flex-wrap gap-1.5 mt-2 ml-6.5">
+          @for (chip of (parsedStageDetails().get(stage.name) ?? []); track chip.label) {
+          <span
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-overlay text-mono text-[11px]"
+          >
+            <span [class]="chip.color">{{ chip.value }}</span>
+            <span class="text-text-muted">{{ chip.label }}</span>
+          </span>
+          }
+        </div>
+        } @else if (stage.detail) {
+        <p class="text-ui text-sm text-text-secondary mt-1 ml-6.5">{{ stage.detail }}</p>
+        }
       </div>
     </div>
     }
 
-    <!-- Streaming indicator for pipeline -->
+    <!-- Waiting indicator for next stage -->
     @if (isStreaming() && pipelineStages().length < 3) {
-    <div class="relative pb-0">
-      <div
-        class="absolute -left-8 top-3 flex items-center justify-center w-6 h-6 rounded-full bg-surface-base ring-2 ring-border-subtle"
-      >
-        <span class="relative flex h-3.5 w-3.5 items-center justify-center">
-          <span
-            class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-accent-amber opacity-75"
-          ></span>
-          <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
-        </span>
-      </div>
-      <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
-        <span class="text-ui text-sm text-text-muted">Pipeline processing...</span>
-      </div>
+    <div class="flex items-center gap-2.5 px-4 py-3 text-text-muted">
+      <span class="relative flex h-4 w-4 items-center justify-center shrink-0">
+        <span
+          class="animate-ping absolute inline-flex h-2.5 w-2.5 rounded-full bg-accent-amber opacity-75"
+        ></span>
+        <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+      </span>
+      <span class="text-mono text-xs">{{
+        pipelineStages().length === 0
+          ? 'Starting pipeline...'
+          : pipelineStages().length === 1
+          ? 'Analyzing...'
+          : 'Composing...'
+      }}</span>
     </div>
     }
   </div>
