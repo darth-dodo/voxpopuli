@@ -157,17 +157,11 @@ export class OrchestratorService {
         };
       }
 
-      // Writer token streaming
-      if (event.event === 'on_chat_model_stream' && event.metadata?.langgraph_node === 'writer') {
-        const chunk = event.data?.chunk;
-        if (chunk?.content && typeof chunk.content === 'string') {
-          yield { kind: 'token', content: chunk.content };
-        }
-      }
-
-      // Capture final response from the writer node's chain end
-      if (event.event === 'on_chain_end' && event.data?.output?.response) {
-        finalResponse = event.data.output.response as AgentResponseV2;
+      // Capture final response via the dedicated custom event from the Writer node.
+      // This is more reliable than on_chain_end, which doesn't consistently
+      // carry sub-graph output through LangGraph's event boundary.
+      if (event.event === 'on_custom_event' && event.name === 'pipeline_response') {
+        finalResponse = event.data as AgentResponseV2;
       }
     }
 

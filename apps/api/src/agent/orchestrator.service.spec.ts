@@ -165,29 +165,26 @@ describe('OrchestratorService', () => {
         data: { stage: 'writer', status: 'done', detail: '2 sections', elapsed: 1200 },
       };
       yield {
-        event: 'on_chain_end',
+        event: 'on_custom_event',
+        name: 'pipeline_response',
         data: {
-          output: {
-            response: {
-              headline: 'Test headline',
-              context: 'Test context',
-              sections: [
-                { heading: 'S1', body: 'Body 1', citedSources: [1] },
-                { heading: 'S2', body: 'Body 2', citedSources: [2] },
-              ],
-              bottomLine: 'Test bottom line',
-              sources: [
-                {
-                  storyId: 1,
-                  title: 'T',
-                  url: '',
-                  author: 'a',
-                  points: 10,
-                  commentCount: 0,
-                },
-              ],
+          headline: 'Test headline',
+          context: 'Test context',
+          sections: [
+            { heading: 'S1', body: 'Body 1', citedSources: [1] },
+            { heading: 'S2', body: 'Body 2', citedSources: [2] },
+          ],
+          bottomLine: 'Test bottom line',
+          sources: [
+            {
+              storyId: 1,
+              title: 'T',
+              url: '',
+              author: 'a',
+              points: 10,
+              commentCount: 0,
             },
-          },
+          ],
         },
       };
     });

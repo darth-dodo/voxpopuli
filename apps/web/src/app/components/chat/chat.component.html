@@ -449,30 +449,25 @@
       <!-- ─── Answer Tab ─── -->
       @if (activeTab() === 'answer') {
 
-      <!-- Pipeline token streaming answer -->
-      @if (isPipelineMode() && tokenContent()) {
+      <!-- Pipeline status message while waiting for answer -->
+      @if (isPipelineMode() && !response() && isStreaming()) {
       <div class="mt-4">
         <div class="vp-card p-5 sm:p-8">
-          <div class="vp-prose">
-            <markdown [data]="tokenContent()" />
-          </div>
-          @if (isStreaming()) {
-          <div class="mt-3 flex items-center gap-2">
-            <span class="relative flex h-2 w-2">
+          <div class="flex items-center gap-3">
+            <span class="relative flex h-2.5 w-2.5">
               <span
                 class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"
               ></span>
-              <span class="relative inline-flex rounded-full h-2 w-2 bg-accent-amber"></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
             </span>
-            <span class="text-mono text-xs text-text-muted">Streaming...</span>
+            <span class="text-ui text-sm text-text-secondary">{{ pipelineStatusMessage() }}</span>
           </div>
-          }
         </div>
       </div>
       }
 
       <!-- Loading state -->
-      @if (loading() && !response() && !tokenContent()) {
+      @if (loading() && !response() && !isPipelineMode()) {
       <div class="mt-4 space-y-4" aria-busy="true">
         <div class="vp-card p-5 sm:p-8">
           <div class="space-y-3 animate-pulse">

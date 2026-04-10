@@ -131,7 +131,7 @@ describe('WriterNode', () => {
       analysis: SAMPLE_ANALYSIS,
     });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(2);
+    expect(mockDispatch).toHaveBeenCalledTimes(3);
     expect(mockDispatch).toHaveBeenNthCalledWith(
       1,
       'pipeline_event',
@@ -141,6 +141,11 @@ describe('WriterNode', () => {
       2,
       'pipeline_event',
       expect.objectContaining({ stage: 'writer', status: 'done' }),
+    );
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      3,
+      'pipeline_response',
+      expect.objectContaining({ headline: expect.any(String) }),
     );
   });
 });

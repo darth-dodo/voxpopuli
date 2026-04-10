@@ -95,6 +95,27 @@ export class ChatComponent implements OnInit {
   /** Token content accumulated during pipeline streaming. */
   readonly tokenContent = signal('');
 
+  /** Human-readable status message derived from the latest pipeline event. */
+  readonly pipelineStatusMessage = computed(() => {
+    const events = this.pipelineEvents();
+    if (events.length === 0) return 'Starting pipeline...';
+    const latest = events[events.length - 1];
+    switch (latest.stage) {
+      case 'retriever':
+        return latest.status === 'done'
+          ? 'Evidence collected. Analyzing...'
+          : 'Searching HN and collecting evidence...';
+      case 'synthesizer':
+        return latest.status === 'done'
+          ? 'Analysis complete. Writing response...'
+          : 'Analyzing themes and extracting insights...';
+      case 'writer':
+        return latest.status === 'done' ? 'Response ready.' : 'Composing your answer...';
+      default:
+        return 'Processing...';
+    }
+  });
+
   /** Currently active tab in the result view. */
   readonly activeTab = signal<'answer' | 'sources' | 'steps'>('steps');
 

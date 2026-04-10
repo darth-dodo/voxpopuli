@@ -84,6 +84,11 @@ export function createWriterNode(model: BaseChatModel) {
       elapsed: Date.now() - startTime,
     });
 
+    // Emit the structured response for reliable capture by the orchestrator.
+    // LangGraph's on_chain_end events don't reliably carry sub-graph state,
+    // so we use a dedicated custom event instead.
+    await dispatchCustomEvent('pipeline_response', response);
+
     return { response };
   };
 }
