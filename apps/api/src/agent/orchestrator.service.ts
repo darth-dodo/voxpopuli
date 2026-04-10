@@ -14,6 +14,7 @@ import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
 import { createAgentTools } from './tools';
+import { computeTrustMetadata } from './trust';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
@@ -83,6 +84,7 @@ export class OrchestratorService {
     const startTime = Date.now();
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    const collectedSteps: AgentStep[] = [];
 
     // The active provider is whatever was passed per-request (all stages use same provider by default)
     const activeProvider =
@@ -140,30 +142,28 @@ export class OrchestratorService {
 
       // Retriever inner steps — tool calls and observations
       if (event.event === 'on_tool_start') {
-        yield {
-          kind: 'step',
-          step: {
-            type: 'action' as const,
-            content: `Calling ${event.name}`,
-            toolName: event.name,
-            toolInput: event.data?.input,
-            timestamp: Date.now(),
-          },
+        const step: AgentStep = {
+          type: 'action' as const,
+          content: `Calling ${event.name}`,
+          toolName: event.name,
+          toolInput: event.data?.input,
+          timestamp: Date.now(),
         };
+        collectedSteps.push(step);
+        yield { kind: 'step', step };
       }
 
       if (event.event === 'on_tool_end') {
         const output = event.data?.output;
-        yield {
-          kind: 'step',
-          step: {
-            type: 'observation' as const,
-            content: typeof output === 'string' ? output : JSON.stringify(output),
-            toolName: event.name,
-            toolOutput: typeof output === 'string' ? output : JSON.stringify(output),
-            timestamp: Date.now(),
-          },
+        const step: AgentStep = {
+          type: 'observation' as const,
+          content: typeof output === 'string' ? output : JSON.stringify(output),
+          toolName: event.name,
+          toolOutput: typeof output === 'string' ? output : JSON.stringify(output),
+          timestamp: Date.now(),
         };
+        collectedSteps.push(step);
+        yield { kind: 'step', step };
       }
 
       // Track token usage from LLM calls
@@ -191,8 +191,15 @@ export class OrchestratorService {
           }\n\n${finalResponse.sections
             .map((s) => `### ${s.heading}\n\n${s.body}`)
             .join('\n\n')}\n\n**Bottom line:** ${finalResponse.bottomLine}`,
-          steps: [],
-          sources: finalResponse.sources.map((s) => ({ ...s, url: s.url ?? '' })),
+          steps: collectedSteps,
+          sources: finalResponse.sources.map((s) => ({
+            storyId: s.storyId,
+            title: s.title,
+            url: s.url ?? '',
+            author: s.author,
+            points: s.points,
+            commentCount: s.commentCount,
+          })),
           meta: {
             provider: activeProvider,
             totalInputTokens,
@@ -200,15 +207,18 @@ export class OrchestratorService {
             durationMs: Date.now() - startTime,
             cached: false,
           },
-          trust: {
-            sourcesVerified: finalResponse.sources.length,
-            sourcesTotal: finalResponse.sources.length,
-            avgSourceAge: 0,
-            recentSourceRatio: 0,
-            viewpointDiversity: 'balanced' as const,
-            showHnCount: 0,
-            honestyFlags: [],
-          },
+          trust: computeTrustMetadata(
+            collectedSteps,
+            finalResponse.sources.map((s) => ({
+              storyId: s.storyId,
+              title: s.title,
+              url: s.url ?? '',
+              author: s.author,
+              points: s.points,
+              commentCount: s.commentCount,
+            })),
+            finalResponse.headline + ' ' + finalResponse.sections.map((s) => s.body).join(' '),
+          ),
         },
       };
     }
