@@ -81,6 +81,15 @@ export class OrchestratorService {
    */
   async *runStream(query: string, config: PipelineConfig): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    // The active provider is whatever was passed per-request (all stages use same provider by default)
+    const activeProvider =
+      config.providerMap.retriever ??
+      config.providerMap.synthesizer ??
+      config.providerMap.writer ??
+      this.llm.getProviderName();
 
     // Resolve model per stage (fallback to global provider)
     const getModel = (stage: 'retriever' | 'synthesizer' | 'writer') =>
@@ -157,9 +166,16 @@ export class OrchestratorService {
         };
       }
 
+      // Track token usage from LLM calls
+      if (event.event === 'on_chat_model_end') {
+        const usage = event.data?.output?.usage_metadata;
+        if (usage) {
+          if (usage.input_tokens) totalInputTokens += usage.input_tokens;
+          if (usage.output_tokens) totalOutputTokens += usage.output_tokens;
+        }
+      }
+
       // Capture final response via the dedicated custom event from the Writer node.
-      // This is more reliable than on_chain_end, which doesn't consistently
-      // carry sub-graph output through LangGraph's event boundary.
       if (event.event === 'on_custom_event' && event.name === 'pipeline_response') {
         finalResponse = event.data as AgentResponseV2;
       }
@@ -178,9 +194,9 @@ export class OrchestratorService {
           steps: [],
           sources: finalResponse.sources.map((s) => ({ ...s, url: s.url ?? '' })),
           meta: {
-            provider: this.llm.getProviderName(),
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
+            provider: activeProvider,
+            totalInputTokens,
+            totalOutputTokens,
             durationMs: Date.now() - startTime,
             cached: false,
           },
