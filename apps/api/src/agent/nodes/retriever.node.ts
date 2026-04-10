@@ -1,5 +1,6 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { EvidenceBundleSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
@@ -29,11 +30,10 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
   return async (state: {
     query: string;
     events: unknown[];
-  }): Promise<{ bundle: EvidenceBundle; events: unknown[] }> => {
+  }): Promise<{ bundle: EvidenceBundle }> => {
     const startTime = Date.now();
-    const events = [...state.events];
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'retriever',
       status: 'started',
       detail: `Searching HN for "${state.query}"...`,
@@ -50,7 +50,7 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
       .join('\n\n');
 
     // Phase 2: Compaction
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'retriever',
       status: 'progress',
       detail: 'Compacting sources into themes...',
@@ -59,14 +59,14 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
     const bundle = await compactWithRetry(model, state.query, rawData);
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'retriever',
       status: 'done',
       detail: `${bundle.themes.length} themes from ${bundle.allSources.length} sources (~${bundle.tokenCount} tokens)`,
       elapsed: Date.now() - startTime,
     });
 
-    return { bundle, events };
+    return { bundle };
   };
 }
 

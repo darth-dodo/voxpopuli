@@ -5,6 +5,12 @@ jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() 
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
+// Mock dispatchCustomEvent
+const mockDispatch = jest.fn();
+jest.mock('@langchain/core/callbacks/dispatch', () => ({
+  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
+}));
+
 import { createSynthesizerNode } from './synthesizer.node';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
@@ -106,10 +112,18 @@ describe('SynthesizerNode', () => {
     mockModel.invoke.mockResolvedValue({ content: analysisJson });
 
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE, events: [] });
+    await node({ query: 'test', bundle: SAMPLE_BUNDLE });
 
-    expect(result.events.length).toBe(2);
-    expect(result.events[0]).toMatchObject({ stage: 'synthesizer', status: 'started' });
-    expect(result.events[1]).toMatchObject({ stage: 'synthesizer', status: 'done' });
+    expect(mockDispatch).toHaveBeenCalledTimes(2);
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      1,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'synthesizer', status: 'started' }),
+    );
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      2,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'synthesizer', status: 'done' }),
+    );
   });
 });

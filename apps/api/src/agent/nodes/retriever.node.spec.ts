@@ -8,6 +8,12 @@ jest.mock('@langchain/langgraph/prebuilt', () => ({
   })),
 }));
 
+// Mock dispatchCustomEvent
+const mockDispatch = jest.fn();
+jest.mock('@langchain/core/callbacks/dispatch', () => ({
+  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
+}));
+
 // Mock LLM providers
 jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
@@ -103,11 +109,23 @@ describe('RetrieverNode', () => {
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
-    const result = await node({ query: 'test', events: [] });
+    await node({ query: 'test', events: [] });
 
-    expect(result.events.length).toBe(3);
-    expect(result.events[0]).toMatchObject({ stage: 'retriever', status: 'started' });
-    expect(result.events[1]).toMatchObject({ stage: 'retriever', status: 'progress' });
-    expect(result.events[2]).toMatchObject({ stage: 'retriever', status: 'done' });
+    expect(mockDispatch).toHaveBeenCalledTimes(3);
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      1,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'retriever', status: 'started' }),
+    );
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      2,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'retriever', status: 'progress' }),
+    );
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      3,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'retriever', status: 'done' }),
+    );
   });
 });

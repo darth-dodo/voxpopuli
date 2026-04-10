@@ -142,41 +142,32 @@ describe('OrchestratorService', () => {
   });
 
   it('should stream pipeline events on success', async () => {
-    // Mock streamEvents to yield events
+    // Mock streamEvents to yield custom pipeline events + chain_end with response
     mockGraphStreamEvents.mockImplementation(async function* () {
       yield {
-        event: 'on_chain_end',
-        data: {
-          output: {
-            events: [
-              { stage: 'retriever', status: 'started', detail: 'Searching...', elapsed: 0 },
-              { stage: 'retriever', status: 'done', detail: '3 themes', elapsed: 500 },
-            ],
-          },
-        },
+        event: 'on_custom_event',
+        name: 'pipeline_event',
+        data: { stage: 'retriever', status: 'started', detail: 'Searching...', elapsed: 0 },
+      };
+      yield {
+        event: 'on_custom_event',
+        name: 'pipeline_event',
+        data: { stage: 'retriever', status: 'done', detail: '3 themes', elapsed: 500 },
+      };
+      yield {
+        event: 'on_custom_event',
+        name: 'pipeline_event',
+        data: { stage: 'synthesizer', status: 'done', detail: '3 insights', elapsed: 800 },
+      };
+      yield {
+        event: 'on_custom_event',
+        name: 'pipeline_event',
+        data: { stage: 'writer', status: 'done', detail: '2 sections', elapsed: 1200 },
       };
       yield {
         event: 'on_chain_end',
         data: {
           output: {
-            events: [
-              { stage: 'retriever', status: 'started', detail: 'Searching...', elapsed: 0 },
-              { stage: 'retriever', status: 'done', detail: '3 themes', elapsed: 500 },
-              { stage: 'synthesizer', status: 'done', detail: '3 insights', elapsed: 800 },
-            ],
-          },
-        },
-      };
-      yield {
-        event: 'on_chain_end',
-        data: {
-          output: {
-            events: [
-              { stage: 'retriever', status: 'started', detail: 'Searching...', elapsed: 0 },
-              { stage: 'retriever', status: 'done', detail: '3 themes', elapsed: 500 },
-              { stage: 'synthesizer', status: 'done', detail: '3 insights', elapsed: 800 },
-              { stage: 'writer', status: 'done', detail: '2 sections', elapsed: 1200 },
-            ],
             response: {
               headline: 'Test headline',
               context: 'Test context',

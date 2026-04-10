@@ -1,4 +1,5 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AgentResponseV2Schema,
@@ -18,12 +19,10 @@ export function createWriterNode(model: BaseChatModel) {
     query: string;
     bundle: EvidenceBundle;
     analysis: AnalysisResult;
-    events: unknown[];
-  }): Promise<{ response: AgentResponseV2; events: unknown[] }> => {
+  }): Promise<{ response: AgentResponseV2 }> => {
     const startTime = Date.now();
-    const events = [...state.events];
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'writer',
       status: 'started',
       detail: 'Composing headline and sections...',
@@ -78,13 +77,13 @@ export function createWriterNode(model: BaseChatModel) {
       response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'writer',
       status: 'done',
       detail: `${response.sections.length} sections, ${response.sources.length} sources cited`,
       elapsed: Date.now() - startTime,
     });
 
-    return { response, events };
+    return { response };
   };
 }

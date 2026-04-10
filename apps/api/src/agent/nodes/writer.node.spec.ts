@@ -8,6 +8,12 @@ jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() 
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
+// Mock dispatchCustomEvent
+const mockDispatch = jest.fn();
+jest.mock('@langchain/core/callbacks/dispatch', () => ({
+  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
+}));
+
 import { createWriterNode } from './writer.node';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
@@ -119,15 +125,22 @@ describe('WriterNode', () => {
     mockModel.invoke.mockResolvedValue({ content: responseJson });
 
     const node = createWriterNode(mockModel);
-    const result = await node({
+    await node({
       query: 'test',
       bundle: SAMPLE_BUNDLE,
       analysis: SAMPLE_ANALYSIS,
-      events: [],
     });
 
-    expect(result.events.length).toBe(2);
-    expect(result.events[0]).toMatchObject({ stage: 'writer', status: 'started' });
-    expect(result.events[1]).toMatchObject({ stage: 'writer', status: 'done' });
+    expect(mockDispatch).toHaveBeenCalledTimes(2);
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      1,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'writer', status: 'started' }),
+    );
+    expect(mockDispatch).toHaveBeenNthCalledWith(
+      2,
+      'pipeline_event',
+      expect.objectContaining({ stage: 'writer', status: 'done' }),
+    );
   });
 });

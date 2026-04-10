@@ -99,10 +99,6 @@ export class OrchestratorService {
       bundle: Annotation<EvidenceBundle | undefined>,
       analysis: Annotation<AnalysisResult | undefined>,
       response: Annotation<AgentResponseV2 | undefined>,
-      events: Annotation<PipelineEvent[]>({
-        reducer: (_existing: PipelineEvent[], update: PipelineEvent[]) => update,
-      }),
-      error: Annotation<string | undefined>,
     });
 
     const graph = new StateGraph(PipelineStateAnnotation)
@@ -117,19 +113,22 @@ export class OrchestratorService {
 
     const initialState = {
       query,
-      events: [],
       bundle: undefined,
       analysis: undefined,
       response: undefined,
-      error: undefined,
     };
 
     // Stream events from the graph
     const eventStream = graph.streamEvents(initialState, { version: 'v2' });
 
-    let lastPipelineEventCount = 0;
+    let finalResponse: AgentResponseV2 | undefined;
 
     for await (const event of eventStream) {
+      // Pipeline stage events (dispatched via dispatchCustomEvent from nodes)
+      if (event.event === 'on_custom_event' && event.name === 'pipeline_event') {
+        yield { kind: 'pipeline', event: event.data as PipelineEvent };
+      }
+
       // Retriever inner steps — tool calls and observations
       if (event.event === 'on_tool_start') {
         yield {
@@ -166,47 +165,42 @@ export class OrchestratorService {
         }
       }
 
-      // Pipeline events from state updates
-      if (event.event === 'on_chain_end' && event.data?.output?.events) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const allEvents = event.data.output.events as any[];
-        // Emit only new pipeline events
-        for (let i = lastPipelineEventCount; i < allEvents.length; i++) {
-          yield { kind: 'pipeline', event: allEvents[i] as PipelineEvent };
-        }
-        lastPipelineEventCount = allEvents.length;
-
-        // If writer is done, emit complete event
-        if (event.data.output.response) {
-          const v2Response = event.data.output.response as AgentResponseV2;
-          yield {
-            kind: 'complete',
-            response: {
-              answer: `## ${v2Response.headline}\n\n${v2Response.context}\n\n${v2Response.sections
-                .map((s) => `### ${s.heading}\n\n${s.body}`)
-                .join('\n\n')}\n\n**Bottom line:** ${v2Response.bottomLine}`,
-              steps: [],
-              sources: v2Response.sources.map((s) => ({ ...s, url: s.url ?? '' })),
-              meta: {
-                provider: this.llm.getProviderName(),
-                totalInputTokens: 0,
-                totalOutputTokens: 0,
-                durationMs: Date.now() - startTime,
-                cached: false,
-              },
-              trust: {
-                sourcesVerified: v2Response.sources.length,
-                sourcesTotal: v2Response.sources.length,
-                avgSourceAge: 0,
-                recentSourceRatio: 0,
-                viewpointDiversity: 'balanced' as const,
-                showHnCount: 0,
-                honestyFlags: [],
-              },
-            },
-          };
-        }
+      // Capture final response from the writer node's chain end
+      if (event.event === 'on_chain_end' && event.data?.output?.response) {
+        finalResponse = event.data.output.response as AgentResponseV2;
       }
+    }
+
+    // After all events, emit the complete response
+    if (finalResponse) {
+      yield {
+        kind: 'complete',
+        response: {
+          answer: `## ${finalResponse.headline}\n\n${
+            finalResponse.context
+          }\n\n${finalResponse.sections
+            .map((s) => `### ${s.heading}\n\n${s.body}`)
+            .join('\n\n')}\n\n**Bottom line:** ${finalResponse.bottomLine}`,
+          steps: [],
+          sources: finalResponse.sources.map((s) => ({ ...s, url: s.url ?? '' })),
+          meta: {
+            provider: this.llm.getProviderName(),
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            durationMs: Date.now() - startTime,
+            cached: false,
+          },
+          trust: {
+            sourcesVerified: finalResponse.sources.length,
+            sourcesTotal: finalResponse.sources.length,
+            avgSourceAge: 0,
+            recentSourceRatio: 0,
+            viewpointDiversity: 'balanced' as const,
+            showHnCount: 0,
+            honestyFlags: [],
+          },
+        },
+      };
     }
   }
 }

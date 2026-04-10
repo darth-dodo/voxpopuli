@@ -1,4 +1,5 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AnalysisResultSchema,
@@ -16,12 +17,10 @@ export function createSynthesizerNode(model: BaseChatModel) {
   return async (state: {
     query: string;
     bundle: EvidenceBundle;
-    events: unknown[];
-  }): Promise<{ analysis: AnalysisResult; events: unknown[] }> => {
+  }): Promise<{ analysis: AnalysisResult }> => {
     const startTime = Date.now();
-    const events = [...state.events];
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'synthesizer',
       status: 'started',
       detail: `Analyzing ${state.bundle.themes.length} themes...`,
@@ -73,13 +72,13 @@ export function createSynthesizerNode(model: BaseChatModel) {
       analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    events.push({
+    await dispatchCustomEvent('pipeline_event', {
       stage: 'synthesizer',
       status: 'done',
       detail: `${analysis.insights.length} insights, ${analysis.contradictions.length} contradictions, confidence: ${analysis.confidence}`,
       elapsed: Date.now() - startTime,
     });
 
-    return { analysis, events };
+    return { analysis };
   };
 }
