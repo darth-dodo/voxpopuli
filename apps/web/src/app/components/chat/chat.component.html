@@ -452,7 +452,7 @@
       <!-- Pipeline status message while waiting for answer -->
       @if (isPipelineMode() && !response() && isStreaming()) {
       <div class="mt-4">
-        <div class="vp-card p-5 sm:p-8">
+        <div class="vp-card p-4 sm:p-6">
           <div class="flex items-center gap-3">
             <span class="relative flex h-2.5 w-2.5">
               <span
@@ -484,7 +484,7 @@
       <!-- Error state -->
       @if (error(); as errorMsg) { @if (!loading() && !response()) {
       <div class="space-y-4 mt-4">
-        <div class="vp-card p-5 sm:p-6 border-trust-danger/30" role="alert">
+        <div class="vp-card p-4 sm:p-5 border-trust-danger/30" role="alert">
           <div class="flex items-start gap-3">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -581,21 +581,19 @@
         </div>
         }
 
-        <!-- Answer prose — full, no truncation -->
-        <div class="vp-card p-5 sm:p-8">
-          <div class="vp-prose">
-            <markdown [data]="enrichedAnswer()" />
+        <!-- Answer prose + trust + meta in one card -->
+        <div class="vp-card overflow-hidden">
+          <div class="p-4 sm:p-6 lg:p-8">
+            <div class="vp-prose">
+              <markdown [data]="enrichedAnswer()" />
+            </div>
           </div>
-        </div>
 
-        <!-- Trust bar -->
-        <div class="border-t border-border-subtle pt-4">
-          <app-trust-bar [trust]="res.trust" />
-        </div>
-
-        <!-- Meta bar -->
-        <div class="border-t border-border-subtle pt-3">
-          <app-meta-bar [meta]="res.meta" />
+          <!-- Trust + Meta footer -->
+          <div class="border-t border-border-subtle px-4 sm:px-6 lg:px-8 py-3 bg-surface-raised/50 space-y-2">
+            <app-trust-bar [trust]="res.trust" />
+            <app-meta-bar [meta]="res.meta" />
+          </div>
         </div>
       </article>
       } } }
