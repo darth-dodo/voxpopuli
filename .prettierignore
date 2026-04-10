@@ -5,3 +5,4 @@ pnpm-lock.yaml
 coverage
 .angular
 .playwright-mcp
+evals/results
