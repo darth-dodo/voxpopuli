@@ -1,4 +1,4 @@
-<div class="min-h-screen bg-surface-base flex flex-col">
+<div class="min-h-screen bg-surface-base flex flex-col overflow-x-hidden">
   <!-- Theme toggle — top right, always visible -->
   <div class="fixed top-5 right-5 z-50">
     <button
@@ -449,8 +449,25 @@
       <!-- ─── Answer Tab ─── -->
       @if (activeTab() === 'answer') {
 
+      <!-- Pipeline status message while waiting for answer -->
+      @if (isPipelineMode() && !response() && isStreaming()) {
+      <div class="mt-4">
+        <div class="vp-card p-4 sm:p-6">
+          <div class="flex items-center gap-3">
+            <span class="relative flex h-2.5 w-2.5">
+              <span
+                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent-amber opacity-75"
+              ></span>
+              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
+            </span>
+            <span class="text-ui text-sm text-text-secondary">{{ pipelineStatusMessage() }}</span>
+          </div>
+        </div>
+      </div>
+      }
+
       <!-- Loading state -->
-      @if (loading() && !response()) {
+      @if (loading() && !response() && !isPipelineMode()) {
       <div class="mt-4 space-y-4" aria-busy="true">
         <div class="vp-card p-5 sm:p-8">
           <div class="space-y-3 animate-pulse">
@@ -467,7 +484,7 @@
       <!-- Error state -->
       @if (error(); as errorMsg) { @if (!loading() && !response()) {
       <div class="space-y-4 mt-4">
-        <div class="vp-card p-5 sm:p-6 border-trust-danger/30" role="alert">
+        <div class="vp-card p-4 sm:p-5 border-trust-danger/30" role="alert">
           <div class="flex items-start gap-3">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -564,21 +581,61 @@
         </div>
         }
 
-        <!-- Answer prose — full, no truncation -->
-        <div class="vp-card p-5 sm:p-8">
-          <div class="vp-prose">
-            <markdown [data]="enrichedAnswer()" />
+        <!-- Answer prose + trust + meta in one card -->
+        <div class="vp-card overflow-hidden">
+          <div class="p-4 sm:p-6 lg:p-8">
+            <!-- Copy button -->
+            <div class="flex justify-end mb-3">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-text-muted hover:text-text-secondary hover:bg-surface-overlay transition-colors cursor-pointer"
+                (click)="copyAnswer()"
+                [attr.aria-label]="copied() ? 'Copied!' : 'Copy answer to clipboard'"
+              >
+                @if (copied()) {
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  class="w-3.5 h-3.5 text-trust-verified"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <span class="text-trust-verified">Copied</span>
+                } @else {
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke-width="1.5"
+                  stroke="currentColor"
+                  class="w-3.5 h-3.5"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+                  />
+                </svg>
+                Copy }
+              </button>
+            </div>
+            <div class="vp-prose">
+              <markdown [data]="enrichedAnswer()" />
+            </div>
           </div>
-        </div>
 
-        <!-- Trust bar -->
-        <div class="border-t border-border-subtle pt-4">
-          <app-trust-bar [trust]="res.trust" />
-        </div>
-
-        <!-- Meta bar -->
-        <div class="border-t border-border-subtle pt-3">
-          <app-meta-bar [meta]="res.meta" />
+          <!-- Trust + Meta footer -->
+          <div
+            class="border-t border-border-subtle px-4 sm:px-6 lg:px-8 py-3 bg-surface-raised/50 space-y-2"
+          >
+            <app-trust-bar [trust]="res.trust" />
+            <app-meta-bar [meta]="res.meta" />
+          </div>
         </div>
       </article>
       } } }
@@ -603,7 +660,12 @@
 
       <!-- ─── Steps Tab ─── -->
       @if (activeTab() === 'steps') { @if (steps().length > 0 || isStreaming()) {
-      <app-agent-steps [steps]="steps()" [isStreaming]="isStreaming()" />
+      <app-agent-steps
+        [steps]="steps()"
+        [isStreaming]="isStreaming()"
+        [pipelineEvents]="pipelineEvents()"
+        [isPipelineMode]="isPipelineMode()"
+      />
       } @else {
       <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
       } }

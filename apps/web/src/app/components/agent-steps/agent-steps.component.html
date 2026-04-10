@@ -1,10 +1,152 @@
-<!-- Human-readable Agent Steps -->
+<!-- Pipeline Mode -->
+@if (isPipelineMode()) {
+<section aria-label="Pipeline progress">
+  <!-- Three-stage progress bar -->
+  <div
+    class="flex items-center gap-1 mb-6"
+    role="progressbar"
+    [attr.aria-valuenow]="pipelineStages().length"
+    aria-valuemin="0"
+    aria-valuemax="3"
+  >
+    @for (stageName of ['retriever', 'synthesizer', 'writer']; track stageName; let i = $index) {
+    @let stageData = pipelineStages().find(s => s.name === stageName);
+    <div
+      class="flex-1 h-1.5 rounded-full transition-colors duration-500"
+      [class.bg-trust-verified]="stageData?.status === 'done'"
+      [class.bg-accent-amber]="
+        stageData && stageData.status !== 'done' && stageData.status !== 'error'
+      "
+      [class.bg-trust-danger]="stageData?.status === 'error'"
+      [class.bg-surface-overlay]="!stageData"
+    ></div>
+    }
+  </div>
+
+  <!-- Stage details -->
+  <div class="space-y-3">
+    @for (stage of pipelineStages(); track stage.name) {
+    <div class="flex items-start gap-3">
+      <!-- Status icon -->
+      <div class="shrink-0 mt-0.5 w-5 h-5 flex items-center justify-center">
+        @if (stage.status === 'done') {
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          class="w-5 h-5 text-trust-verified"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+            clip-rule="evenodd"
+          />
+        </svg>
+        } @else if (stage.status === 'error') {
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          class="w-5 h-5 text-trust-danger"
+        >
+          <path
+            fill-rule="evenodd"
+            d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z"
+            clip-rule="evenodd"
+          />
+        </svg>
+        } @else {
+        <div
+          class="w-5 h-5 rounded-full border-2 border-accent-amber flex items-center justify-center"
+        >
+          <div class="w-2 h-2 rounded-full bg-accent-amber animate-pulse"></div>
+        </div>
+        }
+      </div>
+
+      <!-- Stage content -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-baseline justify-between gap-2">
+          <h4 class="text-ui text-sm font-medium text-text-primary capitalize">{{ stage.name }}</h4>
+          @if (stage.elapsed > 0) {
+          <span class="text-mono text-xs text-text-muted tabular-nums"
+            >{{ (stage.elapsed / 1000).toFixed(1) }}s</span
+          >
+          }
+        </div>
+
+        @if (stage.status === 'done') {
+        <!-- Completed: show metrics as inline text -->
+        <p class="text-ui text-xs text-text-muted mt-0.5">{{ stage.detail }}</p>
+        } @else if (stage.detail) {
+        <!-- In progress: show current action -->
+        <p class="text-ui text-xs text-text-secondary mt-0.5">{{ stage.detail }}</p>
+        }
+      </div>
+    </div>
+    }
+
+    <!-- Pending stages placeholder -->
+    @for (stageName of ['retriever', 'synthesizer', 'writer']; track stageName) { @if
+    (!pipelineStages().find(s => s.name === stageName)) {
+    <div class="flex items-start gap-3 opacity-40">
+      <div class="shrink-0 mt-0.5 w-5 h-5 flex items-center justify-center">
+        <div class="w-4 h-4 rounded-full border border-border-default"></div>
+      </div>
+      <div>
+        <h4 class="text-ui text-sm font-medium text-text-muted capitalize">{{ stageName }}</h4>
+        <p class="text-ui text-xs text-text-faint mt-0.5">Waiting</p>
+      </div>
+    </div>
+    } }
+  </div>
+
+  <!-- Tool calls (collapsed by default) -->
+  @if (groupedSteps().length > 0) {
+  <div class="mt-4 pt-4 border-t border-border-subtle pl-8">
+    <button
+      type="button"
+      class="flex items-center gap-1.5 text-ui text-xs text-text-muted hover:text-text-secondary transition-colors cursor-pointer"
+      (click)="innerStepsCollapsed.update(v => !v)"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+        class="w-3 h-3 transition-transform"
+        [class.rotate-90]="!innerStepsCollapsed()"
+      >
+        <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+      </svg>
+      {{ groupedSteps().length }} tool calls
+    </button>
+
+    @if (!innerStepsCollapsed()) {
+    <div class="mt-3 space-y-1.5">
+      @for (step of groupedSteps(); track step.number; let i = $index) {
+      <div
+        class="flex items-baseline gap-2 text-ui text-xs py-1 px-2 rounded hover:bg-surface-overlay/50 transition-colors"
+      >
+        <span class="text-text-faint tabular-nums shrink-0">{{ step.number }}</span>
+        <span class="text-text-secondary">{{ step.summary }}</span>
+        @if (step.observation) {
+        <span class="text-text-muted">&middot; {{ step.observation }}</span>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</section>
+} @else {
+<!-- Standard ReAct Mode: Original view -->
 <section class="space-y-3" aria-label="Agent reasoning steps">
   @for (step of groupedSteps(); track step.number; let i = $index; let isLast = $last) {
   <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
-    <!-- Step header -->
     <div class="flex items-start gap-3">
-      <!-- Icon -->
       <div class="shrink-0 mt-0.5">
         @if (step.icon === 'search') {
         <svg
@@ -56,21 +198,14 @@
         </svg>
         }
       </div>
-
-      <!-- Content -->
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1">
           <span class="text-mono text-xs text-text-muted">Step {{ step.number }}</span>
         </div>
         <p class="text-ui text-sm text-text-primary">{{ step.summary }}</p>
-
-        <!-- Observation result -->
         @if (step.observation) {
         <p class="text-ui text-xs text-text-muted mt-1">{{ step.observation }}</p>
-        }
-
-        <!-- Show raw toggle -->
-        @if (step.rawAction || step.rawObservation) {
+        } @if (step.rawAction || step.rawObservation) {
         <button
           type="button"
           class="text-mono text-xs text-text-faint hover:text-text-muted mt-2 cursor-pointer"
@@ -78,7 +213,6 @@
         >
           {{ isRawExpanded(i) ? 'Hide raw' : 'Show raw' }}
         </button>
-
         @if (isRawExpanded(i)) {
         <div
           class="mt-2 p-3 rounded bg-surface-overlay text-mono text-xs text-text-muted whitespace-pre-wrap break-words"
@@ -93,10 +227,7 @@
       </div>
     </div>
   </div>
-  }
-
-  <!-- Streaming indicator -->
-  @if (isStreaming()) {
+  } @if (isStreaming()) {
   <div class="rounded-lg border border-border-subtle bg-surface-raised p-4">
     <div class="flex items-center gap-3">
       <span class="relative flex h-2.5 w-2.5">
@@ -110,3 +241,4 @@
   </div>
   }
 </section>
+}

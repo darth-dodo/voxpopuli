@@ -15,7 +15,9 @@ export type StreamEvent =
   | { type: 'action'; toolName: string; toolInput: Record<string, unknown>; timestamp: number }
   | { type: 'observation'; content: string; timestamp: number }
   | { type: 'answer'; response: AgentResponse }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | { type: 'pipeline'; stage: string; status: string; detail: string; elapsed: number }
+  | { type: 'token'; content: string };
 
 // ---------------------------------------------------------------------------
 // Service
@@ -80,7 +82,7 @@ export class RagService {
    * @param provider - Optional LLM provider override (groq / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
-  stream(query: string, provider?: string): Observable<StreamEvent> {
+  stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
 
@@ -88,11 +90,22 @@ export class RagService {
     if (provider) {
       url += `&provider=${encodeURIComponent(provider)}`;
     }
+    if (useMultiAgent) {
+      url += '&useMultiAgent=true';
+    }
 
     return new Observable<StreamEvent>((subscriber) => {
       const eventSource = new EventSource(url);
 
-      const EVENT_TYPES = ['thought', 'action', 'observation', 'answer', 'error'] as const;
+      const EVENT_TYPES = [
+        'thought',
+        'action',
+        'observation',
+        'answer',
+        'error',
+        'pipeline',
+        'token',
+      ] as const;
 
       for (const eventType of EVENT_TYPES) {
         eventSource.addEventListener(eventType, (event: MessageEvent) => {
@@ -158,7 +171,7 @@ export class RagService {
    * @returns A discriminated `StreamEvent`.
    */
   private parseStreamEvent(
-    type: 'thought' | 'action' | 'observation' | 'answer' | 'error',
+    type: 'thought' | 'action' | 'observation' | 'answer' | 'error' | 'pipeline' | 'token',
     data: unknown,
   ): StreamEvent {
     const record = data as Record<string, unknown>;
@@ -192,6 +205,19 @@ export class RagService {
         return {
           type: 'error',
           message: String(record['message'] ?? 'Unknown error'),
+        };
+      case 'pipeline':
+        return {
+          type: 'pipeline',
+          stage: String(record['stage'] ?? ''),
+          status: String(record['status'] ?? ''),
+          detail: String(record['detail'] ?? ''),
+          elapsed: Number(record['elapsed'] ?? 0),
+        };
+      case 'token':
+        return {
+          type: 'token',
+          content: String(record['content'] ?? ''),
         };
     }
   }
