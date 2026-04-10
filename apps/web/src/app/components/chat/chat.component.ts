@@ -95,6 +95,9 @@ export class ChatComponent implements OnInit {
   /** Token content accumulated during pipeline streaming. */
   readonly tokenContent = signal('');
 
+  /** Whether the answer was recently copied to clipboard. */
+  readonly copied = signal(false);
+
   /** Human-readable status message derived from the latest pipeline event. */
   readonly pipelineStatusMessage = computed(() => {
     const events = this.pipelineEvents();
@@ -288,6 +291,16 @@ export class ChatComponent implements OnInit {
       event.preventDefault();
       this.submit();
     }
+  }
+
+  /** Copy the answer text to clipboard. */
+  copyAnswer(): void {
+    const res = this.response();
+    if (!res) return;
+    navigator.clipboard.writeText(res.answer).then(() => {
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 2000);
+    });
   }
 
   /** Retry the current query. */
