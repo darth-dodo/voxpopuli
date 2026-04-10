@@ -53,6 +53,71 @@ export class AgentStepsComponent {
     return stages;
   });
 
+  /** Whether inner ReAct steps are collapsed (default: true). */
+  readonly innerStepsCollapsed = signal(true);
+
+  /** Total pipeline time based on max elapsed across stages. */
+  readonly totalPipelineTime = computed(() => {
+    const stages = this.pipelineStages();
+    if (stages.length === 0) return 0;
+    return Math.max(...stages.map((s) => s.elapsed));
+  });
+
+  /** Parsed stage details as structured chip data for badge rendering. */
+  readonly parsedStageDetails = computed(() => {
+    const stages = this.pipelineStages();
+    const parsed = new Map<string, Array<{ label: string; value: string; color: string }>>();
+
+    for (const stage of stages) {
+      if (stage.status !== 'done' || !stage.detail) continue;
+      const chips: Array<{ label: string; value: string; color: string }> = [];
+
+      if (stage.name === 'retriever') {
+        const match = stage.detail.match(/(\d+) themes? from (\d+) sources?/);
+        if (match) {
+          chips.push({ label: 'themes', value: match[1], color: 'text-accent-amber' });
+          chips.push({ label: 'sources', value: match[2], color: 'text-text-secondary' });
+        }
+        const tokenMatch = stage.detail.match(/~(\d+) tokens/);
+        if (tokenMatch) {
+          chips.push({ label: 'tokens', value: `~${tokenMatch[1]}`, color: 'text-text-muted' });
+        }
+      } else if (stage.name === 'synthesizer') {
+        const insightMatch = stage.detail.match(/(\d+) insights?/);
+        if (insightMatch)
+          chips.push({ label: 'insights', value: insightMatch[1], color: 'text-accent-amber' });
+        const contraMatch = stage.detail.match(/(\d+) contradictions?/);
+        if (contraMatch && contraMatch[1] !== '0')
+          chips.push({
+            label: 'contradictions',
+            value: contraMatch[1],
+            color: 'text-trust-warning',
+          });
+        const confMatch = stage.detail.match(/confidence: (\w+)/);
+        if (confMatch) {
+          const confColor =
+            confMatch[1] === 'high'
+              ? 'text-trust-verified'
+              : confMatch[1] === 'medium'
+              ? 'text-accent-amber'
+              : 'text-trust-danger';
+          chips.push({ label: 'confidence', value: confMatch[1], color: confColor });
+        }
+      } else if (stage.name === 'writer') {
+        const secMatch = stage.detail.match(/(\d+) sections?/);
+        if (secMatch)
+          chips.push({ label: 'sections', value: secMatch[1], color: 'text-accent-amber' });
+        const srcMatch = stage.detail.match(/(\d+) sources? cited/);
+        if (srcMatch)
+          chips.push({ label: 'cited', value: srcMatch[1], color: 'text-text-secondary' });
+      }
+
+      parsed.set(stage.name, chips);
+    }
+
+    return parsed;
+  });
+
   /** Set of step indices whose raw details are expanded. */
   readonly expandedRaw = signal<Set<number>>(new Set());
 
