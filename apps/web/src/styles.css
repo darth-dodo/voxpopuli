@@ -472,6 +472,8 @@
     line-height: 1.8;
     color: var(--color-text-primary);
     max-width: 65ch;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .vp-prose strong {
