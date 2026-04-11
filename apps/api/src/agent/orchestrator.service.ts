@@ -1,12 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { StateGraph, Annotation, START, END } from '@langchain/langgraph';
 import type {
   PipelineConfig,
   PipelineEvent,
   AgentResponseV2,
   AgentStep,
   AgentResponse,
-  EvidenceBundle,
   AnalysisResult,
 } from '@voxpopuli/shared-types';
 import { AgentService, type AgentStreamEvent } from './agent.service';
@@ -15,6 +13,7 @@ import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
 import { createAgentTools } from './tools';
 import { computeTrustMetadata } from './trust';
+import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
@@ -31,10 +30,16 @@ export type PipelineStreamEvent =
   | { kind: 'complete'; response: AgentResponse };
 
 /**
- * Orchestrates the multi-agent pipeline using LangGraph.
+ * Orchestrates the multi-agent pipeline with direct sequential node calls.
  *
  * Pipeline: Retriever → Synthesizer → Writer
- * Fallback: Legacy AgentService on any pipeline failure.
+ *
+ * Recovery matrix:
+ * - Retriever fails → bubbles to runWithFallback → legacy AgentService
+ * - Synthesizer fails → retry once with same EvidenceBundle, then bubble → legacy
+ * - Writer fails → retry once with same AnalysisResult, then buildFallbackResponse
+ *
+ * Key invariant: the Retriever is never re-run on a downstream failure.
  */
 @Injectable()
 export class OrchestratorService {
@@ -78,13 +83,12 @@ export class OrchestratorService {
   }
 
   /**
-   * Run the full LangGraph pipeline, streaming events.
+   * Run the pipeline by calling nodes directly with per-stage error handling.
    */
   async *runStream(query: string, config: PipelineConfig): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    const collectedSteps: AgentStep[] = [];
+    const totalInputTokens = 0;
+    const totalOutputTokens = 0;
 
     // The active provider is whatever was passed per-request (all stages use same provider by default)
     const activeProvider =
@@ -98,128 +102,181 @@ export class OrchestratorService {
       this.llm.getModel(config.providerMap[stage]);
 
     const tools = createAgentTools(this.hn, this.chunker);
+    const retrieverFn = createRetrieverNode(getModel('retriever'), tools);
+    const synthesizerFn = createSynthesizerNode(getModel('synthesizer'));
+    const writerFn = createWriterNode(getModel('writer'));
 
-    // Build node functions
-    const retrieverNode = createRetrieverNode(getModel('retriever'), tools);
-    const synthesizerNode = createSynthesizerNode(getModel('synthesizer'));
-    const writerNode = createWriterNode(getModel('writer'));
+    const elapsed = () => Date.now() - startTime;
 
-    // Build LangGraph StateGraph with typed annotations
-    const PipelineStateAnnotation = Annotation.Root({
-      query: Annotation<string>,
-      bundle: Annotation<EvidenceBundle | undefined>,
-      analysis: Annotation<AnalysisResult | undefined>,
-      response: Annotation<AgentResponseV2 | undefined>,
-    });
-
-    const graph = new StateGraph(PipelineStateAnnotation)
-      .addNode('retriever', retrieverNode)
-      .addNode('synthesizer', synthesizerNode)
-      .addNode('writer', writerNode)
-      .addEdge(START, 'retriever')
-      .addEdge('retriever', 'synthesizer')
-      .addEdge('synthesizer', 'writer')
-      .addEdge('writer', END)
-      .compile();
-
-    const initialState = {
-      query,
-      bundle: undefined,
-      analysis: undefined,
-      response: undefined,
+    // ── Stage 1: Retriever ──────────────────────────────────────────
+    // Failures bubble to runWithFallback → legacy agent
+    yield {
+      kind: 'pipeline',
+      event: {
+        stage: 'retriever',
+        status: 'started',
+        detail: `Searching HN for "${query}"...`,
+        elapsed: elapsed(),
+      },
     };
 
-    // Stream events from the graph
-    const eventStream = graph.streamEvents(initialState, { version: 'v2' });
+    const { bundle } = await retrieverFn({ query });
 
-    let finalResponse: AgentResponseV2 | undefined;
+    yield {
+      kind: 'pipeline',
+      event: {
+        stage: 'retriever',
+        status: 'done',
+        detail: `${bundle.themes.length} themes from ${bundle.allSources.length} sources`,
+        elapsed: elapsed(),
+      },
+    };
 
-    for await (const event of eventStream) {
-      // Pipeline stage events (dispatched via dispatchCustomEvent from nodes)
-      if (event.event === 'on_custom_event' && event.name === 'pipeline_event') {
-        yield { kind: 'pipeline', event: event.data as PipelineEvent };
-      }
+    // ── Stage 2: Synthesizer ────────────────────────────────────────
+    // Retry once, then bubble to runWithFallback → legacy agent
+    yield {
+      kind: 'pipeline',
+      event: {
+        stage: 'synthesizer',
+        status: 'started',
+        detail: `Analyzing ${bundle.themes.length} themes...`,
+        elapsed: elapsed(),
+      },
+    };
 
-      // Retriever inner steps — tool calls and observations
-      if (event.event === 'on_tool_start') {
-        const step: AgentStep = {
-          type: 'action' as const,
-          content: `Calling ${event.name}`,
-          toolName: event.name,
-          toolInput: event.data?.input,
-          timestamp: Date.now(),
+    let analysis: AnalysisResult;
+    try {
+      ({ analysis } = await synthesizerFn({ query, bundle }));
+    } catch (firstError) {
+      this.logger.warn(
+        `Synthesizer failed, retrying: ${
+          firstError instanceof Error ? firstError.message : firstError
+        }`,
+      );
+      yield {
+        kind: 'pipeline',
+        event: {
+          stage: 'synthesizer',
+          status: 'error',
+          detail: 'Retrying analysis...',
+          elapsed: elapsed(),
+        },
+      };
+      ({ analysis } = await synthesizerFn({ query, bundle }));
+    }
+
+    yield {
+      kind: 'pipeline',
+      event: {
+        stage: 'synthesizer',
+        status: 'done',
+        detail: `${analysis.insights.length} insights, confidence: ${analysis.confidence}`,
+        elapsed: elapsed(),
+      },
+    };
+
+    // ── Stage 3: Writer ─────────────────────────────────────────────
+    // Retry once, then buildFallbackResponse (does NOT bubble)
+    yield {
+      kind: 'pipeline',
+      event: {
+        stage: 'writer',
+        status: 'started',
+        detail: 'Composing headline and sections...',
+        elapsed: elapsed(),
+      },
+    };
+
+    let writerResponse: AgentResponseV2 | undefined;
+    try {
+      ({ response: writerResponse } = await writerFn({ query, bundle, analysis }));
+    } catch (firstError) {
+      this.logger.warn(
+        `Writer failed, retrying: ${firstError instanceof Error ? firstError.message : firstError}`,
+      );
+      yield {
+        kind: 'pipeline',
+        event: {
+          stage: 'writer',
+          status: 'error',
+          detail: 'Retrying composition...',
+          elapsed: elapsed(),
+        },
+      };
+      try {
+        ({ response: writerResponse } = await writerFn({ query, bundle, analysis }));
+      } catch (retryError) {
+        this.logger.warn(
+          `Writer retry failed, using fallback: ${
+            retryError instanceof Error ? retryError.message : retryError
+          }`,
+        );
+        yield {
+          kind: 'pipeline',
+          event: {
+            stage: 'writer',
+            status: 'error',
+            detail: 'Using fallback response from analysis',
+            elapsed: elapsed(),
+          },
         };
-        collectedSteps.push(step);
-        yield { kind: 'step', step };
-      }
-
-      if (event.event === 'on_tool_end') {
-        const output = event.data?.output;
-        const step: AgentStep = {
-          type: 'observation' as const,
-          content: typeof output === 'string' ? output : JSON.stringify(output),
-          toolName: event.name,
-          toolOutput: typeof output === 'string' ? output : JSON.stringify(output),
-          timestamp: Date.now(),
-        };
-        collectedSteps.push(step);
-        yield { kind: 'step', step };
-      }
-
-      // Track token usage from LLM calls
-      if (event.event === 'on_chat_model_end') {
-        const usage = event.data?.output?.usage_metadata;
-        if (usage) {
-          if (usage.input_tokens) totalInputTokens += usage.input_tokens;
-          if (usage.output_tokens) totalOutputTokens += usage.output_tokens;
-        }
-      }
-
-      // Capture final response via the dedicated custom event from the Writer node.
-      if (event.event === 'on_custom_event' && event.name === 'pipeline_response') {
-        finalResponse = event.data as AgentResponseV2;
       }
     }
 
-    // After all events, emit the complete response
-    if (finalResponse) {
+    // ── Emit final response ─────────────────────────────────────────
+    if (writerResponse) {
+      yield {
+        kind: 'pipeline',
+        event: {
+          stage: 'writer',
+          status: 'done',
+          detail: `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`,
+          elapsed: elapsed(),
+        },
+      };
+
+      const sources = writerResponse.sources.map((s) => ({
+        storyId: s.storyId,
+        title: s.title,
+        url: s.url ?? '',
+        author: s.author,
+        points: s.points,
+        commentCount: s.commentCount,
+      }));
+
       yield {
         kind: 'complete',
         response: {
-          answer: `## ${finalResponse.headline}\n\n${
-            finalResponse.context
-          }\n\n${finalResponse.sections
+          answer: `## ${writerResponse.headline}\n\n${
+            writerResponse.context
+          }\n\n${writerResponse.sections
             .map((s) => `### ${s.heading}\n\n${s.body}`)
-            .join('\n\n')}\n\n**Bottom line:** ${finalResponse.bottomLine}`,
-          steps: collectedSteps,
-          sources: finalResponse.sources.map((s) => ({
-            storyId: s.storyId,
-            title: s.title,
-            url: s.url ?? '',
-            author: s.author,
-            points: s.points,
-            commentCount: s.commentCount,
-          })),
+            .join('\n\n')}\n\n**Bottom line:** ${writerResponse.bottomLine}`,
+          steps: [],
+          sources,
           meta: {
             provider: activeProvider,
             totalInputTokens,
             totalOutputTokens,
-            durationMs: Date.now() - startTime,
+            durationMs: elapsed(),
             cached: false,
           },
           trust: computeTrustMetadata(
-            collectedSteps,
-            finalResponse.sources.map((s) => ({
-              storyId: s.storyId,
-              title: s.title,
-              url: s.url ?? '',
-              author: s.author,
-              points: s.points,
-              commentCount: s.commentCount,
-            })),
-            finalResponse.headline + ' ' + finalResponse.sections.map((s) => s.body).join(' '),
+            [],
+            sources,
+            writerResponse.headline + ' ' + writerResponse.sections.map((s) => s.body).join(' '),
           ),
         },
+      };
+    } else {
+      yield {
+        kind: 'complete',
+        response: buildFallbackResponse(analysis, bundle, {
+          provider: activeProvider,
+          durationMs: elapsed(),
+          totalInputTokens,
+          totalOutputTokens,
+        }),
       };
     }
   }
