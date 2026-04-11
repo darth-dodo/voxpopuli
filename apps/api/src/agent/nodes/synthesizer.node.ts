@@ -1,5 +1,4 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AnalysisResultSchema,
@@ -18,15 +17,6 @@ export function createSynthesizerNode(model: BaseChatModel) {
     query: string;
     bundle: EvidenceBundle;
   }): Promise<{ analysis: AnalysisResult }> => {
-    const startTime = Date.now();
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'synthesizer',
-      status: 'started',
-      detail: `Analyzing ${state.bundle.themes.length} themes...`,
-      elapsed: Date.now() - startTime,
-    });
-
     const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
       new SystemMessage(SYNTHESIZER_SYSTEM_PROMPT),
       new HumanMessage(JSON.stringify(state.bundle)),
@@ -71,13 +61,6 @@ export function createSynthesizerNode(model: BaseChatModel) {
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'synthesizer',
-      status: 'done',
-      detail: `${analysis.insights.length} insights, ${analysis.contradictions.length} contradictions, confidence: ${analysis.confidence}`,
-      elapsed: Date.now() - startTime,
-    });
 
     return { analysis };
   };

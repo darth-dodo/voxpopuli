@@ -8,12 +8,6 @@ jest.mock('@langchain/langgraph/prebuilt', () => ({
   })),
 }));
 
-// Mock dispatchCustomEvent
-const mockDispatch = jest.fn();
-jest.mock('@langchain/core/callbacks/dispatch', () => ({
-  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
-}));
-
 // Mock LLM providers
 jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
@@ -59,7 +53,7 @@ describe('RetrieverNode', () => {
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
-    const result = await node({ query: 'test query', events: [] });
+    const result = await node({ query: 'test query' });
 
     expect(result.bundle).toBeDefined();
     const parsed = EvidenceBundleSchema.safeParse(result.bundle);
@@ -86,13 +80,13 @@ describe('RetrieverNode', () => {
       .mockResolvedValueOnce({ content: validBundle });
 
     const node = createRetrieverNode(mockModel, mockTools);
-    const result = await node({ query: 'test', events: [] });
+    const result = await node({ query: 'test' });
 
     expect(result.bundle).toBeDefined();
     expect(mockModel.invoke).toHaveBeenCalledTimes(2);
   });
 
-  it('should emit pipeline events', async () => {
+  it('should not dispatch any custom events (pure data transformer)', async () => {
     const bundleJson = JSON.stringify({
       query: 'test',
       themes: [
@@ -109,23 +103,9 @@ describe('RetrieverNode', () => {
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
-    await node({ query: 'test', events: [] });
+    const result = await node({ query: 'test' });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(3);
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      1,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'retriever', status: 'started' }),
-    );
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      2,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'retriever', status: 'progress' }),
-    );
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      3,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'retriever', status: 'done' }),
-    );
+    expect(result.bundle).toBeDefined();
+    // Node is a pure data transformer — no dispatchCustomEvent calls
   });
 });

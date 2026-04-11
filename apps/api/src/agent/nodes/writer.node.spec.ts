@@ -8,12 +8,6 @@ jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() 
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-// Mock dispatchCustomEvent
-const mockDispatch = jest.fn();
-jest.mock('@langchain/core/callbacks/dispatch', () => ({
-  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
-}));
-
 import { createWriterNode } from './writer.node';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
@@ -65,7 +59,6 @@ describe('WriterNode', () => {
       query: 'React vs Vue',
       bundle: SAMPLE_BUNDLE,
       analysis: SAMPLE_ANALYSIS,
-      events: [],
     });
 
     expect(result.response).toBeDefined();
@@ -93,7 +86,6 @@ describe('WriterNode', () => {
       query: 'test',
       bundle: SAMPLE_BUNDLE,
       analysis: SAMPLE_ANALYSIS,
-      events: [],
     });
 
     expect(result.response).toBeDefined();
@@ -107,11 +99,11 @@ describe('WriterNode', () => {
 
     const node = createWriterNode(mockModel);
     await expect(
-      node({ query: 'test', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS, events: [] }),
+      node({ query: 'test', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS }),
     ).rejects.toThrow();
   });
 
-  it('should emit pipeline events', async () => {
+  it('should not dispatch any custom events (pure data transformer)', async () => {
     const responseJson = JSON.stringify({
       headline: 'h',
       context: 'c',
@@ -125,27 +117,13 @@ describe('WriterNode', () => {
     mockModel.invoke.mockResolvedValue({ content: responseJson });
 
     const node = createWriterNode(mockModel);
-    await node({
+    const result = await node({
       query: 'test',
       bundle: SAMPLE_BUNDLE,
       analysis: SAMPLE_ANALYSIS,
     });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(3);
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      1,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'writer', status: 'started' }),
-    );
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      2,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'writer', status: 'done' }),
-    );
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      3,
-      'pipeline_response',
-      expect.objectContaining({ headline: expect.any(String) }),
-    );
+    expect(result.response).toBeDefined();
+    // Node is a pure data transformer — no dispatchCustomEvent calls
   });
 });

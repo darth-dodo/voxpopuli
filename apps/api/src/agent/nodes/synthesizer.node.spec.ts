@@ -5,12 +5,6 @@ jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() 
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-// Mock dispatchCustomEvent
-const mockDispatch = jest.fn();
-jest.mock('@langchain/core/callbacks/dispatch', () => ({
-  dispatchCustomEvent: (...args: unknown[]) => mockDispatch(...args),
-}));
-
 import { createSynthesizerNode } from './synthesizer.node';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
@@ -50,7 +44,7 @@ describe('SynthesizerNode', () => {
     mockModel.invoke.mockResolvedValue({ content: analysisJson });
 
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'React vs Vue', bundle: SAMPLE_BUNDLE, events: [] });
+    const result = await node({ query: 'React vs Vue', bundle: SAMPLE_BUNDLE });
 
     expect(result.analysis).toBeDefined();
     const parsed = AnalysisResultSchema.safeParse(result.analysis);
@@ -68,7 +62,7 @@ describe('SynthesizerNode', () => {
     mockModel.invoke.mockResolvedValue({ content: '```json\n' + analysisJson + '\n```' });
 
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE, events: [] });
+    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE });
 
     expect(result.analysis).toBeDefined();
   });
@@ -86,7 +80,7 @@ describe('SynthesizerNode', () => {
       .mockResolvedValueOnce({ content: validJson });
 
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE, events: [] });
+    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE });
 
     expect(result.analysis).toBeDefined();
     expect(mockModel.invoke).toHaveBeenCalledTimes(2);
@@ -98,10 +92,10 @@ describe('SynthesizerNode', () => {
       .mockResolvedValueOnce({ content: 'still bad' });
 
     const node = createSynthesizerNode(mockModel);
-    await expect(node({ query: 'test', bundle: SAMPLE_BUNDLE, events: [] })).rejects.toThrow();
+    await expect(node({ query: 'test', bundle: SAMPLE_BUNDLE })).rejects.toThrow();
   });
 
-  it('should emit pipeline events', async () => {
+  it('should not dispatch any custom events (pure data transformer)', async () => {
     const analysisJson = JSON.stringify({
       summary: 'test',
       insights: [{ claim: 'c', reasoning: 'r', evidenceStrength: 'moderate', themeIndices: [0] }],
@@ -112,18 +106,9 @@ describe('SynthesizerNode', () => {
     mockModel.invoke.mockResolvedValue({ content: analysisJson });
 
     const node = createSynthesizerNode(mockModel);
-    await node({ query: 'test', bundle: SAMPLE_BUNDLE });
+    const result = await node({ query: 'test', bundle: SAMPLE_BUNDLE });
 
-    expect(mockDispatch).toHaveBeenCalledTimes(2);
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      1,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'synthesizer', status: 'started' }),
-    );
-    expect(mockDispatch).toHaveBeenNthCalledWith(
-      2,
-      'pipeline_event',
-      expect.objectContaining({ stage: 'synthesizer', status: 'done' }),
-    );
+    expect(result.analysis).toBeDefined();
+    // Node is a pure data transformer — no dispatchCustomEvent calls
   });
 });

@@ -1,5 +1,4 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AgentResponseV2Schema,
@@ -20,15 +19,6 @@ export function createWriterNode(model: BaseChatModel) {
     bundle: EvidenceBundle;
     analysis: AnalysisResult;
   }): Promise<{ response: AgentResponseV2 }> => {
-    const startTime = Date.now();
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'writer',
-      status: 'started',
-      detail: 'Composing headline and sections...',
-      elapsed: Date.now() - startTime,
-    });
-
     const input = JSON.stringify({
       analysis: state.analysis,
       bundle: state.bundle,
@@ -76,18 +66,6 @@ export function createWriterNode(model: BaseChatModel) {
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'writer',
-      status: 'done',
-      detail: `${response.sections.length} sections, ${response.sources.length} sources cited`,
-      elapsed: Date.now() - startTime,
-    });
-
-    // Emit the structured response for reliable capture by the orchestrator.
-    // LangGraph's on_chain_end events don't reliably carry sub-graph state,
-    // so we use a dedicated custom event instead.
-    await dispatchCustomEvent('pipeline_response', response);
 
     return { response };
   };
