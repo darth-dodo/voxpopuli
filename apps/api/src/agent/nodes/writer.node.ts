@@ -2,16 +2,26 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AgentResponseV2Schema,
+  AnalysisResultSchema,
+  SourceMetadataSchema,
   type AgentResponseV2,
   type AnalysisResult,
   type EvidenceBundle,
 } from '@voxpopuli/shared-types';
+import { z } from 'zod';
 import { WRITER_SYSTEM_PROMPT } from '../prompts/writer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 
+/** Schema for the Writer's input payload — analysis + citation sources only, no evidence. */
+export const WriterInputSchema = z.object({
+  analysis: AnalysisResultSchema,
+  sources: z.array(SourceMetadataSchema),
+});
+type WriterInput = z.infer<typeof WriterInputSchema>;
+
 /**
  * Creates the Writer node function for the pipeline.
- * Single-pass: AnalysisResult + EvidenceBundle → AgentResponseV2.
+ * Single-pass: AnalysisResult + citation table → AgentResponseV2.
  */
 export function createWriterNode(model: BaseChatModel) {
   return async (state: {
@@ -19,10 +29,11 @@ export function createWriterNode(model: BaseChatModel) {
     bundle: EvidenceBundle;
     analysis: AnalysisResult;
   }): Promise<{ response: AgentResponseV2 }> => {
-    const input = JSON.stringify({
+    const writerInput: WriterInput = {
       analysis: state.analysis,
-      bundle: state.bundle,
-    });
+      sources: state.bundle.allSources,
+    };
+    const input = JSON.stringify(writerInput);
 
     const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
       new SystemMessage(WRITER_SYSTEM_PROMPT),
@@ -30,7 +41,10 @@ export function createWriterNode(model: BaseChatModel) {
     ];
 
     // First attempt
-    const firstAttempt = await model.invoke(messages);
+    const firstAttempt = await model.invoke(messages, {
+      metadata: { pipeline_stage: 'writer', query: state.query },
+      tags: ['multi-agent', 'writer'],
+    });
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
     let response: AgentResponseV2;
@@ -51,7 +65,10 @@ export function createWriterNode(model: BaseChatModel) {
             )}\n\nRespond with valid JSON only.`,
           ),
         );
-        const retryAttempt = await model.invoke(messages);
+        const retryAttempt = await model.invoke(messages, {
+          metadata: { pipeline_stage: 'writer', query: state.query },
+          tags: ['multi-agent', 'writer'],
+        });
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
         response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
@@ -62,7 +79,10 @@ export function createWriterNode(model: BaseChatModel) {
           'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
         ),
       );
-      const retryAttempt = await model.invoke(messages);
+      const retryAttempt = await model.invoke(messages, {
+        metadata: { pipeline_stage: 'writer', query: state.query },
+        tags: ['multi-agent', 'writer'],
+      });
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }

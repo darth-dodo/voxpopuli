@@ -9,6 +9,7 @@ import type {
   EvidenceBundle,
   AnalysisResult,
   AgentResponseV2,
+  PipelineEvent,
 } from '@voxpopuli/shared-types';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
@@ -102,6 +103,30 @@ function makeLegacyEvents() {
   })();
 }
 
+/** Helper: set up all three node mocks with happy-path returns. */
+function setupHappyPathMocks() {
+  (createRetrieverNode as jest.Mock).mockReturnValue(
+    jest.fn().mockResolvedValue({ bundle: mockBundle }),
+  );
+  (createSynthesizerNode as jest.Mock).mockReturnValue(
+    jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
+  );
+  (createWriterNode as jest.Mock).mockReturnValue(
+    jest.fn().mockResolvedValue({ response: mockResponseV2 }),
+  );
+}
+
+/** Helper: collect all events from an async generator. */
+async function collectEvents(
+  gen: AsyncGenerator<PipelineStreamEvent | { kind: string; [key: string]: unknown }>,
+): Promise<PipelineStreamEvent[]> {
+  const events: PipelineStreamEvent[] = [];
+  for await (const event of gen) {
+    events.push(event as PipelineStreamEvent);
+  }
+  return events;
+}
+
 describe('OrchestratorService', () => {
   let service: OrchestratorService;
   let agentService: AgentService;
@@ -179,6 +204,65 @@ describe('OrchestratorService', () => {
       expect(complete.response.answer).toContain('Body 1');
       expect(complete.response.answer).toContain('Test bottom line');
     });
+
+    it('run calls agents in correct order', async () => {
+      setupHappyPathMocks();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      const retrieverOrder = (createRetrieverNode as jest.Mock).mock.invocationCallOrder[0];
+      const synthesizerOrder = (createSynthesizerNode as jest.Mock).mock.invocationCallOrder[0];
+      const writerOrder = (createWriterNode as jest.Mock).mock.invocationCallOrder[0];
+
+      expect(retrieverOrder).toBeLessThan(synthesizerOrder);
+      expect(synthesizerOrder).toBeLessThan(writerOrder);
+    });
+
+    it('SSE PipelineEvents emitted at each stage transition', async () => {
+      setupHappyPathMocks();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const pipelineEvents = events
+        .filter((e) => e.kind === 'pipeline')
+        .map((e) => {
+          const pe = (e as { kind: 'pipeline'; event: PipelineEvent }).event;
+          return { stage: pe.stage, status: pe.status };
+        });
+
+      expect(pipelineEvents).toEqual([
+        { stage: 'retriever', status: 'started' },
+        { stage: 'retriever', status: 'done' },
+        { stage: 'synthesizer', status: 'started' },
+        { stage: 'synthesizer', status: 'done' },
+        { stage: 'writer', status: 'started' },
+        { stage: 'writer', status: 'done' },
+      ]);
+    });
+
+    it('PipelineResult contains valid intermediates', async () => {
+      setupHappyPathMocks();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const complete = events.find((e) => e.kind === 'complete') as PipelineStreamEvent & {
+        kind: 'complete';
+        response: { answer: string; sources: Array<{ storyId: number; title: string }> };
+      };
+
+      expect(complete).toBeDefined();
+      // Answer contains headline
+      expect(complete.response.answer).toContain('Test headline');
+      // Answer contains section bodies
+      expect(complete.response.answer).toContain('Body 1');
+      expect(complete.response.answer).toContain('Body 2');
+      // Answer contains bottom line
+      expect(complete.response.answer).toContain('Test bottom line');
+      // Sources array is populated
+      expect(complete.response.sources.length).toBeGreaterThan(0);
+      expect(complete.response.sources[0].storyId).toBe(1);
+      expect(complete.response.sources[0].title).toBe('S1');
+    });
   });
 
   describe('retriever failure', () => {
@@ -242,6 +326,37 @@ describe('OrchestratorService', () => {
 
       expect(mockSynthesizer).toHaveBeenCalledTimes(2);
       expect(agentService.runStream).toHaveBeenCalledWith('test query');
+    });
+
+    it('JSON parse failure triggers retry in synthesizer', async () => {
+      const mockSynthesizer = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('JSON parse error: unexpected token'))
+        .mockResolvedValueOnce({ analysis: mockAnalysis });
+
+      (createRetrieverNode as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+      );
+      (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
+      (createWriterNode as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
+      );
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      // Synthesizer was called twice: first failed with JSON error, second succeeded
+      expect(mockSynthesizer).toHaveBeenCalledTimes(2);
+      // Pipeline completed successfully after retry
+      const complete = events.find((e) => e.kind === 'complete');
+      expect(complete).toBeDefined();
+      // An error event was emitted for the first failure
+      const synthErrors = events.filter(
+        (e) =>
+          e.kind === 'pipeline' &&
+          (e as { kind: 'pipeline'; event: PipelineEvent }).event.stage === 'synthesizer' &&
+          (e as { kind: 'pipeline'; event: PipelineEvent }).event.status === 'error',
+      );
+      expect(synthErrors.length).toBe(1);
     });
   });
 
@@ -334,6 +449,95 @@ describe('OrchestratorService', () => {
       }
 
       expect(mockRetriever).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('integration', () => {
+    it('full pipeline with mocked LLM responses', async () => {
+      setupHappyPathMocks();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      // 6 pipeline events: started + done for each of 3 stages
+      const pipelineEvents = events.filter((e) => e.kind === 'pipeline');
+      expect(pipelineEvents.length).toBe(6);
+
+      // Exactly 1 complete event
+      const completeEvents = events.filter((e) => e.kind === 'complete');
+      expect(completeEvents.length).toBe(1);
+
+      // Complete response has correct structure
+      const complete = completeEvents[0] as PipelineStreamEvent & {
+        kind: 'complete';
+        response: {
+          answer: string;
+          steps: unknown[];
+          sources: Array<{ storyId: number }>;
+          meta: { provider: string; durationMs: number };
+          trust: Record<string, unknown>;
+        };
+      };
+      expect(complete.response.answer).toBeDefined();
+      expect(complete.response.answer.length).toBeGreaterThan(0);
+      expect(complete.response.steps).toBeDefined();
+      expect(complete.response.sources).toBeDefined();
+      expect(complete.response.sources.length).toBeGreaterThan(0);
+      expect(complete.response.meta).toBeDefined();
+      expect(complete.response.meta.provider).toBe('groq');
+      expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
+      expect(complete.response.trust).toBeDefined();
+    });
+
+    it('pipeline events have increasing elapsed times', async () => {
+      setupHappyPathMocks();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const pipelineEvents = events
+        .filter((e) => e.kind === 'pipeline')
+        .map((e) => (e as { kind: 'pipeline'; event: PipelineEvent }).event);
+
+      // Each elapsed value should be >= the previous one
+      for (let i = 1; i < pipelineEvents.length; i++) {
+        expect(pipelineEvents[i].elapsed).toBeGreaterThanOrEqual(pipelineEvents[i - 1].elapsed);
+      }
+    });
+  });
+
+  describe('timeout behavior', () => {
+    it('long-running stage completes and reports elapsed time', async () => {
+      // Mock retriever to resolve after a small delay
+      const delayedRetriever = jest
+        .fn()
+        .mockImplementation(
+          () => new Promise((resolve) => setTimeout(() => resolve({ bundle: mockBundle }), 50)),
+        );
+
+      (createRetrieverNode as jest.Mock).mockReturnValue(delayedRetriever);
+      (createSynthesizerNode as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
+      );
+      (createWriterNode as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
+      );
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      // Retriever was called successfully
+      expect(delayedRetriever).toHaveBeenCalledTimes(1);
+
+      // The retriever "done" event should have a non-zero elapsed time
+      const retrieverDone = events
+        .filter((e) => e.kind === 'pipeline')
+        .map((e) => (e as { kind: 'pipeline'; event: PipelineEvent }).event)
+        .find((pe) => pe.stage === 'retriever' && pe.status === 'done');
+
+      expect(retrieverDone).toBeDefined();
+      expect(retrieverDone!.elapsed).toBeGreaterThan(0);
+
+      // Pipeline still completes successfully
+      const complete = events.find((e) => e.kind === 'complete');
+      expect(complete).toBeDefined();
     });
   });
 });

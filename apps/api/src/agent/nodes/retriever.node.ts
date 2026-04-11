@@ -10,6 +10,54 @@ import { cleanLlmOutput } from './parse-llm-json';
 const MAX_REACT_ITERATIONS = 8;
 
 /**
+ * Minimum raw data length (in chars) to consider the ReAct collection
+ * as having found useful content. Below this threshold the compaction
+ * LLM call is skipped and a minimal "dry-well" bundle is returned.
+ */
+const MIN_USEFUL_DATA_LENGTH = 200;
+
+/**
+ * Returns true when the raw data collected by the ReAct agent is too
+ * sparse to justify a compaction LLM call. Two heuristics:
+ *   1. Total content is very short (< MIN_USEFUL_DATA_LENGTH chars).
+ *   2. No story-like data patterns (point counts, story IDs).
+ */
+export function isDryWell(rawData: string): boolean {
+  const trimmed = rawData.trim();
+  if (trimmed.length < MIN_USEFUL_DATA_LENGTH) return true;
+  // Check for presence of any story-like content (point counts or story references)
+  const hasStoryData = /\d+\s+points?/i.test(trimmed) || /Story\s+\d+/i.test(trimmed);
+  return !hasStoryData;
+}
+
+/**
+ * Builds a minimal EvidenceBundle for queries where the ReAct agent
+ * found no substantial HN discussion ("dry well"). Skips the
+ * compaction LLM call entirely to save tokens.
+ */
+export function buildDryWellBundle(query: string): EvidenceBundle {
+  return {
+    query,
+    themes: [
+      {
+        label: 'No substantial discussion found',
+        items: [
+          {
+            sourceId: 0,
+            text: 'Limited or no relevant Hacker News discussion was found on this topic.',
+            type: 'opinion' as const,
+            relevance: 0.1,
+          },
+        ],
+      },
+    ],
+    allSources: [],
+    totalSourcesScanned: 0,
+    tokenCount: 50,
+  };
+}
+
+/**
  * Creates the Retriever node function for the pipeline.
  *
  * Two phases:
@@ -28,13 +76,31 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
   return async (state: { query: string }): Promise<{ bundle: EvidenceBundle }> => {
     // Phase 1: ReAct collection
-    const reactResult = await reactAgent.invoke({
-      messages: [new HumanMessage(state.query)],
-    });
+    const reactResult = await reactAgent.invoke(
+      {
+        messages: [new HumanMessage(state.query)],
+      },
+      {
+        metadata: { pipeline_stage: 'retriever', phase: 'react', query: state.query },
+        tags: ['multi-agent', 'retriever', 'react'],
+      },
+    );
 
+    // Keep only tool results + assistant reasoning; drop system prompt and
+    // the initial human query (already passed separately to compactWithRetry).
     const rawData = reactResult.messages
+      .filter((m: { _getType?: () => string }) => {
+        if (typeof m._getType !== 'function') return true; // keep mock/plain messages
+        const type = m._getType();
+        return type !== 'system' && type !== 'human';
+      })
       .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
       .join('\n\n');
+
+    // Dry-well circuit breaker: if raw data is too sparse, skip compaction
+    if (isDryWell(rawData)) {
+      return { bundle: buildDryWellBundle(state.query) };
+    }
 
     // Phase 2: Compaction
     const bundle = await compactWithRetry(model, state.query, rawData);
@@ -56,7 +122,10 @@ async function compactWithRetry(
     new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
   ];
 
-  const firstAttempt = await model.invoke(messages);
+  const firstAttempt = await model.invoke(messages, {
+    metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
+    tags: ['multi-agent', 'retriever', 'compaction'],
+  });
   const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
   try {
@@ -84,7 +153,10 @@ async function compactWithRetry(
     );
   }
 
-  const retryAttempt = await model.invoke(messages);
+  const retryAttempt = await model.invoke(messages, {
+    metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
+    tags: ['multi-agent', 'retriever', 'compaction'],
+  });
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
   const parsed = JSON.parse(cleanLlmOutput(retryContent));
   return EvidenceBundleSchema.parse(parsed);
