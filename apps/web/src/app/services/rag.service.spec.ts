@@ -151,10 +151,19 @@ describe('RagService', () => {
     let originalEventSource: typeof EventSource;
 
     class MockEventSource {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSED = 2;
+
+      readonly CONNECTING = 0;
+      readonly OPEN = 1;
+      readonly CLOSED = 2;
+
       readonly url: string;
       readonly listeners = new Map<string, EventListener>();
       onerror: ((event: Event) => void) | null = null;
       closed = false;
+      readyState = MockEventSource.OPEN;
 
       constructor(url: string) {
         this.url = url;
@@ -168,6 +177,7 @@ describe('RagService', () => {
 
       close(): void {
         this.closed = true;
+        this.readyState = MockEventSource.CLOSED;
       }
 
       /** Simulate the server sending an SSE event. */
@@ -178,8 +188,9 @@ describe('RagService', () => {
         }
       }
 
-      /** Simulate a connection error. */
-      simulateError(): void {
+      /** Simulate a connection error with a specific readyState. */
+      simulateError(readyState: number = MockEventSource.CLOSED): void {
+        this.readyState = readyState;
         if (this.onerror) {
           this.onerror(new Event('error'));
         }
@@ -283,19 +294,51 @@ describe('RagService', () => {
       expect(mockEventSource.closed).toBe(true);
     });
 
-    it('should handle connection errors', () => {
+    it('should retry on connection error and fail after max retries', () => {
+      vi.useFakeTimers();
       let errorThrown = false;
 
       service.stream('test').subscribe({
         error: () => (errorThrown = true),
       });
 
-      mockEventSource.simulateError();
+      // Retry 1 — CLOSED triggers manual reconnect with 1s backoff
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      expect(errorThrown).toBe(false); // still retrying
+      vi.advanceTimersByTime(1000);
 
+      // Retry 2
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      expect(errorThrown).toBe(false);
+      vi.advanceTimersByTime(2000);
+
+      // Retry 3
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      expect(errorThrown).toBe(false);
+      vi.advanceTimersByTime(3000);
+
+      // Retry 4 — exhausted, should error
+      mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(true);
-      expect(service.error()).toBe('SSE connection error');
+      expect(service.error()).toBe('SSE connection lost after multiple retries');
       expect(service.loading()).toBe(false);
-      expect(mockEventSource.closed).toBe(true);
+
+      vi.useRealTimers();
+    });
+
+    it('should allow browser auto-reconnect when readyState is CONNECTING', () => {
+      let errorThrown = false;
+
+      service.stream('test').subscribe({
+        error: () => (errorThrown = true),
+      });
+
+      // CONNECTING state — browser is auto-reconnecting, should not error
+      mockEventSource.simulateError(MockEventSource.CONNECTING);
+
+      expect(errorThrown).toBe(false);
+      expect(service.loading()).toBe(true); // still loading
+      expect(mockEventSource.closed).toBe(false); // not closed
     });
 
     it('should close EventSource on unsubscribe', () => {
