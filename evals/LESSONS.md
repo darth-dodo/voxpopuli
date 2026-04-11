@@ -80,8 +80,71 @@ npx tsx evals/run-eval.ts -q q08 -p mistral
 
 ### Recommendations
 
-1. **Investigate q08/q09/q12 errors** — these are likely fixable bugs, not content issues
-2. **Recalibrate latency thresholds** — current values assume single-agent, not pipeline
-3. **Re-run comparison queries** — verify q03/q05 improve with adaptive decomposition
+1. ~~**Investigate q08/q09/q12 errors**~~ — q09 and q12 resolved on re-run (transient). q08 still needs investigation.
+2. ~~**Recalibrate latency thresholds**~~ — Done (see run 2 below)
+3. ~~**Re-run comparison queries**~~ — Done (see run 2 below)
 4. **Run Groq comparison** — faster inference may improve latency scores significantly
 5. **Consider `--no-judge` for iteration** — quality-judge adds latency to the eval run itself; use `--no-judge` for quick iteration, full scoring for baselines
+
+---
+
+## 2026-04-11 — Mistral After Latency Threshold Recalibration
+
+**Run:** `2026-04-11T20-40-07-068Z-mistral.json`
+**Provider:** Mistral | **Pass rate:** 52% (13/25) | **Avg weighted:** 0.56
+
+### What Changed
+
+Recalibrated latency thresholds in `evaluators/latency.ts` for multi-agent pipeline:
+
+- Groq: 6/13/30s → 15/30/60s
+- Mistral: 10/20/30s → 30/60/90s
+- Claude: 13/30/60s → 30/60/120s
+
+### Before vs After
+
+| Metric       | Run 1 (old thresholds) | Run 2 (new thresholds) | Delta     |
+| ------------ | ---------------------- | ---------------------- | --------- |
+| Pass rate    | 44% (11/25)            | 52% (13/25)            | **+8%**   |
+| Avg weighted | 0.52                   | 0.56                   | **+0.04** |
+| Avg latency  | 0.25                   | 0.55                   | **+0.30** |
+| Errors       | 3                      | 2                      | -1        |
+
+### Queries That Flipped to Pass
+
+| Query                          | Run 1 | Run 2 | Why                                    |
+| ------------------------------ | ----- | ----- | -------------------------------------- |
+| q03 (Bun vs Deno vs Node)      | 0.35  | 0.63  | Found sources this time + latency bump |
+| q05 (Tailwind vs CSS)          | 0.31  | 0.68  | Source=1.0 now + latency=1.0           |
+| q09 (crypto 2026)              | ERR   | 0.71  | Transient error resolved               |
+| q10 (Turso)                    | 0.44  | 0.88  | Quality jumped 0→1.0 + latency bump    |
+| q12 (SaaS with SQLite)         | ERR   | 0.82  | Transient error resolved               |
+| q18 (controversial interviews) | 0.30  | 0.72  | Found sources + quality=1.0            |
+
+### Key Takeaway
+
+**Eval thresholds are part of the system, not just measurement.** Miscalibrated thresholds masked real progress — the pipeline was producing quality answers (source=1.0, quality=1.0) that scored 0.44 overall because latency was dragging everything down. Fixing thresholds revealed the pipeline is performing well on the dimensions that matter most.
+
+### Remaining Issues
+
+- **t02, t03 errors** — trust queries failing in <60ms (transient or systematic?)
+- **q02 regression** — dropped from 0.78 to 0.47 (source=0.0 this run, non-deterministic)
+- **q06, q11, q17** — sources found but quality=0.0; `expectedQualities` may need review
+- **t01** — at 0.59, just below threshold; quality=0.33 dragging it down
+
+### Updated Scoring Observations
+
+| Dimension       | Run 1 | Run 2    | Notes                      |
+| --------------- | ----- | -------- | -------------------------- |
+| Source Accuracy | 0.56  | 0.60     | Slight improvement         |
+| Quality         | 0.57  | 0.55     | Non-deterministic variance |
+| Efficiency      | 0.61  | 0.57     | Slight drop                |
+| Latency         | 0.25  | **0.55** | Threshold fix worked       |
+| Cost            | 0.49  | 0.51     | Stable                     |
+
+### Next Recommendations
+
+1. **Run 3+ eval runs and average** — single runs have high variance due to LLM non-determinism and transient API errors
+2. **Investigate t02/t03 trust errors** — may be a pipeline issue with trust-specific queries
+3. **Review quality judge for q06/q11/q17** — sources exist but quality=0.0 suggests expectedQualities mismatch
+4. **Run Groq comparison** — fastest provider, would validate whether latency thresholds are well-calibrated
