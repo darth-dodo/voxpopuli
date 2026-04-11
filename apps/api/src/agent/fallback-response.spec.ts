@@ -81,6 +81,14 @@ describe('buildFallbackResponse', () => {
     expect(result.answer).toContain('No data on enterprise adoption');
   });
 
+  it('should omit Gaps text when gaps array is empty', () => {
+    const noGapsAnalysis = { ...mockAnalysis, gaps: [] };
+    const result = buildFallbackResponse(noGapsAnalysis, mockBundle, mockMeta);
+
+    expect(result.answer).toContain('Confidence: medium.');
+    expect(result.answer).not.toContain('Gaps:');
+  });
+
   it('should map bundle.allSources to AgentSource format', () => {
     const result = buildFallbackResponse(mockAnalysis, mockBundle, mockMeta);
     expect(result.sources).toHaveLength(2);
