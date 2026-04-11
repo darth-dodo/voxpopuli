@@ -55,6 +55,12 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Timer handle for the delayed retry after returning from background. */
   private backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Interval handle for the elapsed-time counter shown during streaming. */
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Elapsed seconds since the current query was submitted. */
+  readonly elapsedSeconds = signal(0);
+
   /** Current theme ('dark' | 'light'). */
   readonly theme = signal<'dark' | 'light'>('dark');
 
@@ -81,13 +87,14 @@ export class ChatComponent implements OnInit, OnDestroy {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
-  /** Clean up the visibility-change listener and any pending retry timer. */
+  /** Clean up the visibility-change listener and any pending timers. */
   ngOnDestroy(): void {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     if (this.backgroundRetryTimer !== null) {
       clearTimeout(this.backgroundRetryTimer);
       this.backgroundRetryTimer = null;
     }
+    this.stopElapsedTimer();
   }
 
   /**
@@ -269,6 +276,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.isPipelineMode.set(false);
     this.tokenContent.set('');
     this.activeTab.set('steps');
+    this.startElapsedTimer();
 
     this.ragService.stream(q, this.selectedProvider(), true).subscribe({
       next: (event: StreamEvent) => {
@@ -301,6 +309,7 @@ export class ChatComponent implements OnInit, OnDestroy {
             this.response.set(event.response);
             this.isStreaming.set(false);
             this.loading.set(false);
+            this.stopElapsedTimer();
             // Auto-switch to answer tab when answer arrives
             this.activeTab.set('answer');
             break;
@@ -323,6 +332,7 @@ export class ChatComponent implements OnInit, OnDestroy {
             this.error.set(event.message);
             this.isStreaming.set(false);
             this.loading.set(false);
+            this.stopElapsedTimer();
             this.activeTab.set('answer');
             break;
         }
@@ -333,6 +343,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.error.set(message);
         this.isStreaming.set(false);
         this.loading.set(false);
+        this.stopElapsedTimer();
         this.activeTab.set('answer');
       },
       complete: () => {
@@ -362,6 +373,23 @@ export class ChatComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Start a 1-second interval that increments the elapsed counter. */
+  private startElapsedTimer(): void {
+    this.stopElapsedTimer();
+    this.elapsedSeconds.set(0);
+    this.elapsedTimer = setInterval(() => {
+      this.elapsedSeconds.update((s) => s + 1);
+    }, 1000);
+  }
+
+  /** Stop the elapsed-time interval. */
+  private stopElapsedTimer(): void {
+    if (this.elapsedTimer !== null) {
+      clearInterval(this.elapsedTimer);
+      this.elapsedTimer = null;
+    }
+  }
+
   /** Retry the current query. */
   retry(): void {
     this.submit();
@@ -374,6 +402,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.error.set(null);
     this.steps.set([]);
     this.pipelineEvents.set([]);
+    this.stopElapsedTimer();
     this.isPipelineMode.set(false);
     this.tokenContent.set('');
     this.loading.set(false);

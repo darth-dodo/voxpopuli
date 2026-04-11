@@ -461,6 +461,7 @@
               <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
             </span>
             <span class="text-ui text-sm text-text-secondary">{{ pipelineStatusMessage() }}</span>
+            <span class="ml-auto text-ui text-xs tabular-nums text-text-tertiary">{{ elapsedSeconds() }}s</span>
           </div>
         </div>
       </div>
@@ -470,6 +471,10 @@
       @if (loading() && !response() && !isPipelineMode()) {
       <div class="mt-4 space-y-4" aria-busy="true">
         <div class="vp-card p-5 sm:p-8">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-ui text-sm text-text-secondary">Searching Hacker News...</span>
+            <span class="text-ui text-xs tabular-nums text-text-tertiary">{{ elapsedSeconds() }}s</span>
+          </div>
           <div class="space-y-3 animate-pulse">
             <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
             <div class="h-4 bg-surface-overlay/60 rounded w-full"></div>
