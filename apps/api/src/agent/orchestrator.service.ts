@@ -107,20 +107,31 @@ export class OrchestratorService {
     const writerFn = createWriterNode(getModel('writer'));
 
     const elapsed = () => Date.now() - startTime;
+    let stageStart = Date.now();
+    const stageDuration = () => Date.now() - stageStart;
 
     // ── Stage 1: Retriever ──────────────────────────────────────────
     // Failures bubble to runWithFallback → legacy agent
+    stageStart = Date.now();
     yield {
       kind: 'pipeline',
       event: {
         stage: 'retriever',
         status: 'started',
         detail: `Searching HN for "${query}"...`,
-        elapsed: elapsed(),
+        elapsed: 0,
       },
     };
 
-    const { bundle } = await retrieverFn({ query });
+    const collectedSteps: AgentStep[] = [];
+    const { bundle } = await retrieverFn({ query }, (step) => {
+      collectedSteps.push(step);
+    });
+
+    // Emit collected ReAct steps from the retriever
+    for (const step of collectedSteps) {
+      yield { kind: 'step', step };
+    }
 
     yield {
       kind: 'pipeline',
@@ -128,19 +139,20 @@ export class OrchestratorService {
         stage: 'retriever',
         status: 'done',
         detail: `${bundle.themes.length} themes from ${bundle.allSources.length} sources`,
-        elapsed: elapsed(),
+        elapsed: stageDuration(),
       },
     };
 
     // ── Stage 2: Synthesizer ────────────────────────────────────────
     // Retry once, then bubble to runWithFallback → legacy agent
+    stageStart = Date.now();
     yield {
       kind: 'pipeline',
       event: {
         stage: 'synthesizer',
         status: 'started',
         detail: `Analyzing ${bundle.themes.length} themes...`,
-        elapsed: elapsed(),
+        elapsed: 0,
       },
     };
 
@@ -159,7 +171,7 @@ export class OrchestratorService {
           stage: 'synthesizer',
           status: 'error',
           detail: 'Retrying analysis...',
-          elapsed: elapsed(),
+          elapsed: stageDuration(),
         },
       };
       ({ analysis } = await synthesizerFn({ query, bundle }));
@@ -171,19 +183,20 @@ export class OrchestratorService {
         stage: 'synthesizer',
         status: 'done',
         detail: `${analysis.insights.length} insights, confidence: ${analysis.confidence}`,
-        elapsed: elapsed(),
+        elapsed: stageDuration(),
       },
     };
 
     // ── Stage 3: Writer ─────────────────────────────────────────────
     // Retry once, then buildFallbackResponse (does NOT bubble)
+    stageStart = Date.now();
     yield {
       kind: 'pipeline',
       event: {
         stage: 'writer',
         status: 'started',
         detail: 'Composing headline and sections...',
-        elapsed: elapsed(),
+        elapsed: 0,
       },
     };
 
@@ -200,7 +213,7 @@ export class OrchestratorService {
           stage: 'writer',
           status: 'error',
           detail: 'Retrying composition...',
-          elapsed: elapsed(),
+          elapsed: stageDuration(),
         },
       };
       try {
@@ -217,7 +230,7 @@ export class OrchestratorService {
             stage: 'writer',
             status: 'error',
             detail: 'Using fallback response from analysis',
-            elapsed: elapsed(),
+            elapsed: stageDuration(),
           },
         };
       }
@@ -231,7 +244,7 @@ export class OrchestratorService {
           stage: 'writer',
           status: 'done',
           detail: `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`,
-          elapsed: elapsed(),
+          elapsed: stageDuration(),
         },
       };
 

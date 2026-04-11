@@ -102,6 +102,7 @@
     text-rendering: optimizeLegibility;
     scroll-behavior: smooth;
     color-scheme: dark;
+    overflow-x: hidden;
   }
 
   body {
@@ -501,11 +502,17 @@
     border-radius: var(--radius-sm);
   }
 
+  .vp-prose pre {
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
   /* Prose mobile adjustments */
   @media (max-width: 640px) {
     .vp-prose {
       font-size: 0.9375rem;
       line-height: 1.75;
+      max-width: 100%;
     }
   }
 

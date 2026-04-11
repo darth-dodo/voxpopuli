@@ -18,7 +18,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph |
 | Backend         | NestJS 11+              | API framework with module-based DI                      |
 | Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4    |
-| LLM (quality)   | Claude Sonnet 4         | Anthropic SDK via LangChain `@langchain/anthropic`      |
+| LLM (quality)   | Claude Haiku 4.5        | Anthropic SDK via LangChain `@langchain/anthropic`      |
 | LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`        |
 | LLM (speed)     | Groq Llama 3.3 70B      | OpenAI-compatible via LangChain `@langchain/groq`       |
 | Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas         |
@@ -209,11 +209,11 @@ voxpopuli/
 
 **Providers:**
 
-| Provider | Class             | LangChain Model | Model ID                   | Context Window |
-| -------- | ----------------- | --------------- | -------------------------- | -------------- |
-| Groq     | `GroqProvider`    | `ChatGroq`      | `llama-3.3-70b-versatile`  | 128,000 tokens |
-| Claude   | `ClaudeProvider`  | `ChatAnthropic` | `claude-sonnet-4-20250514` | 200,000 tokens |
-| Mistral  | `MistralProvider` | `ChatMistralAI` | `mistral-large-latest`     | 262,000 tokens |
+| Provider | Class             | LangChain Model | Model ID                    | Context Window |
+| -------- | ----------------- | --------------- | --------------------------- | -------------- |
+| Groq     | `GroqProvider`    | `ChatGroq`      | `llama-3.3-70b-versatile`   | 128,000 tokens |
+| Claude   | `ClaudeProvider`  | `ChatAnthropic` | `claude-haiku-4-5-20251001` | 200,000 tokens |
+| Mistral  | `MistralProvider` | `ChatMistralAI` | `mistral-large-latest`      | 262,000 tokens |
 
 All providers implement `LlmProviderInterface` with three members: `name`, `maxContextTokens`, and `getModel()`. Each wraps a LangChain `BaseChatModel` instance that is lazily created on first access.
 

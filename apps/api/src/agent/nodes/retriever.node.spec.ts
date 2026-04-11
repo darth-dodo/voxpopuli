@@ -1,10 +1,10 @@
 import { EvidenceBundleSchema } from '@voxpopuli/shared-types';
 
 // Mock @langchain/langgraph before importing the node
-const mockReactAgentInvoke = jest.fn();
+const mockReactAgentStream = jest.fn();
 jest.mock('@langchain/langgraph/prebuilt', () => ({
   createReactAgent: jest.fn(() => ({
-    invoke: mockReactAgentInvoke,
+    stream: mockReactAgentStream,
   })),
 }));
 
@@ -23,6 +23,18 @@ const RICH_RAW_DATA =
   'Top comments discuss memory safety vs C++. ' +
   'Several users report switching production services to Rust with good results. ' +
   'Some dissent about the learning curve being too steep for small teams.';
+
+/**
+ * Helper: wrap messages in an async iterable that mimics reactAgent.stream()
+ * with streamMode: 'values'. Yields a single chunk with all messages.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mockStreamResult(messages: any[]) {
+  async function* generate() {
+    yield { messages };
+  }
+  return generate();
+}
 
 describe('RetrieverNode', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,9 +67,9 @@ describe('RetrieverNode', () => {
       tokenCount: 200,
     });
 
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
 
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
@@ -70,9 +82,9 @@ describe('RetrieverNode', () => {
   });
 
   it('should retry compaction on invalid JSON', async () => {
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
 
     const validBundle = JSON.stringify({
       query: 'test',
@@ -106,9 +118,9 @@ describe('RetrieverNode', () => {
       tokenCount: 100,
     });
 
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
@@ -185,9 +197,9 @@ describe('RetrieverNode', () => {
       tokenCount: 4500,
     };
 
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
     mockModel.invoke.mockResolvedValue({ content: JSON.stringify(multiThemeBundle) });
 
     const node = createRetrieverNode(mockModel, mockTools);
@@ -217,9 +229,9 @@ describe('RetrieverNode', () => {
   });
 
   it('retries compaction on schema validation failure', async () => {
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
 
     // First response: valid JSON but invalid schema (empty themes array violates .min(1))
     const invalidSchemaBundle = JSON.stringify({
@@ -268,12 +280,12 @@ describe('RetrieverNode', () => {
   it('raw data is capped at 50,000 chars', async () => {
     // Create messages that total > 50,000 chars (include story data to pass dry-well check)
     const longContent = 'Story 1 — 100 points. ' + 'A'.repeat(30_000);
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([
         { content: longContent, role: 'assistant' },
         { content: longContent, role: 'assistant' },
-      ],
-    });
+      ]),
+    );
 
     const validBundle = JSON.stringify({
       query: 'test',
@@ -324,9 +336,9 @@ describe('RetrieverNode', () => {
       tokenCount: 500,
     });
 
-    mockReactAgentInvoke.mockResolvedValue({
-      messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-    });
+    mockReactAgentStream.mockReturnValue(
+      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+    );
     mockModel.invoke.mockResolvedValue({ content: validBundle });
 
     const node = createRetrieverNode(mockModel, tools);
@@ -340,11 +352,11 @@ describe('RetrieverNode', () => {
       }),
     );
 
-    // Verify the ReAct agent was invoked with the query as a HumanMessage
-    expect(mockReactAgentInvoke).toHaveBeenCalledTimes(1);
-    const invokeArgs = mockReactAgentInvoke.mock.calls[0][0];
-    expect(invokeArgs.messages).toHaveLength(1);
-    expect(invokeArgs.messages[0].content).toBe('what is new in AI');
+    // Verify the ReAct agent was streamed with the query as a HumanMessage
+    expect(mockReactAgentStream).toHaveBeenCalledTimes(1);
+    const streamArgs = mockReactAgentStream.mock.calls[0][0];
+    expect(streamArgs.messages).toHaveLength(1);
+    expect(streamArgs.messages[0].content).toBe('what is new in AI');
 
     // Verify the result is a valid EvidenceBundle
     expect(result.bundle).toBeDefined();
@@ -354,9 +366,9 @@ describe('RetrieverNode', () => {
 
   describe('dry-well circuit breaker', () => {
     it('should skip compaction and return dry-well bundle when raw data is sparse', async () => {
-      mockReactAgentInvoke.mockResolvedValue({
-        messages: [{ content: 'No results found for this query.', role: 'assistant' }],
-      });
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: 'No results found for this query.', role: 'assistant' }]),
+      );
 
       const node = createRetrieverNode(mockModel, mockTools);
       const result = await node({ query: 'obscure topic nobody discussed' });
@@ -377,9 +389,9 @@ describe('RetrieverNode', () => {
     });
 
     it('should proceed with compaction when raw data has story content', async () => {
-      mockReactAgentInvoke.mockResolvedValue({
-        messages: [{ content: RICH_RAW_DATA, role: 'assistant' }],
-      });
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
 
       const validBundle = JSON.stringify({
         query: 'rust programming',

@@ -35,25 +35,25 @@ describe('ProviderSelectorComponent', () => {
   });
 
   it('should expose activeProvider computed for the selected provider', () => {
-    expect(component.activeProvider().speed).toBe('Fastest');
-    expect(component.activeProvider().cost).toBe('Free tier');
+    expect(component.activeProvider().speed).toBe('Moderate');
+    expect(component.activeProvider().cost).toBe('Low');
   });
 
   // ---------------------------------------------------------------------------
   // Active state
   // ---------------------------------------------------------------------------
 
-  it('should apply active class to the default selected chip', () => {
+  it('should apply active class to the default selected chip (Mistral)', () => {
     const buttons = fixture.nativeElement.querySelectorAll('button[role="radio"]');
-    expect(buttons[0].classList.contains('vp-chip--active')).toBe(true);
-    expect(buttons[1].classList.contains('vp-chip--active')).toBe(false);
+    expect(buttons[0].classList.contains('vp-chip--active')).toBe(false);
+    expect(buttons[1].classList.contains('vp-chip--active')).toBe(true);
     expect(buttons[2].classList.contains('vp-chip--active')).toBe(false);
   });
 
   it('should set aria-checked correctly for the default selection', () => {
     const buttons = fixture.nativeElement.querySelectorAll('button[role="radio"]');
-    expect(buttons[0].getAttribute('aria-checked')).toBe('true');
-    expect(buttons[1].getAttribute('aria-checked')).toBe('false');
+    expect(buttons[0].getAttribute('aria-checked')).toBe('false');
+    expect(buttons[1].getAttribute('aria-checked')).toBe('true');
   });
 
   // ---------------------------------------------------------------------------
@@ -62,12 +62,12 @@ describe('ProviderSelectorComponent', () => {
 
   it('should change selection when a chip is clicked', () => {
     const buttons = fixture.nativeElement.querySelectorAll('button[role="radio"]');
-    buttons[1].click();
+    buttons[0].click();
     fixture.detectChanges();
 
-    expect(component.selectedProvider()).toBe('mistral');
-    expect(buttons[1].classList.contains('vp-chip--active')).toBe(true);
-    expect(buttons[0].classList.contains('vp-chip--active')).toBe(false);
+    expect(component.selectedProvider()).toBe('groq');
+    expect(buttons[0].classList.contains('vp-chip--active')).toBe(true);
+    expect(buttons[1].classList.contains('vp-chip--active')).toBe(false);
   });
 
   it('should update activeProvider when selection changes', () => {

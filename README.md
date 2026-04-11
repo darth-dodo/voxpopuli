@@ -1,11 +1,13 @@
 # VoxPopuli
 
 [![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
 [![Angular](https://img.shields.io/badge/Angular-21-dd0031?style=flat-square&logo=angular)](https://angular.dev)
+[![Qwen3](https://img.shields.io/badge/Qwen3_32B-via_Groq-6366f1?style=flat-square)](https://console.groq.com)
+[![Mistral](https://img.shields.io/badge/Mistral_Large_3-ff7000?style=flat-square)](https://console.mistral.ai)
+[![Claude](https://img.shields.io/badge/Claude_Haiku_4.5-d4a574?style=flat-square)](https://console.anthropic.com)
 
 > _"Voice of the People."_
 
@@ -53,31 +55,60 @@ The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). 
 
 ---
 
-## Screenshots
+## Query Flow
+
+Asking "AI tools" — from query to answer in three pipeline stages.
 
 <table>
 <tr>
-<td width="60%">
+<td width="50%">
 
-**Desktop -- Dark Theme**
+**1. Type your question**
 
-<img src="docs/screenshots/landing-full-dark.png" alt="Full landing page" width="100%" />
+<img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="100%" />
 
 </td>
-<td width="40%">
+<td width="50%">
 
-**Mobile**
+**2. Pipeline starts — Retriever searching HN**
 
-<img src="docs/screenshots/landing-dark-mobile.png" alt="Mobile view" width="100%" />
+<img src="docs/screenshots/flow-02-streaming-steps.png" alt="Pipeline streaming" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**3. All stages complete — Writer composing**
+
+<img src="docs/screenshots/flow-05-steps-complete.png" alt="Pipeline stages complete" width="100%" />
+
+</td>
+<td width="50%">
+
+**4. Editorial answer with citations**
+
+<img src="docs/screenshots/flow-06-steps-done.png" alt="Answer with sections" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**5. Sources tab — 8 HN stories referenced**
+
+<img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="100%" />
+
+</td>
+<td width="50%">
+
+**6. Full answer — sections, trust badges, meta**
+
+<img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer page" width="100%" />
 
 </td>
 </tr>
 </table>
-
-<p align="center">
-  <img src="docs/screenshots/landing-light-desktop.png" alt="Light theme" width="720" />
-</p>
-<p align="center"><em>Light theme with warm, papery surfaces</em></p>
 
 ---
 
@@ -100,11 +131,11 @@ Every answer comes with verification metadata:
 
 Pick your tradeoff. Switch from the UI.
 
-| Provider                 | Best for               | Speed         |
-| ------------------------ | ---------------------- | ------------- |
-| **Groq** (Llama 3.3 70B) | Fast development       | ~300 tokens/s |
-| **Mistral** Large 3      | Cost-optimized         | ~80 tokens/s  |
-| **Claude** Sonnet 4      | Best synthesis quality | ~50 tokens/s  |
+| Provider             | Best for               | Speed         |
+| -------------------- | ---------------------- | ------------- |
+| **Qwen3** 32B (Groq) | Fast development       | ~300 tokens/s |
+| **Mistral** Large 3  | Cost-optimized         | ~80 tokens/s  |
+| **Claude** Haiku 4.5 | Best synthesis quality | ~100 tokens/s |
 
 ### Multi-Agent Pipeline
 
@@ -126,7 +157,7 @@ Toggle between a dark OLED theme (optimized for eye comfort) and a warm light th
 
 - Node.js >= 22, pnpm
 - At least one LLM API key:
-  - [Groq](https://console.groq.com) (free tier -- recommended for development)
+  - [Groq](https://console.groq.com) (hosts Qwen3 -- free tier, recommended for development)
   - [Mistral](https://console.mistral.ai)
   - [Anthropic](https://console.anthropic.com)
 
@@ -138,7 +169,7 @@ cd voxpopuli
 pnpm install
 
 cp .env.example .env
-# Add at least one LLM API key, set LLM_PROVIDER=groq
+# Add at least one LLM API key, set LLM_PROVIDER=groq (Qwen3)
 ```
 
 ### Run
@@ -236,7 +267,7 @@ npx nx test web --coverage  # Coverage report
 
 # Eval harness (requires running API)
 npx tsx evals/run-eval.ts               # Run eval harness
-npx tsx evals/run-eval.ts -p groq       # Test specific provider
+npx tsx evals/run-eval.ts -p groq       # Test Qwen3 (via Groq)
 npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
 ```
 

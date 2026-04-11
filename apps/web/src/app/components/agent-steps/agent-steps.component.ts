@@ -1,4 +1,4 @@
-import { Component, computed, input, signal } from '@angular/core';
+import { Component, computed, effect, input, signal, DestroyRef, inject } from '@angular/core';
 import type { AgentStep } from '@voxpopuli/shared-types';
 
 /**
@@ -13,6 +13,8 @@ import type { AgentStep } from '@voxpopuli/shared-types';
   templateUrl: './agent-steps.component.html',
 })
 export class AgentStepsComponent {
+  private readonly destroyRef = inject(DestroyRef);
+
   /** Agent reasoning steps to render. */
   readonly steps = input<AgentStep[]>([]);
 
@@ -26,6 +28,14 @@ export class AgentStepsComponent {
 
   /** Whether the component should render pipeline timeline instead of ReAct steps. */
   readonly isPipelineMode = input<boolean>(false);
+
+  /** Tracks when each stage started (wall-clock timestamp). */
+  private readonly stageStartTimes = new Map<string, number>();
+
+  /** Live-ticking elapsed ms per active stage, updated every 100ms. */
+  readonly liveElapsed = signal<Map<string, number>>(new Map());
+
+  private tickInterval: ReturnType<typeof setInterval> | null = null;
 
   /** Pipeline stages grouped by name, ordered retriever → synthesizer → writer. */
   readonly pipelineStages = computed(() => {
@@ -56,12 +66,68 @@ export class AgentStepsComponent {
   /** Whether inner ReAct steps are collapsed (default: true). */
   readonly innerStepsCollapsed = signal(true);
 
-  /** Total pipeline time based on max elapsed across stages. */
+  /** Total pipeline time based on sum of per-stage durations. */
   readonly totalPipelineTime = computed(() => {
     const stages = this.pipelineStages();
     if (stages.length === 0) return 0;
-    return Math.max(...stages.map((s) => s.elapsed));
+    return stages.reduce((sum, s) => sum + s.elapsed, 0);
   });
+
+  /**
+   * Display elapsed for a stage: final duration if done, live counter if active.
+   */
+  stageElapsed(stage: { name: string; status: string; elapsed: number }): number {
+    if (stage.status === 'done' || stage.status === 'error') {
+      return stage.elapsed;
+    }
+    return this.liveElapsed().get(stage.name) ?? 0;
+  }
+
+  constructor() {
+    // Watch pipeline events to track stage start times and manage the tick interval
+    effect(() => {
+      const stages = this.pipelineStages();
+      let hasActiveStage = false;
+
+      for (const stage of stages) {
+        if (stage.status === 'started' && !this.stageStartTimes.has(stage.name)) {
+          this.stageStartTimes.set(stage.name, Date.now());
+        }
+        if (stage.status === 'done' || stage.status === 'error') {
+          this.stageStartTimes.delete(stage.name);
+        }
+        if (stage.status === 'started') {
+          hasActiveStage = true;
+        }
+      }
+
+      if (hasActiveStage && !this.tickInterval) {
+        this.startTicking();
+      } else if (!hasActiveStage && this.tickInterval) {
+        this.stopTicking();
+      }
+    });
+
+    this.destroyRef.onDestroy(() => this.stopTicking());
+  }
+
+  private startTicking(): void {
+    this.tickInterval = setInterval(() => {
+      const now = Date.now();
+      const updated = new Map<string, number>();
+      for (const [name, startTime] of this.stageStartTimes) {
+        updated.set(name, now - startTime);
+      }
+      this.liveElapsed.set(updated);
+    }, 100);
+  }
+
+  private stopTicking(): void {
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = null;
+    }
+  }
 
   /** Parsed stage details as structured chip data for badge rendering. */
   readonly parsedStageDetails = computed(() => {

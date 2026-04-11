@@ -2,7 +2,7 @@ import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
-import { EvidenceBundleSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
+import { EvidenceBundleSchema, type EvidenceBundle, type AgentStep } from '@voxpopuli/shared-types';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
@@ -64,6 +64,9 @@ export function buildDryWellBundle(query: string): EvidenceBundle {
  * 1. ReAct loop (createReactAgent) — collects raw HN data via tools
  * 2. Compaction (single LLM call) — converts raw data → EvidenceBundle
  */
+/** Callback for emitting agent steps during the ReAct loop. */
+export type OnStepCallback = (step: AgentStep) => void;
+
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
   const reactAgent = createReactAgent({
     llm: model,
@@ -74,23 +77,72 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     ).replace('{{currentDate}}', new Date().toISOString().split('T')[0]),
   });
 
-  return async (state: { query: string }): Promise<{ bundle: EvidenceBundle }> => {
-    // Phase 1: ReAct collection
-    const reactResult = await reactAgent.invoke(
-      {
-        messages: [new HumanMessage(state.query)],
-      },
+  return async (
+    state: { query: string },
+    onStep?: OnStepCallback,
+  ): Promise<{ bundle: EvidenceBundle }> => {
+    // Phase 1: ReAct collection with step streaming
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allMessages: any[] = [];
+
+    const stream = await reactAgent.stream(
+      { messages: [new HumanMessage(state.query)] },
       {
         metadata: { pipeline_stage: 'retriever', phase: 'react', query: state.query },
         tags: ['multi-agent', 'retriever', 'react'],
+        streamMode: 'values',
       },
     );
 
+    let prevMessageCount = 0;
+    for await (const chunk of stream) {
+      const messages = chunk.messages ?? [];
+      // Emit steps for newly added messages
+      if (onStep && messages.length > prevMessageCount) {
+        for (let i = prevMessageCount; i < messages.length; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const msg = messages[i] as any;
+          const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
+          const content = typeof msg.content === 'string' ? msg.content : '';
+
+          if (type === 'ai' && msg.tool_calls?.length > 0) {
+            for (const tc of msg.tool_calls) {
+              onStep({
+                type: 'action',
+                content: `${tc.name}(${JSON.stringify(tc.args)})`,
+                toolName: tc.name,
+                toolInput: tc.args,
+                timestamp: Date.now(),
+              });
+            }
+          } else if (type === 'tool') {
+            onStep({
+              type: 'observation',
+              content: content.slice(0, 500),
+              timestamp: Date.now(),
+            });
+          } else if (type === 'ai' && content) {
+            onStep({
+              type: 'thought',
+              content,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      }
+      prevMessageCount = messages.length;
+      // Keep final messages for rawData extraction
+      if (messages.length > 0) {
+        allMessages.length = 0;
+        allMessages.push(...messages);
+      }
+    }
+
     // Keep only tool results + assistant reasoning; drop system prompt and
     // the initial human query (already passed separately to compactWithRetry).
-    const rawData = reactResult.messages
+    const rawData = allMessages
       .filter((m: { _getType?: () => string }) => {
-        if (typeof m._getType !== 'function') return true; // keep mock/plain messages
+        if (typeof m._getType !== 'function') return true;
         const type = m._getType();
         return type !== 'system' && type !== 'human';
       })

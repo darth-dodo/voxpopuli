@@ -5,13 +5,13 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { LlmProviderInterface } from '../llm-provider.interface';
 
 /** Claude model identifier. */
-const MODEL_ID = 'claude-sonnet-4-20250514';
+const MODEL_ID = 'claude-haiku-4-5-20251001';
 
 /** Claude context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 200_000;
 
 /**
- * LLM provider backed by Anthropic's Claude models.
+ * LLM provider backed by Anthropic's Claude Haiku 4.5.
  *
  * Reads `ANTHROPIC_API_KEY` from the environment at construction time
  * and throws immediately if the key is missing.

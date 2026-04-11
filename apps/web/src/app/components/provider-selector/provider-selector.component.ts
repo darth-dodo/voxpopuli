@@ -22,7 +22,7 @@ interface ProviderOption {
 })
 export class ProviderSelectorComponent {
   /** Currently selected provider id (two-way bindable). */
-  readonly selectedProvider = model<string>('groq');
+  readonly selectedProvider = model<string>('mistral');
 
   /** Available LLM providers. */
   readonly providers: readonly ProviderOption[] = [

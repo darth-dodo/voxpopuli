@@ -47,7 +47,7 @@ graph TB
     end
 
     subgraph Providers ["LLM Providers"]
-        CLAUDE["Claude Sonnet 4"]
+        CLAUDE["Claude Haiku 4.5"]
         MISTRAL["Mistral Large 3"]
         GROQ["Groq Llama 3.3 70B"]
     end
@@ -134,7 +134,7 @@ graph TD
 | Monorepo        | Nx                 | Latest                                |
 | Backend         | NestJS             | 10+                                   |
 | Frontend        | Angular            | 21                                    |
-| LLM (quality)   | Claude Sonnet 4    | LangChain.js (`@langchain/anthropic`) |
+| LLM (quality)   | Claude Haiku 4.5   | LangChain.js (`@langchain/anthropic`) |
 | LLM (cost)      | Mistral Large 3    | LangChain.js (`@langchain/mistralai`) |
 | LLM (speed/dev) | Groq Llama 3.3 70B | LangChain.js (`@langchain/groq`)      |
 | TTS             | ElevenLabs         | elevenlabs SDK                        |
@@ -271,7 +271,7 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 | Component              | Responsibility                                                                      |
 | ---------------------- | ----------------------------------------------------------------------------------- |
 | `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                   |
-| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-sonnet-4-20250514` (200k context)                  |
+| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                 |
 | `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                      |
 | `GroqProvider`         | `ChatGroq` wrapping `llama-3.3-70b-versatile` (128k context)                        |
 | `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override |
@@ -629,7 +629,7 @@ Epic (Linear Project or Cycle)
   - `chat()`, `formatTools()`, `buildToolResultMessage()` not needed -- LangChain.js handles tool protocols internally
   - No separate `ChatOptions`, `LlmMessage`, or `LlmResponse` types needed at the provider level
 - **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `llama-3.3-70b-versatile`, 128k)
-- **Story: Implement ClaudeProvider** (AI-111) -- DONE (`ChatAnthropic`, `claude-sonnet-4-20250514`, 200k)
+- **Story: Implement ClaudeProvider** (AI-111) -- DONE (`ChatAnthropic`, `claude-haiku-4-5-20251001`, 200k)
 - **Story: Implement MistralProvider** (AI-112) -- DONE (`ChatMistralAI`, `mistral-large-latest`, 262k)
 - **Story: Implement LlmService facade** (AI-113) -- DONE (lazy instantiation, per-request override, 22 tests)
 
@@ -1127,7 +1127,7 @@ EVAL_JUDGE_PROVIDER=mistral
 | Cache TTL (stories)             | 1 hour                      | Stable data                                      |
 | Cache TTL (comments)            | 30 min                      | Semi-stable data                                 |
 | Cache TTL (query result)        | 10 min                      | Token savings                                    |
-| Context window (Claude)         | 200k tokens                 | `claude-sonnet-4-20250514` via LangChain         |
+| Context window (Claude)         | 200k tokens                 | `claude-haiku-4-5-20251001` via LangChain        |
 | Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
 | Context window (Groq)           | 128k tokens                 | `llama-3.3-70b-versatile` via LangChain          |
 | Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
