@@ -25,16 +25,17 @@ VoxPopuli is an agentic RAG system that turns 18+ years of [HackerNews](https://
 
 ## How It Works
 
-Ask a question in natural language. The agent runs a multi-step reasoning loop, searching HackerNews, reading comments, and synthesizing what it finds into a sourced answer.
+Ask a question in natural language. A **multi-agent pipeline** collects evidence, synthesizes insights, and writes a sourced editorial answer.
 
 ```
 You:   "Is SQLite good enough for production web apps?"
 
 VoxPopuli:
-  Searching for "SQLite production"           5 stories
-  Searching for "SQLite scaling"              3 stories
-  Reading comments #39482731                  28 comments
-  Reading story #41205003                     loaded
+  [Retriever]   Searching "SQLite production"       5 stories
+  [Retriever]   Searching "SQLite scaling"           3 stories
+  [Retriever]   Reading comments #39482731           28 comments
+  [Synthesizer] Extracting insights & contradictions
+  [Writer]      Composing editorial answer
 
   "HN is broadly positive, with caveats around write-heavy workloads.
    Specific projects like Litestream and Turso were frequently cited..."
@@ -42,11 +43,13 @@ VoxPopuli:
   All 4 sources verified · Mostly recent sources · Multiple viewpoints
 ```
 
-The agent loops up to 7 times using three tools:
+The pipeline has three stages:
 
-- **search_hn** -- query stories with filters (points, date, relevance)
-- **get_story** -- fetch full story details
-- **get_comments** -- fetch comment trees (up to 30 comments, 3 levels deep)
+1. **Retriever** -- ReAct agent (up to 7 tool calls) collects and compacts HN evidence
+2. **Synthesizer** -- extracts insights, contradictions, and sentiment from the evidence bundle
+3. **Writer** -- produces an editorial answer with citations and trust metadata
+
+The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). Both modes use the same three tools: `search_hn`, `get_story`, and `get_comments`.
 
 ---
 
@@ -103,6 +106,14 @@ Pick your tradeoff. Switch from the UI.
 | **Mistral** Large 3      | Cost-optimized         | ~80 tokens/s  |
 | **Claude** Sonnet 4      | Best synthesis quality | ~50 tokens/s  |
 
+### Multi-Agent Pipeline
+
+Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph. Each stage has per-stage failure recovery with retry and fallback response construction.
+
+### Eval Harness
+
+Automated quality scoring with 27 test queries across 5 evaluators (source accuracy, quality judge, efficiency, latency, cost). LangSmith integration for tracing and dataset management.
+
 ### Dark + Light Themes
 
 Toggle between a dark OLED theme (optimized for eye comfort) and a warm light theme. Smooth CSS transitions.
@@ -113,7 +124,7 @@ Toggle between a dark OLED theme (optimized for eye comfort) and a warm light th
 
 ### Prerequisites
 
-- Node.js >= 18, pnpm
+- Node.js >= 22, pnpm
 - At least one LLM API key:
   - [Groq](https://console.groq.com) (free tier -- recommended for development)
   - [Mistral](https://console.mistral.ai)
@@ -161,22 +172,24 @@ curl -X POST http://localhost:3000/api/rag/query \
 | Frontend     | Angular 21 (standalone components, signals)             |
 | Design       | Tailwind CSS v4, "Data Noir Editorial" design system    |
 | LLM          | Claude / Mistral / Groq via LangChain.js                |
+| Pipeline     | LangGraph (OrchestratorService, 3-stage pipeline)       |
 | Streaming    | Server-Sent Events (SSE) with native EventSource        |
 | Caching      | node-cache (in-memory, TTL-based)                       |
 | Data         | HN Algolia API (search) + Firebase API (items/comments) |
+| Eval         | Custom harness + LangSmith tracing                      |
 | Markdown     | ngx-markdown + marked                                   |
 | Shared types | `@voxpopuli/shared-types`                               |
 
 ### Frontend Components
 
-| Component        | Purpose                                         |
-| ---------------- | ----------------------------------------------- |
-| ChatComponent    | Landing page + results page with SSE streaming  |
-| AgentSteps       | Compact timeline with merged action/result rows |
-| SourceCard       | Clickable HN story card with metadata           |
-| TrustBar         | Human-friendly trust indicators                 |
-| ProviderSelector | LLM provider chip selector                      |
-| MetaBar          | Provider, tokens, human-readable latency        |
+| Component        | Purpose                                                                     |
+| ---------------- | --------------------------------------------------------------------------- |
+| ChatComponent    | Landing page + results page with SSE streaming                              |
+| AgentSteps       | Compact timeline with merged action/result rows + pipeline stage indicators |
+| SourceCard       | Clickable HN story card with metadata                                       |
+| TrustBar         | Human-friendly trust indicators                                             |
+| ProviderSelector | LLM provider chip selector                                                  |
+| MetaBar          | Provider, tokens, human-readable latency                                    |
 
 See [architecture.md](architecture.md) for the full technical blueprint and [product.md](product.md) for the product specification.
 
@@ -184,16 +197,18 @@ See [architecture.md](architecture.md) for the full technical blueprint and [pro
 
 ## Project Status
 
-| Milestone                 | Status  | Highlights                                                |
-| ------------------------- | ------- | --------------------------------------------------------- |
-| M1: Scaffold & Data Layer | Done    | Nx monorepo, shared types, HN data + caching              |
-| M2: LLM & Chunker         | Done    | Triple-stack LLM providers, token budgeting               |
-| M3: Agent Core            | Done    | ReAct agent, RAG endpoints, trust framework               |
-| M4: Frontend              | Done    | Chat UI, real-time streaming, design system, 91% coverage |
-| M5: Voice Output          | Planned | ElevenLabs TTS with podcast-style narration               |
-| M6: Eval Harness          | Planned | Automated quality scoring                                 |
+| Milestone                  | Status  | Highlights                                      |
+| -------------------------- | ------- | ----------------------------------------------- |
+| M1: Scaffold & Data Layer  | Done    | Nx monorepo, shared types, HN data + caching    |
+| M2: LLM & Chunker          | Done    | Triple-stack LLM providers, token budgeting     |
+| M3: Agent Core             | Done    | ReAct agent, RAG endpoints, trust framework     |
+| M4: Frontend               | Done    | Chat UI, real-time streaming, design system     |
+| M5: Voice Output           | Planned | ElevenLabs TTS with podcast-style narration     |
+| M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration |
+| M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging        |
+| M8: Multi-Agent Pipeline   | Done    | 3-stage pipeline, failure recovery, fallback    |
 
-**Current stats:** 198 tests passing (91 web + 107 API), 91% frontend coverage, 44 files in M4.
+**Current stats:** ~195 tests passing across 20 test suites.
 
 ---
 
@@ -218,6 +233,11 @@ npx nx lint              # Lint all projects
 npx nx build api         # Build backend
 npx nx build web         # Build frontend
 npx nx test web --coverage  # Coverage report
+
+# Eval harness (requires running API)
+npx tsx evals/run-eval.ts               # Run eval harness
+npx tsx evals/run-eval.ts -p groq       # Test specific provider
+npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
 ```
 
 ---
