@@ -23,6 +23,12 @@ import { RagQueryDto } from './dto/rag-query.dto';
 /** Cache TTL for query results (10 minutes). */
 const CACHE_TTL = 600;
 
+/** SSE heartbeat interval in milliseconds (15 seconds). */
+const HEARTBEAT_INTERVAL_MS = 15_000;
+
+/** SSE retry directive in milliseconds (5 seconds). */
+const SSE_RETRY_MS = 5_000;
+
 /** Global rate limit: max requests per minute. */
 const RATE_LIMIT = 60;
 
@@ -106,47 +112,92 @@ export class RagController {
 
   /**
    * Legacy streaming path — delegates to AgentService.runStream().
+   *
+   * Emits SSE events with incrementing `id` fields for reconnection support,
+   * a `retry` directive on the first event, and periodic heartbeat comments
+   * to keep the connection alive on mobile browsers.
    */
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
+      let eventId = 0;
+      let cancelled = false;
+
+      const heartbeatInterval = setInterval(() => {
+        if (!cancelled) {
+          subscriber.next({ type: 'heartbeat', data: '' } as MessageEvent);
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      const emit = (event: Partial<MessageEvent>, isFirst = false): void => {
+        const msg: MessageEvent = {
+          ...event,
+          id: String(++eventId),
+        } as MessageEvent;
+        if (isFirst) {
+          (msg as unknown as { retry: number }).retry = SSE_RETRY_MS;
+        }
+        subscriber.next(msg);
+      };
+
       const generator = this.agent.runStream(query, { provider });
 
       (async () => {
+        let isFirst = true;
         try {
           for await (const event of generator) {
+            if (cancelled) break;
+
             if (event.kind === 'step') {
-              subscriber.next({
-                type: event.step.type,
-                data: JSON.stringify({
-                  content: event.step.content,
-                  toolName: event.step.toolName,
-                  toolInput: event.step.toolInput,
-                  timestamp: event.step.timestamp,
-                }),
-              } as MessageEvent);
+              emit(
+                {
+                  type: event.step.type,
+                  data: JSON.stringify({
+                    content: event.step.content,
+                    toolName: event.step.toolName,
+                    toolInput: event.step.toolInput,
+                    timestamp: event.step.timestamp,
+                  }),
+                },
+                isFirst,
+              );
+              isFirst = false;
             } else if (event.kind === 'complete') {
-              subscriber.next({
-                type: 'answer',
-                data: JSON.stringify({
-                  answer: event.response.answer,
-                  sources: event.response.sources,
-                  trust: event.response.trust,
-                  meta: event.response.meta,
-                }),
-              } as MessageEvent);
+              emit(
+                {
+                  type: 'answer',
+                  data: JSON.stringify({
+                    answer: event.response.answer,
+                    sources: event.response.sources,
+                    trust: event.response.trust,
+                    meta: event.response.meta,
+                  }),
+                },
+                isFirst,
+              );
+              isFirst = false;
             }
           }
           subscriber.complete();
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.logger.error(`Stream error: ${message}`, err instanceof Error ? err.stack : '');
-          subscriber.next({
-            type: 'error',
-            data: JSON.stringify({ message }),
-          } as MessageEvent);
+          emit(
+            {
+              type: 'error',
+              data: JSON.stringify({ message }),
+            },
+            isFirst,
+          );
           subscriber.complete();
+        } finally {
+          clearInterval(heartbeatInterval);
         }
       })();
+
+      return () => {
+        cancelled = true;
+        clearInterval(heartbeatInterval);
+      };
     });
   }
 
@@ -158,9 +209,33 @@ export class RagController {
    * - `kind: 'step'`     → SSE type matching `step.type` (thought/action/observation)
    * - `kind: 'token'`    → SSE type `token`
    * - `kind: 'complete'` → SSE type `answer`
+   *
+   * Emits SSE events with incrementing `id` fields for reconnection support,
+   * a `retry` directive on the first event, and periodic heartbeat comments
+   * to keep the connection alive on mobile browsers.
    */
   private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
+      let eventId = 0;
+      let cancelled = false;
+
+      const heartbeatInterval = setInterval(() => {
+        if (!cancelled) {
+          subscriber.next({ type: 'heartbeat', data: '' } as MessageEvent);
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+
+      const emit = (event: Partial<MessageEvent>, isFirst = false): void => {
+        const msg: MessageEvent = {
+          ...event,
+          id: String(++eventId),
+        } as MessageEvent;
+        if (isFirst) {
+          (msg as unknown as { retry: number }).retry = SSE_RETRY_MS;
+        }
+        subscriber.next(msg);
+      };
+
       const parsed = PipelineConfigSchema.safeParse({
         providerMap: provider
           ? { retriever: provider, synthesizer: provider, writer: provider }
@@ -171,38 +246,57 @@ export class RagController {
       const generator = this.orchestrator.runWithFallback(query, config);
 
       (async () => {
+        let isFirst = true;
         try {
           for await (const event of generator) {
+            if (cancelled) break;
+
             if (event.kind === 'pipeline') {
-              subscriber.next({
-                type: 'pipeline',
-                data: JSON.stringify(event.event),
-              } as MessageEvent);
+              emit(
+                {
+                  type: 'pipeline',
+                  data: JSON.stringify(event.event),
+                },
+                isFirst,
+              );
+              isFirst = false;
             } else if (event.kind === 'step') {
-              subscriber.next({
-                type: event.step.type,
-                data: JSON.stringify({
-                  content: event.step.content,
-                  toolName: event.step.toolName,
-                  toolInput: event.step.toolInput,
-                  timestamp: event.step.timestamp,
-                }),
-              } as MessageEvent);
+              emit(
+                {
+                  type: event.step.type,
+                  data: JSON.stringify({
+                    content: event.step.content,
+                    toolName: event.step.toolName,
+                    toolInput: event.step.toolInput,
+                    timestamp: event.step.timestamp,
+                  }),
+                },
+                isFirst,
+              );
+              isFirst = false;
             } else if (event.kind === 'token') {
-              subscriber.next({
-                type: 'token',
-                data: JSON.stringify({ content: event.content }),
-              } as MessageEvent);
+              emit(
+                {
+                  type: 'token',
+                  data: JSON.stringify({ content: event.content }),
+                },
+                isFirst,
+              );
+              isFirst = false;
             } else if (event.kind === 'complete') {
-              subscriber.next({
-                type: 'answer',
-                data: JSON.stringify({
-                  answer: event.response.answer,
-                  sources: event.response.sources,
-                  trust: event.response.trust,
-                  meta: event.response.meta,
-                }),
-              } as MessageEvent);
+              emit(
+                {
+                  type: 'answer',
+                  data: JSON.stringify({
+                    answer: event.response.answer,
+                    sources: event.response.sources,
+                    trust: event.response.trust,
+                    meta: event.response.meta,
+                  }),
+                },
+                isFirst,
+              );
+              isFirst = false;
             }
           }
           subscriber.complete();
@@ -212,13 +306,23 @@ export class RagController {
             `Multi-agent stream error: ${message}`,
             err instanceof Error ? err.stack : '',
           );
-          subscriber.next({
-            type: 'error',
-            data: JSON.stringify({ message }),
-          } as MessageEvent);
+          emit(
+            {
+              type: 'error',
+              data: JSON.stringify({ message }),
+            },
+            isFirst,
+          );
           subscriber.complete();
+        } finally {
+          clearInterval(heartbeatInterval);
         }
       })();
+
+      return () => {
+        cancelled = true;
+        clearInterval(heartbeatInterval);
+      };
     });
   }
 
