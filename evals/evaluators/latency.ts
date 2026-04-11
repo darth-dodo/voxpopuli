@@ -7,19 +7,19 @@ interface LatencyThreshold {
 
 const PROVIDER_THRESHOLDS: Record<string, LatencyThreshold[]> = {
   groq: [
-    { maxMs: 6_000, score: 1.0 },
-    { maxMs: 13_000, score: 0.7 },
-    { maxMs: 30_000, score: 0.3 },
-  ],
-  claude: [
-    { maxMs: 13_000, score: 1.0 },
-    { maxMs: 30_000, score: 0.6 },
+    { maxMs: 15_000, score: 1.0 },
+    { maxMs: 30_000, score: 0.7 },
     { maxMs: 60_000, score: 0.3 },
   ],
+  claude: [
+    { maxMs: 30_000, score: 1.0 },
+    { maxMs: 60_000, score: 0.6 },
+    { maxMs: 120_000, score: 0.3 },
+  ],
   mistral: [
-    { maxMs: 10_000, score: 1.0 },
-    { maxMs: 20_000, score: 0.6 },
-    { maxMs: 30_000, score: 0.3 },
+    { maxMs: 30_000, score: 1.0 },
+    { maxMs: 60_000, score: 0.6 },
+    { maxMs: 90_000, score: 0.3 },
   ],
 };
 
