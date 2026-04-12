@@ -7,6 +7,7 @@ import {
   computed,
   model,
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
@@ -33,6 +34,7 @@ const MAX_QUERY_LENGTH = 500;
   selector: 'app-chat',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     FormsModule,
     MarkdownComponent,
     AgentStepsComponent,
