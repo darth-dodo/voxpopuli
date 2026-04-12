@@ -219,6 +219,21 @@ export class OrchestratorService {
     const elapsed = () => Date.now() - startTime;
 
     if (writerResponse) {
+      // Build storyId → date map from retriever step tool outputs
+      const dateLookup = new Map<number, string>();
+      for (const step of retrieverSteps) {
+        if (step.type !== 'observation' || !step.toolOutput) continue;
+        // Match "[storyId]" followed eventually by "Posted: YYYY-MM-DD"
+        const blocks = step.toolOutput.split(/\n\n/);
+        for (const block of blocks) {
+          const idMatch = block.match(/\[(\d+)\]/);
+          const dateMatch = block.match(/Posted:\s*(\d{4}-\d{2}-\d{2})/);
+          if (idMatch && dateMatch) {
+            dateLookup.set(parseInt(idMatch[1], 10), dateMatch[1]);
+          }
+        }
+      }
+
       const sources = writerResponse.sources.map((s) => ({
         storyId: s.storyId,
         title: s.title,
@@ -226,6 +241,7 @@ export class OrchestratorService {
         author: s.author,
         points: s.points,
         commentCount: s.commentCount,
+        postedDate: dateLookup.get(s.storyId),
       }));
 
       yield {

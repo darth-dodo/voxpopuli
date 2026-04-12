@@ -43,6 +43,7 @@ export interface AgentSource {
   author: string;
   points: number;
   commentCount: number;
+  postedDate?: string;
 }
 
 /** Token-usage and timing metadata for a single agent run. */
