@@ -1,0 +1,6 @@
+{
+  "/api/**": {
+    "target": "http://api-dev:3000",
+    "secure": false
+  }
+}

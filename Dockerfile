@@ -1,5 +1,5 @@
-# ── Stage 0: Builder (dev) ──────────────────────────────────────
-FROM node:22-alpine AS builder
+# ── Stage 0: Base (shared dep install) ─────────────────────────
+FROM node:22-alpine AS base
 
 RUN corepack enable && corepack prepare pnpm@10.12.1 --activate
 
@@ -7,37 +7,27 @@ WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml nx.json tsconfig.base.json ./
 COPY apps/api/package.json apps/api/tsconfig*.json apps/api/webpack*.js apps/api/
+COPY apps/web/tsconfig*.json apps/web/project.json apps/web/
 COPY libs/shared-types/package.json libs/shared-types/
 
 RUN pnpm install --frozen-lockfile
+
+# ── Stage 1: Dev (docker compose target for hot-reload) ────────
+FROM base AS dev
 
 COPY . .
 
 EXPOSE 3000 4200
 
-# ── Stage 1: Build ─────────────────────────────────────────────
-FROM node:22-alpine AS build
+# ── Stage 2: Build ─────────────────────────────────────────────
+FROM base AS build
 
-RUN corepack enable && corepack prepare pnpm@10.12.1 --activate
-
-WORKDIR /app
-
-# Copy workspace config first (layer cache for deps)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml nx.json tsconfig.base.json ./
-COPY apps/api/package.json apps/api/tsconfig*.json apps/api/webpack*.js apps/api/
-COPY libs/shared-types/package.json libs/shared-types/
-
-# Install all deps (including devDeps for build)
-RUN pnpm install --frozen-lockfile
-
-# Copy source
 COPY libs/shared-types/ libs/shared-types/
 COPY apps/api/ apps/api/
 
-# Build
 RUN npx nx build api --configuration=production
 
-# ── Stage 2: Production ───────────────────────────────────────
+# ── Stage 3: Production (used by Render) ───────────────────────
 FROM node:22-alpine AS production
 
 RUN corepack enable && corepack prepare pnpm@10.12.1 --activate
@@ -46,15 +36,12 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy workspace config for pruned install
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/
 COPY libs/shared-types/package.json libs/shared-types/
 
-# Production deps only (--ignore-scripts skips husky prepare hook)
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
-# Copy built output (webpack outputs to apps/api/dist/)
 COPY --from=build /app/apps/api/dist apps/api/dist
 
 EXPOSE 3000
