@@ -176,10 +176,13 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
               type: 'observation',
               content: summarizeToolOutput(toolName, content),
               toolName,
+              toolOutput: content,
               timestamp: Date.now(),
             };
             steps.push(step);
-            config?.writer?.({ type: 'retriever_step', data: step });
+            // Stream summary only — toolOutput is kept for trust computation, not the UI
+            const { toolOutput: _raw, ...streamStep } = step;
+            config?.writer?.({ type: 'retriever_step', data: streamStep });
           } else if (type === 'ai' && content) {
             // Skip verbose final-thought monologues (coverage checks, etc.)
             if (content.length > 300) continue;

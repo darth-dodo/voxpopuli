@@ -116,6 +116,7 @@ export class OrchestratorService {
     let bundle: import('@voxpopuli/shared-types').EvidenceBundle | undefined;
     let analysis: import('@voxpopuli/shared-types').AnalysisResult | undefined;
     let writerResponse: AgentResponseV2 | undefined;
+    let retrieverSteps: AgentStep[] = [];
 
     // Emit first stage started
     yield {
@@ -151,6 +152,7 @@ export class OrchestratorService {
 
         if (nodeName === 'retriever') {
           bundle = nodeOutput.bundle as typeof bundle;
+          retrieverSteps = (nodeOutput.steps as AgentStep[]) ?? [];
           yield {
             kind: 'pipeline',
             event: {
@@ -238,7 +240,7 @@ export class OrchestratorService {
             cached: false,
           },
           trust: computeTrustMetadata(
-            [],
+            retrieverSteps,
             sources,
             writerResponse.headline + ' ' + writerResponse.sections.map((s) => s.body).join(' '),
           ),
@@ -247,12 +249,17 @@ export class OrchestratorService {
     } else if (analysis && bundle) {
       yield {
         kind: 'complete',
-        response: buildFallbackResponse(analysis, bundle, {
-          provider: activeProvider,
-          durationMs: elapsed(),
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-        }),
+        response: buildFallbackResponse(
+          analysis,
+          bundle,
+          {
+            provider: activeProvider,
+            durationMs: elapsed(),
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+          },
+          retrieverSteps,
+        ),
       };
     }
   }

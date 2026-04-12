@@ -1,4 +1,9 @@
-import type { AgentResponse, AnalysisResult, EvidenceBundle } from '@voxpopuli/shared-types';
+import type {
+  AgentResponse,
+  AgentStep,
+  AnalysisResult,
+  EvidenceBundle,
+} from '@voxpopuli/shared-types';
 import { computeTrustMetadata } from './trust';
 
 /**
@@ -20,6 +25,7 @@ export function buildFallbackResponse(
     totalInputTokens: number;
     totalOutputTokens: number;
   },
+  steps: AgentStep[] = [],
 ): AgentResponse {
   const sections = analysis.insights
     .map((insight) => `### ${insight.claim}\n\n${insight.reasoning}`)
@@ -48,6 +54,6 @@ export function buildFallbackResponse(
       cached: false,
       error: true,
     },
-    trust: computeTrustMetadata([], sources, answer),
+    trust: computeTrustMetadata(steps, sources, answer),
   };
 }
