@@ -23,7 +23,7 @@ import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-gr
 // Stream event types
 // ---------------------------------------------------------------------------
 
-/** Discriminated union of events yielded by the pipeline. */
+/** Union of events yielded by the pipeline. */
 export type PipelineStreamEvent =
   | { kind: 'pipeline'; event: PipelineEvent }
   | { kind: 'step'; step: AgentStep }
@@ -128,70 +128,82 @@ export class OrchestratorService {
       },
     };
 
-    const stream = await graph.stream({ query }, { streamMode: 'updates' as const });
+    const stream = await graph.stream({ query }, { streamMode: ['updates', 'custom'] as const });
 
-    for await (const update of stream) {
-      const nodeName = Object.keys(update)[0] as PipelineStage;
-      const nodeOutput = (update as Record<string, Record<string, unknown>>)[nodeName];
+    for await (const chunk of stream) {
+      // With multiple streamMode, each chunk is [mode, data]
+      const [mode, data] = chunk as [string, unknown];
 
-      if (nodeName === 'retriever') {
-        bundle = nodeOutput.bundle as typeof bundle;
-        const steps = (nodeOutput.steps ?? []) as AgentStep[];
-        for (const step of steps) {
-          yield { kind: 'step', step };
+      // Custom events: real-time step streaming from retriever
+      if (mode === 'custom') {
+        const customEvent = data as { type: string; data: unknown };
+        if (customEvent.type === 'retriever_step') {
+          yield { kind: 'step', step: customEvent.data as AgentStep };
         }
-        yield {
-          kind: 'pipeline',
-          event: {
-            stage: 'retriever',
-            status: 'done',
-            detail: `${bundle?.themes.length ?? 0} themes from ${
-              bundle?.allSources.length ?? 0
-            } sources`,
-            elapsed: Date.now() - stageStart,
-          },
-        };
-      } else if (nodeName === 'synthesizer') {
-        analysis = nodeOutput.analysis as typeof analysis;
-        yield {
-          kind: 'pipeline',
-          event: {
-            stage: 'synthesizer',
-            status: 'done',
-            detail: `${analysis?.insights.length ?? 0} insights, confidence: ${
-              analysis?.confidence ?? 'unknown'
-            }`,
-            elapsed: Date.now() - stageStart,
-          },
-        };
-      } else if (nodeName === 'writer') {
-        writerResponse = nodeOutput.response as typeof writerResponse;
-        yield {
-          kind: 'pipeline',
-          event: {
-            stage: 'writer',
-            status: 'done',
-            detail: writerResponse
-              ? `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`
-              : 'Using fallback response from analysis',
-            elapsed: Date.now() - stageStart,
-          },
-        };
+        continue;
       }
 
-      // Emit next stage started
-      stageIdx++;
-      if (stageIdx < stageOrder.length) {
-        stageStart = Date.now();
-        const nextStage = stageOrder[stageIdx];
-        const detail =
-          nextStage === 'synthesizer'
-            ? `Analyzing ${bundle?.themes.length ?? 0} themes...`
-            : 'Composing headline and sections...';
-        yield {
-          kind: 'pipeline',
-          event: { stage: nextStage, status: 'started', detail, elapsed: 0 },
-        };
+      // Updates: node completion events
+      if (mode === 'updates') {
+        const update = data as Record<string, Record<string, unknown>>;
+        const nodeName = Object.keys(update)[0] as PipelineStage;
+        const nodeOutput = update[nodeName];
+
+        if (nodeName === 'retriever') {
+          bundle = nodeOutput.bundle as typeof bundle;
+          yield {
+            kind: 'pipeline',
+            event: {
+              stage: 'retriever',
+              status: 'done',
+              detail: `${bundle?.themes.length ?? 0} themes from ${
+                bundle?.allSources.length ?? 0
+              } sources`,
+              elapsed: Date.now() - stageStart,
+            },
+          };
+        } else if (nodeName === 'synthesizer') {
+          analysis = nodeOutput.analysis as typeof analysis;
+          yield {
+            kind: 'pipeline',
+            event: {
+              stage: 'synthesizer',
+              status: 'done',
+              detail: `${analysis?.insights.length ?? 0} insights, confidence: ${
+                analysis?.confidence ?? 'unknown'
+              }`,
+              elapsed: Date.now() - stageStart,
+            },
+          };
+        } else if (nodeName === 'writer') {
+          writerResponse = nodeOutput.response as typeof writerResponse;
+          yield {
+            kind: 'pipeline',
+            event: {
+              stage: 'writer',
+              status: 'done',
+              detail: writerResponse
+                ? `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`
+                : 'Using fallback response from analysis',
+              elapsed: Date.now() - stageStart,
+            },
+          };
+        }
+
+        // Emit next stage started
+        stageIdx++;
+        if (stageIdx < stageOrder.length) {
+          stageStart = Date.now();
+          const nextStage = stageOrder[stageIdx];
+          const detail =
+            nextStage === 'synthesizer'
+              ? `Analyzing ${bundle?.themes.length ?? 0} themes...`
+              : 'Composing headline and sections...';
+          yield {
+            kind: 'pipeline',
+            event: { stage: nextStage, status: 'started', detail, elapsed: 0 },
+          };
+        }
       }
     }
 

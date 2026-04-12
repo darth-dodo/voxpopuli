@@ -1,4 +1,5 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
@@ -109,26 +110,32 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
           if (type === 'ai' && msg.tool_calls?.length > 0) {
             for (const tc of msg.tool_calls) {
-              steps.push({
+              const step: AgentStep = {
                 type: 'action',
                 content: `${tc.name}(${JSON.stringify(tc.args)})`,
                 toolName: tc.name,
                 toolInput: tc.args,
                 timestamp: Date.now(),
-              });
+              };
+              steps.push(step);
+              await dispatchCustomEvent('retriever_step', step);
             }
           } else if (type === 'tool') {
-            steps.push({
+            const step: AgentStep = {
               type: 'observation',
               content: content.slice(0, 500),
               timestamp: Date.now(),
-            });
+            };
+            steps.push(step);
+            await dispatchCustomEvent('retriever_step', step);
           } else if (type === 'ai' && content) {
-            steps.push({
+            const step: AgentStep = {
               type: 'thought',
               content,
               timestamp: Date.now(),
-            });
+            };
+            steps.push(step);
+            await dispatchCustomEvent('retriever_step', step);
           }
         }
       }

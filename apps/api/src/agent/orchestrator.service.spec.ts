@@ -117,12 +117,28 @@ function makeLegacyEvents() {
   })();
 }
 
-/** Helper: create a mock compiled graph whose .stream() yields predefined updates. */
-function mockGraph(updates: Array<Record<string, unknown>>) {
+/**
+ * Helper: create a mock compiled graph whose .stream() yields [mode, data] tuples.
+ * Supports both 'updates' (node completions) and 'custom' (real-time step events).
+ */
+function mockGraph(
+  updates: Array<Record<string, unknown>>,
+  customEvents: Array<{ type: string; data: unknown }> = [],
+) {
   return {
     stream: jest.fn().mockResolvedValue(
       (async function* () {
-        for (const update of updates) yield update;
+        for (const update of updates) {
+          const nodeName = Object.keys(update)[0];
+          // Emit any custom events scheduled before this node completes
+          // (In real usage, custom events interleave with updates)
+          if (nodeName === 'retriever') {
+            for (const ce of customEvents) {
+              yield ['custom', ce];
+            }
+          }
+          yield ['updates', update];
+        }
       })(),
     ),
   };
@@ -270,22 +286,41 @@ describe('OrchestratorService', () => {
       expect(complete.response.trust).toBeDefined();
     });
 
-    it('emits step events from retriever', async () => {
-      const mockSteps = [
-        { action: 'search_hn', input: 'test', observation: 'found 3 stories' },
-        { action: 'get_story', input: '123', observation: 'story details' },
-      ];
-      const graph = mockGraph([
-        { retriever: { bundle: mockBundle, steps: mockSteps } },
-        { synthesizer: { analysis: mockAnalysis } },
-        { writer: { response: mockResponseV2 } },
-      ]);
+    it('emits step events from retriever custom events in real-time', async () => {
+      const step1 = {
+        type: 'action',
+        content: 'search_hn(...)',
+        toolName: 'search_hn',
+        toolInput: {},
+        timestamp: 1,
+      };
+      const step2 = { type: 'observation', content: 'found 3 stories', timestamp: 2 };
+      const graph = mockGraph(
+        [
+          { retriever: { bundle: mockBundle, steps: [step1, step2] } },
+          { synthesizer: { analysis: mockAnalysis } },
+          { writer: { response: mockResponseV2 } },
+        ],
+        [
+          { type: 'retriever_step', data: step1 },
+          { type: 'retriever_step', data: step2 },
+        ],
+      );
       (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
 
       const events = await collectEvents(service.runStream('test query', defaultConfig));
 
       const stepEvents = events.filter((e) => e.kind === 'step');
       expect(stepEvents.length).toBe(2);
+      // Steps arrive BEFORE the retriever done event
+      const retrieverDoneIdx = events.findIndex(
+        (e) =>
+          e.kind === 'pipeline' &&
+          (e as { kind: 'pipeline'; event: PipelineEvent }).event.stage === 'retriever' &&
+          (e as { kind: 'pipeline'; event: PipelineEvent }).event.status === 'done',
+      );
+      const lastStepIdx = events.reduce((acc, e, i) => (e.kind === 'step' ? i : acc), -1);
+      expect(lastStepIdx).toBeLessThan(retrieverDoneIdx);
     });
   });
 
@@ -347,6 +382,7 @@ describe('OrchestratorService', () => {
         .find((pe) => pe.stage === 'writer' && pe.status === 'done');
 
       expect(writerDone).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(writerDone!.detail).toContain('fallback');
     });
   });
@@ -367,24 +403,25 @@ describe('OrchestratorService', () => {
       expect(typeof args.writer).toBe('function');
     });
 
-    it('streams with updates mode', async () => {
+    it('streams with updates and custom modes', async () => {
       const graph = setupHappyPathGraph();
 
       await collectEvents(service.runStream('test query', defaultConfig));
 
-      expect(graph.stream).toHaveBeenCalledWith({ query: 'test query' }, { streamMode: 'updates' });
+      expect(graph.stream).toHaveBeenCalledWith(
+        { query: 'test query' },
+        { streamMode: ['updates', 'custom'] },
+      );
     });
   });
 
   describe('retriever protection', () => {
     it('should never re-run retriever on downstream failure (graph throws)', async () => {
       // Graph stream throws after retriever update
-      let callCount = 0;
       const graph = {
         stream: jest.fn().mockResolvedValue(
           (async function* () {
-            callCount++;
-            yield { retriever: { bundle: mockBundle, steps: [] } };
+            yield ['updates', { retriever: { bundle: mockBundle, steps: [] } }];
             throw new Error('synth fail');
           })(),
         ),
