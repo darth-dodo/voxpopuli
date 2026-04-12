@@ -17,7 +17,7 @@ services:
       dockerfile: Dockerfile
       target: builder
     ports:
-      - '${PORT:-3000}:3000'
+      - '3000:3000'
     volumes:
       - .:/app
       - /app/node_modules
@@ -25,6 +25,25 @@ services:
       - .env
     environment:
       - NODE_ENV=development
-    command: npx nx serve api
+    command: npx nx serve api --hostname 0.0.0.0
+    profiles:
+      - dev
+  web-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    ports:
+      - '4200:4200'
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+    command: npx nx serve web --hostname 0.0.0.0 --proxy-config apps/web/proxy.conf.docker.json
+    depends_on:
+      - api-dev
     profiles:
       - dev

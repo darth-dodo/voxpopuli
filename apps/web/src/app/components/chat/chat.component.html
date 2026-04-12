@@ -123,11 +123,11 @@
 
       <!-- Example questions (inside hero for vertical centering) -->
       <div
-        class="w-full max-w-3xl mt-8 sm:mt-12 px-2 sm:px-0"
+        class="w-full max-w-xl mt-8 sm:mt-12 px-4"
         role="region"
         aria-label="Example questions"
       >
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           @for (q of exampleQueries; track q) {
           <button
             type="button"
@@ -447,7 +447,7 @@
       </nav>
 
       <!-- ─── Answer Tab ─── -->
-      @if (activeTab() === 'answer') {
+      <div [hidden]="activeTab() !== 'answer'">
 
       <!-- Pipeline status message while waiting for answer -->
       @if (isPipelineMode() && !response() && isStreaming()) {
@@ -643,10 +643,11 @@
           </div>
         </div>
       </article>
-      } } }
+      } }
+      </div>
 
       <!-- ─── Sources Tab ─── -->
-      @if (activeTab() === 'sources') { @if (response(); as res) { @if (res.sources.length > 0) {
+      <div [hidden]="activeTab() !== 'sources'"> @if (response(); as res) { @if (res.sources.length > 0) {
       <div>
         <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
           {{ res.sources.length }} sources
@@ -661,10 +662,10 @@
       <p class="text-text-muted text-sm">No sources available.</p>
       } } @else {
       <p class="text-text-muted text-sm">Sources will appear after the agent completes.</p>
-      } }
+      } </div>
 
       <!-- ─── Steps Tab ─── -->
-      @if (activeTab() === 'steps') { @if (steps().length > 0 || isStreaming()) {
+      <div [hidden]="activeTab() !== 'steps'"> @if (steps().length > 0 || isStreaming()) {
       <app-agent-steps
         [steps]="steps()"
         [isStreaming]="isStreaming()"
@@ -673,7 +674,7 @@
       />
       } @else {
       <p class="text-text-muted text-sm">Agent steps will appear here during processing.</p>
-      } }
+      } </div>
     </div>
     }
   </main>

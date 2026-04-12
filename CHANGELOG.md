@@ -4,9 +4,34 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **M8: Multi-Agent Pipeline** — Three-stage Retriever-Synthesizer-Writer architecture replacing the single-agent ReAct loop. Structured inter-agent data contracts via Zod schemas (`EvidenceBundle`, `AnalysisResult`, `AgentResponseV2`). (#15)
+- **Per-stage failure recovery** in OrchestratorService — Retriever failure falls back to legacy agent, Synthesizer retries once then falls back, Writer retries once then uses `buildFallbackResponse`.
+- **Fallback response builder** — Converts AnalysisResult + EvidenceBundle into a minimal AgentResponse when the Writer stage fails after retry.
+- **Adaptive query decomposition** — Retriever prompt uses multi-search strategy for broad/comparative queries. ADR-006 documents the design.
+- **Dry-well circuit breaker** — Skips compaction LLM call when ReAct loop returns sparse data (<200 chars or no story patterns), saving tokens on topics HN hasn't discussed.
+- **LangSmith metadata tags** — All pipeline `.invoke()` calls annotated with `metadata` (pipeline_stage, query) and `tags` for trace filtering.
+- **Live elapsed timer** — Frontend shows a ticking seconds counter during SSE query streaming in both pipeline and legacy modes.
+- **Mobile background resilience** — SSE retry with exponential backoff, heartbeat monitoring, and visibility-change detection for backgrounded tabs.
+- **Pipeline test suite** — 168 tests covering RetrieverNode, SynthesizerNode, WriterNode, and OrchestratorService with unit, edge case, and integration coverage.
+- **Eval harness documentation** — README and lessons learned from Mistral eval run.
+
+### Changed
+
+- **Writer input stripped to citation table** — Writer receives `{ analysis, sources }` via Zod-composed `WriterInputSchema` (AnalysisResultSchema + SourceMetadataSchema) instead of full EvidenceBundle, architecturally enforcing the "don't re-analyze" constraint.
+- **Synthesizer input formatted as structured text** — `formatBundleForSynthesizer()` converts raw JSON to token-efficient markdown-style text, stripping unused metadata (url, commentCount, tokenCount).
+- **Retriever compaction input filtered** — Only tool result and assistant messages passed to compactor; system prompts and initial query removed.
+- **Writer prompt updated** — References citation sources table instead of EvidenceBundle.
+
 ### Fixed
 
+- **SSE `as any` cast** replaced with safe type cast for retry field.
 - **CORS EventSource error** — `FRONTEND_URL` was unset on Render, defaulting to `localhost:4200`. Cross-origin `EventSource` requests from the production frontend were rejected, causing `"undefined" is not valid JSON`. Set correct production origin in `render.yaml`, added defensive guard for undefined SSE data, and explicit CORS methods/headers. ([fix/cors-eventsource](https://github.com/darth-dodo/voxpopuli/tree/fix/cors-eventsource))
+
+### Refactored
+
+- **Removed `dispatchCustomEvent`** from pipeline nodes — nodes are pure data transformers, events handled by the orchestrator.
 
 ## [0.5.0] — 2026-04-06
 

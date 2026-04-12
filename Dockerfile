@@ -1,3 +1,20 @@
+# ── Stage 0: Builder (dev) ──────────────────────────────────────
+FROM node:22-alpine AS builder
+
+RUN corepack enable && corepack prepare pnpm@10.12.1 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml nx.json tsconfig.base.json ./
+COPY apps/api/package.json apps/api/tsconfig*.json apps/api/webpack*.js apps/api/
+COPY libs/shared-types/package.json libs/shared-types/
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+EXPOSE 3000 4200
+
 # ── Stage 1: Build ─────────────────────────────────────────────
 FROM node:22-alpine AS build
 
