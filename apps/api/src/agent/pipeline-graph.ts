@@ -27,21 +27,21 @@ export const PipelineAnnotation = Annotation.Root({
 });
 
 export type PipelineGraphState = typeof PipelineAnnotation.State;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyNodeFn = (state: any) => Promise<Record<string, unknown>>;
+
 export type PipelineNodeFn = (state: PipelineGraphState) => Promise<Partial<PipelineGraphState>>;
 
-/**
- * Builds the linear LangGraph pipeline: retriever → synthesizer → writer.
- * Each node receives the accumulated state and returns partial updates.
- */
 export function buildPipelineGraph(nodes: {
-  retriever: PipelineNodeFn;
-  synthesizer: PipelineNodeFn;
-  writer: PipelineNodeFn;
+  retriever: AnyNodeFn;
+  synthesizer: AnyNodeFn;
+  writer: AnyNodeFn;
 }) {
   return new StateGraph(PipelineAnnotation)
-    .addNode('retriever', nodes.retriever)
-    .addNode('synthesizer', nodes.synthesizer)
-    .addNode('writer', nodes.writer)
+    .addNode('retriever', nodes.retriever as PipelineNodeFn)
+    .addNode('synthesizer', nodes.synthesizer as PipelineNodeFn)
+    .addNode('writer', nodes.writer as PipelineNodeFn)
     .addEdge(START, 'retriever')
     .addEdge('retriever', 'synthesizer')
     .addEdge('synthesizer', 'writer')
@@ -49,11 +49,7 @@ export function buildPipelineGraph(nodes: {
     .compile();
 }
 
-/**
- * Wrap a node function with retry-once semantics.
- * On first failure, retries once. On second failure, throws.
- */
-export function withRetry(fn: PipelineNodeFn): PipelineNodeFn {
+export function withRetry(fn: AnyNodeFn): AnyNodeFn {
   return async (state) => {
     try {
       return await fn(state);
@@ -63,14 +59,10 @@ export function withRetry(fn: PipelineNodeFn): PipelineNodeFn {
   };
 }
 
-/**
- * Wrap the writer node with retry-once + fallback semantics.
- * On double failure, calls the fallback function instead of throwing.
- */
 export function withWriterFallback(
-  fn: PipelineNodeFn,
+  fn: AnyNodeFn,
   fallback: (state: PipelineGraphState) => Partial<PipelineGraphState>,
-): PipelineNodeFn {
+): AnyNodeFn {
   return async (state) => {
     try {
       return await fn(state);
