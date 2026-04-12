@@ -123,13 +123,10 @@ export class OrchestratorService {
       },
     };
 
-    const collectedSteps: AgentStep[] = [];
-    const { bundle } = await retrieverFn({ query }, (step) => {
-      collectedSteps.push(step);
-    });
+    const { bundle, steps: retrieverSteps } = await retrieverFn({ query });
 
     // Emit collected ReAct steps from the retriever
-    for (const step of collectedSteps) {
+    for (const step of retrieverSteps) {
       yield { kind: 'step', step };
     }
 

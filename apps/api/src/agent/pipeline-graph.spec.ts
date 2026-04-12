@@ -1,4 +1,9 @@
-import { buildPipelineGraph, PipelineAnnotation, type PipelineGraphState } from './pipeline-graph';
+import {
+  buildPipelineGraph,
+  withRetry,
+  withWriterFallback,
+  type PipelineGraphState,
+} from './pipeline-graph';
 import type { EvidenceBundle, AnalysisResult, AgentResponseV2 } from '@voxpopuli/shared-types';
 
 jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
@@ -130,5 +135,67 @@ describe('buildPipelineGraph', () => {
     const finalState = await graph.invoke({ query: 'test query' });
 
     expect(finalState.steps).toEqual([step1, step2, step3]);
+  });
+});
+
+const minimalState: PipelineGraphState = {
+  query: 'q',
+  bundle: undefined,
+  analysis: undefined,
+  response: undefined,
+  steps: [],
+};
+
+describe('withRetry', () => {
+  it('should return result on first success', async () => {
+    const fn = jest.fn().mockResolvedValue({ analysis: 'ok' });
+    const wrapped = withRetry(fn);
+    const result = await wrapped(minimalState);
+    expect(result).toEqual({ analysis: 'ok' });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should retry once on failure then return', async () => {
+    const fn = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockResolvedValueOnce({ analysis: 'ok' });
+    const wrapped = withRetry(fn);
+    const result = await wrapped(minimalState);
+    expect(result).toEqual({ analysis: 'ok' });
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('should throw on double failure', async () => {
+    const fn = jest.fn().mockRejectedValue(new Error('fail'));
+    const wrapped = withRetry(fn);
+    await expect(wrapped(minimalState)).rejects.toThrow('fail');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('withWriterFallback', () => {
+  it('should return result on success', async () => {
+    const fn = jest.fn().mockResolvedValue({ response: 'ok' });
+    const fallback = jest.fn();
+    const wrapped = withWriterFallback(fn, fallback);
+    const result = await wrapped(minimalState);
+    expect(result).toEqual({ response: 'ok' });
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it('should retry once then use fallback on double failure', async () => {
+    const fn = jest.fn().mockRejectedValue(new Error('fail'));
+    const fallback = jest.fn().mockReturnValue({ response: 'fallback' });
+    const wrapped = withWriterFallback(fn, fallback);
+    const stateWithData: PipelineGraphState = {
+      ...minimalState,
+      bundle: mockBundle,
+      analysis: mockAnalysis,
+    };
+    const result = await wrapped(stateWithData);
+    expect(result).toEqual({ response: 'fallback' });
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fallback).toHaveBeenCalledTimes(1);
   });
 });

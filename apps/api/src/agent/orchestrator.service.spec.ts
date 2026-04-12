@@ -106,7 +106,7 @@ function makeLegacyEvents() {
 /** Helper: set up all three node mocks with happy-path returns. */
 function setupHappyPathMocks() {
   (createRetrieverNode as jest.Mock).mockReturnValue(
-    jest.fn().mockResolvedValue({ bundle: mockBundle }),
+    jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
   );
   (createSynthesizerNode as jest.Mock).mockReturnValue(
     jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -159,7 +159,7 @@ describe('OrchestratorService', () => {
   describe('happy path', () => {
     it('should stream pipeline events and complete on success', async () => {
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -182,7 +182,7 @@ describe('OrchestratorService', () => {
 
     it('should produce an answer with headline and sections', async () => {
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -294,7 +294,7 @@ describe('OrchestratorService', () => {
         .mockResolvedValueOnce({ analysis: mockAnalysis });
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
       (createWriterNode as jest.Mock).mockReturnValue(
@@ -314,7 +314,7 @@ describe('OrchestratorService', () => {
       const mockSynthesizer = jest.fn().mockRejectedValue(new Error('LLM down'));
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
       (agentService.runStream as jest.Mock).mockReturnValue(makeLegacyEvents());
@@ -335,7 +335,7 @@ describe('OrchestratorService', () => {
         .mockResolvedValueOnce({ analysis: mockAnalysis });
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
       (createWriterNode as jest.Mock).mockReturnValue(
@@ -368,7 +368,7 @@ describe('OrchestratorService', () => {
         .mockResolvedValueOnce({ response: mockResponseV2 });
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -388,7 +388,7 @@ describe('OrchestratorService', () => {
       const mockWriter = jest.fn().mockRejectedValue(new Error('Writer broken'));
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -414,7 +414,7 @@ describe('OrchestratorService', () => {
       const mockWriter = jest.fn().mockRejectedValue(new Error('Writer broken'));
 
       (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle }),
+        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
       );
       (createSynthesizerNode as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
@@ -436,7 +436,7 @@ describe('OrchestratorService', () => {
 
   describe('retriever protection', () => {
     it('should never re-run retriever on downstream failure', async () => {
-      const mockRetriever = jest.fn().mockResolvedValue({ bundle: mockBundle });
+      const mockRetriever = jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] });
       const mockSynthesizer = jest.fn().mockRejectedValue(new Error('synth fail'));
 
       (createRetrieverNode as jest.Mock).mockReturnValue(mockRetriever);
@@ -510,7 +510,10 @@ describe('OrchestratorService', () => {
       const delayedRetriever = jest
         .fn()
         .mockImplementation(
-          () => new Promise((resolve) => setTimeout(() => resolve({ bundle: mockBundle }), 50)),
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve({ bundle: mockBundle, steps: [] }), 50),
+            ),
         );
 
       (createRetrieverNode as jest.Mock).mockReturnValue(delayedRetriever);

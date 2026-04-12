@@ -27,7 +27,7 @@ export const PipelineAnnotation = Annotation.Root({
 });
 
 export type PipelineGraphState = typeof PipelineAnnotation.State;
-type PipelineNodeFn = (state: PipelineGraphState) => Promise<Partial<PipelineGraphState>>;
+export type PipelineNodeFn = (state: PipelineGraphState) => Promise<Partial<PipelineGraphState>>;
 
 /**
  * Builds the linear LangGraph pipeline: retriever → synthesizer → writer.
@@ -47,4 +47,39 @@ export function buildPipelineGraph(nodes: {
     .addEdge('synthesizer', 'writer')
     .addEdge('writer', END)
     .compile();
+}
+
+/**
+ * Wrap a node function with retry-once semantics.
+ * On first failure, retries once. On second failure, throws.
+ */
+export function withRetry(fn: PipelineNodeFn): PipelineNodeFn {
+  return async (state) => {
+    try {
+      return await fn(state);
+    } catch {
+      return await fn(state);
+    }
+  };
+}
+
+/**
+ * Wrap the writer node with retry-once + fallback semantics.
+ * On double failure, calls the fallback function instead of throwing.
+ */
+export function withWriterFallback(
+  fn: PipelineNodeFn,
+  fallback: (state: PipelineGraphState) => Partial<PipelineGraphState>,
+): PipelineNodeFn {
+  return async (state) => {
+    try {
+      return await fn(state);
+    } catch {
+      try {
+        return await fn(state);
+      } catch {
+        return fallback(state);
+      }
+    }
+  };
 }

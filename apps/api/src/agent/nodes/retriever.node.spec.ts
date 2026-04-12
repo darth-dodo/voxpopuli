@@ -13,7 +13,12 @@ jest.mock('../../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() 
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-import { createRetrieverNode, isDryWell, buildDryWellBundle } from './retriever.node';
+import {
+  createRetrieverNode,
+  isDryWell,
+  buildDryWellBundle,
+  type RetrieverResult,
+} from './retriever.node';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 
 /** Helper: realistic raw data that passes the dry-well check. */
@@ -51,7 +56,7 @@ describe('RetrieverNode', () => {
     expect(typeof node).toBe('function');
   });
 
-  it('should produce a valid EvidenceBundle', async () => {
+  it('should produce a valid EvidenceBundle and steps array', async () => {
     const bundleJson = JSON.stringify({
       query: 'test query',
       themes: [
@@ -74,9 +79,11 @@ describe('RetrieverNode', () => {
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
-    const result = await node({ query: 'test query' });
+    const result: RetrieverResult = await node({ query: 'test query' });
 
     expect(result.bundle).toBeDefined();
+    expect(result.steps).toBeDefined();
+    expect(Array.isArray(result.steps)).toBe(true);
     const parsed = EvidenceBundleSchema.safeParse(result.bundle);
     expect(parsed.success).toBe(true);
   });
@@ -107,7 +114,7 @@ describe('RetrieverNode', () => {
     expect(mockModel.invoke).toHaveBeenCalledTimes(2);
   });
 
-  it('should not dispatch any custom events (pure data transformer)', async () => {
+  it('should accumulate steps from ReAct streaming into steps array', async () => {
     const bundleJson = JSON.stringify({
       query: 'test',
       themes: [
@@ -118,16 +125,39 @@ describe('RetrieverNode', () => {
       tokenCount: 100,
     });
 
-    mockReactAgentStream.mockReturnValue(
-      mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
-    );
+    // Simulate messages with _getType() for step extraction
+    const aiMsg = {
+      content: 'Let me search for this topic',
+      _getType: () => 'ai',
+      tool_calls: [{ name: 'search_hn', args: { query: 'test' } }],
+    };
+    const toolMsg = {
+      content: 'Found 3 stories about test topic. Story 1234 — 50 points.',
+      _getType: () => 'tool',
+    };
+    const thoughtMsg = {
+      content: 'The search returned useful results',
+      _getType: () => 'ai',
+    };
+
+    mockReactAgentStream.mockReturnValue(mockStreamResult([aiMsg, toolMsg, thoughtMsg]));
     mockModel.invoke.mockResolvedValue({ content: bundleJson });
 
     const node = createRetrieverNode(mockModel, mockTools);
     const result = await node({ query: 'test' });
 
     expect(result.bundle).toBeDefined();
-    // Node is a pure data transformer — no dispatchCustomEvent calls
+    expect(result.steps).toBeDefined();
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    // Should have an action step (from the tool_call), an observation step, and a thought step
+    const actionStep = result.steps.find((s) => s.type === 'action');
+    expect(actionStep).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    expect(actionStep!.toolName).toBe('search_hn');
+    const observationStep = result.steps.find((s) => s.type === 'observation');
+    expect(observationStep).toBeDefined();
+    const thoughtStep = result.steps.find((s) => s.type === 'thought');
+    expect(thoughtStep).toBeDefined();
   });
 
   it('compact produces valid EvidenceBundle with schema validation', async () => {
@@ -379,6 +409,10 @@ describe('RetrieverNode', () => {
       // Bundle should be a valid EvidenceBundle
       const parsed = EvidenceBundleSchema.safeParse(result.bundle);
       expect(parsed.success).toBe(true);
+
+      // Steps array should still be present (may be empty or contain steps from ReAct)
+      expect(result.steps).toBeDefined();
+      expect(Array.isArray(result.steps)).toBe(true);
 
       // Bundle should contain the dry-well placeholder theme
       expect(result.bundle.themes).toHaveLength(1);

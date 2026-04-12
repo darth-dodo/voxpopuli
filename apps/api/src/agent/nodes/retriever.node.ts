@@ -63,9 +63,12 @@ export function buildDryWellBundle(query: string): EvidenceBundle {
  * Two phases:
  * 1. ReAct loop (createReactAgent) — collects raw HN data via tools
  * 2. Compaction (single LLM call) — converts raw data → EvidenceBundle
+ *
+ * Returns the compacted EvidenceBundle and all AgentSteps accumulated
+ * during the ReAct loop. The caller (pipeline graph) is responsible for
+ * forwarding steps to the SSE stream.
  */
-/** Callback for emitting agent steps during the ReAct loop. */
-export type OnStepCallback = (step: AgentStep) => void;
+export type RetrieverResult = { bundle: EvidenceBundle; steps: AgentStep[] };
 
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
   const reactAgent = createReactAgent({
@@ -77,11 +80,10 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     ).replace('{{currentDate}}', new Date().toISOString().split('T')[0]),
   });
 
-  return async (
-    state: { query: string },
-    onStep?: OnStepCallback,
-  ): Promise<{ bundle: EvidenceBundle }> => {
-    // Phase 1: ReAct collection with step streaming
+  return async (state: { query: string }): Promise<RetrieverResult> => {
+    const steps: AgentStep[] = [];
+
+    // Phase 1: ReAct collection — accumulate steps
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allMessages: any[] = [];
 
@@ -97,8 +99,8 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     let prevMessageCount = 0;
     for await (const chunk of stream) {
       const messages = chunk.messages ?? [];
-      // Emit steps for newly added messages
-      if (onStep && messages.length > prevMessageCount) {
+      // Accumulate steps for newly added messages
+      if (messages.length > prevMessageCount) {
         for (let i = prevMessageCount; i < messages.length; i++) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const msg = messages[i] as any;
@@ -107,7 +109,7 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
           if (type === 'ai' && msg.tool_calls?.length > 0) {
             for (const tc of msg.tool_calls) {
-              onStep({
+              steps.push({
                 type: 'action',
                 content: `${tc.name}(${JSON.stringify(tc.args)})`,
                 toolName: tc.name,
@@ -116,13 +118,13 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
               });
             }
           } else if (type === 'tool') {
-            onStep({
+            steps.push({
               type: 'observation',
               content: content.slice(0, 500),
               timestamp: Date.now(),
             });
           } else if (type === 'ai' && content) {
-            onStep({
+            steps.push({
               type: 'thought',
               content,
               timestamp: Date.now(),
@@ -151,13 +153,13 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
     // Dry-well circuit breaker: if raw data is too sparse, skip compaction
     if (isDryWell(rawData)) {
-      return { bundle: buildDryWellBundle(state.query) };
+      return { bundle: buildDryWellBundle(state.query), steps };
     }
 
     // Phase 2: Compaction
     const bundle = await compactWithRetry(model, state.query, rawData);
 
-    return { bundle };
+    return { bundle, steps };
   };
 }
 
