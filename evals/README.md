@@ -35,18 +35,19 @@ npx tsx evals/run-eval.ts --list
 
 ## CLI Options
 
-| Flag                    | Description                                  | Default                        |
-| ----------------------- | -------------------------------------------- | ------------------------------ |
-| `-p, --provider <name>` | LLM provider to evaluate                     | `groq` (or `LLM_PROVIDER` env) |
-| `-c, --compare <list>`  | Compare multiple providers (comma-separated) | —                              |
-| `-q, --query <id>`      | Run a single query by ID                     | all queries                    |
-| `-C, --category <name>` | Filter queries by category                   | all categories                 |
-| `--list`                | List available queries and exit              | —                              |
-| `--dry-run`             | Preview without calling the API              | —                              |
-| `--no-langsmith`        | Skip LangSmith dataset sync                  | sync enabled                   |
-| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)   | judge enabled                  |
-| `-t, --timeout <sec>`   | Per-query timeout                            | `300`                          |
-| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)            | `3`                            |
+| Flag                    | Description                                             | Default                        |
+| ----------------------- | ------------------------------------------------------- | ------------------------------ |
+| `-p, --provider <name>` | LLM provider to evaluate                                | `groq` (or `LLM_PROVIDER` env) |
+| `-c, --compare <list>`  | Compare multiple providers (comma-separated)            | —                              |
+| `-q, --query <id>`      | Run a single query by ID                                | all queries                    |
+| `-C, --category <name>` | Filter queries by category                              | all categories                 |
+| `--list`                | List available queries and exit                         | —                              |
+| `--dry-run`             | Preview without calling the API                         | —                              |
+| `--no-langsmith`        | Skip LangSmith dataset sync                             | sync enabled                   |
+| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)              | judge enabled                  |
+| `-t, --timeout <sec>`   | Per-query timeout                                       | `300`                          |
+| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                       | `3`                            |
+| `--multi-agent`         | Use multi-agent pipeline instead of legacy single-agent | legacy (single-agent)          |
 
 ## Scoring System
 
@@ -66,9 +67,9 @@ Each query is scored across five dimensions with fixed weights:
 
 | Provider | Excellent (1.0) | Good (0.6-0.7) | Acceptable (0.3) | Fail (0.0) |
 | -------- | --------------- | -------------- | ---------------- | ---------- |
-| Groq     | < 6s            | < 13s          | < 30s            | >= 30s     |
-| Mistral  | < 10s           | < 20s          | < 30s            | >= 30s     |
-| Claude   | < 13s           | < 30s          | < 60s            | >= 60s     |
+| Groq     | < 15s           | < 30s          | < 60s            | >= 60s     |
+| Mistral  | < 30s           | < 60s          | < 90s            | >= 90s     |
+| Claude   | < 30s           | < 60s          | < 120s           | >= 120s    |
 
 ### Source Accuracy
 

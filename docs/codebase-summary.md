@@ -1,6 +1,6 @@
 # VoxPopuli -- Codebase Summary
 
-**Generated:** 2026-04-11
+**Generated:** 2026-04-12
 **Covers:** Milestones 1-4, 6-8 (Scaffold & Data Layer, LLM & Chunker, Agent Core, Frontend, Eval Harness, Deploy & Observability, Multi-Agent Pipeline)
 
 ---
@@ -20,7 +20,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4    |
 | LLM (quality)   | Claude Haiku 4.5        | Anthropic SDK via LangChain `@langchain/anthropic`      |
 | LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`        |
-| LLM (speed)     | Groq Llama 3.3 70B      | OpenAI-compatible via LangChain `@langchain/groq`       |
+| LLM (speed)     | Groq Qwen3 32B          | OpenAI-compatible via LangChain `@langchain/groq`       |
 | Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas         |
 | TTS             | ElevenLabs              | Planned -- podcast-style voice narration                |
 | Cache           | node-cache              | In-memory TTL cache with typed get/set                  |
@@ -44,7 +44,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | M5        | Voice Output           | Not started | TTS backend + frontend audio player                                                |
 | M6        | Eval Harness           | Complete    | 27-query eval suite, 5 evaluators, LangSmith integration, CLI runner               |
 | M7        | Deploy & Observability | ~87%        | Dockerfile, docker-compose, Render deploy, CORS fixes, Pino logging                |
-| M8        | Multi-Agent Pipeline   | Implemented | LangGraph pipeline (Retriever/Synthesizer/Writer), per-stage retry, SSE resilience |
+| M8        | Multi-Agent Pipeline   | Complete    | LangGraph pipeline (Retriever/Synthesizer/Writer), per-stage retry, SSE resilience |
 
 ---
 
@@ -128,9 +128,9 @@ voxpopuli/
 |   +-- evaluators/__tests__/        # 25 evaluator tests
 |   +-- results/                     # Eval run output JSON files
 +-- docs/
-|   +-- adr/                         # ADR-002 through ADR-005
+|   +-- adr/                         # ADR-002 through ADR-006
 |   +-- adrs/                        # ADR-001
-|   +-- plans/                       # M1 design document
+|   +-- plans/                       # Design documents and implementation plans
 |   +-- codebase-summary.md          # This file
 +-- .env.example                     # Environment variable template
 +-- architecture.md                  # Technical architecture and milestone breakdown
@@ -211,7 +211,7 @@ voxpopuli/
 
 | Provider | Class             | LangChain Model | Model ID                    | Context Window |
 | -------- | ----------------- | --------------- | --------------------------- | -------------- |
-| Groq     | `GroqProvider`    | `ChatGroq`      | `llama-3.3-70b-versatile`   | 128,000 tokens |
+| Groq     | `GroqProvider`    | `ChatGroq`      | `qwen/qwen3-32b`            | 128,000 tokens |
 | Claude   | `ClaudeProvider`  | `ChatAnthropic` | `claude-haiku-4-5-20251001` | 200,000 tokens |
 | Mistral  | `MistralProvider` | `ChatMistralAI` | `mistral-large-latest`      | 262,000 tokens |
 
@@ -239,13 +239,13 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 **OrchestratorService** (multi-agent pipeline):
 
-| Attribute  | Value                                                                                                  |
-| ---------- | ------------------------------------------------------------------------------------------------------ |
-| Purpose    | LangGraph pipeline: Retriever -> Synthesizer -> Writer producing structured editorial responses        |
-| Stages     | `retriever` (ReAct + compaction), `synthesizer` (evidence analysis), `writer` (editorial prose)        |
-| Config     | `PipelineConfig` -- per-stage provider mapping, token budgets, 30s default timeout                     |
-| Recovery   | Synthesizer retries once; Writer retries once then falls back to `buildFallbackResponse()`             |
-| SSE events | Emits `pipeline` events at stage transitions; legacy `thought`/`action`/`observation` from inner ReAct |
+| Attribute  | Value                                                                                                      |
+| ---------- | ---------------------------------------------------------------------------------------------------------- |
+| Purpose    | LangGraph StateGraph pipeline: Retriever -> Synthesizer -> Writer producing structured editorial responses |
+| Stages     | `retriever` (ReAct + compaction), `synthesizer` (evidence analysis), `writer` (editorial prose)            |
+| Config     | `PipelineConfig` -- per-stage provider mapping, token budgets, 30s default timeout                         |
+| Recovery   | Synthesizer retries once; Writer retries once then falls back to `buildFallbackResponse()`                 |
+| SSE events | Emits `pipeline` events at stage transitions; legacy `thought`/`action`/`observation` from inner ReAct     |
 
 **Pipeline nodes** (`nodes/`):
 
@@ -441,19 +441,27 @@ Environment variables are validated at startup using `class-validator` in `apps/
 
 ## 8. Architecture Decision Records
 
-| ADR     | Title                                              | Date       | Summary                                                                                                                   |
-| ------- | -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
-| ADR-001 | CI/CD Pipeline and Quality Gates                   | 2026-04-03 | Defines GitHub Actions CI pipeline and pre-commit hook strategy for lint/test quality gates                               |
-| ADR-002 | Chunker Strategy and Token Budget Design           | 2026-04-04 | Character-based token estimation (1 token ~ 4 chars), 4-phase priority budget allocation, HTML-to-markdown conversion     |
-| ADR-003 | LLM Provider Architecture and Tool Protocol Design | 2026-04-04 | LangChain-based provider interface with facade pattern, lazy instantiation, and native tool-calling protocol per provider |
-| ADR-004 | ReAct Agent Design and Tool Selection Strategy     | 2026-04-04 | LangChain `createAgent` (v1.2+), 3-tool design, chunked string output, safety constraints, SSE streaming integration      |
-| ADR-005 | True Mid-Loop SSE Streaming via AsyncGenerator     | 2026-04-05 | AsyncGenerator-based mid-loop SSE streaming for real-time agent step visualization                                        |
+| ADR     | Title                                                | Date       | Summary                                                                                                                   |
+| ------- | ---------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
+| ADR-001 | CI/CD Pipeline and Quality Gates                     | 2026-04-03 | Defines GitHub Actions CI pipeline and pre-commit hook strategy for lint/test quality gates                               |
+| ADR-002 | Chunker Strategy and Token Budget Design             | 2026-04-04 | Character-based token estimation (1 token ~ 4 chars), 4-phase priority budget allocation, HTML-to-markdown conversion     |
+| ADR-003 | LLM Provider Architecture and Tool Protocol Design   | 2026-04-04 | LangChain-based provider interface with facade pattern, lazy instantiation, and native tool-calling protocol per provider |
+| ADR-004 | ReAct Agent Design and Tool Selection Strategy       | 2026-04-04 | LangChain `createAgent` (v1.2+), 3-tool design, chunked string output, safety constraints, SSE streaming integration      |
+| ADR-005 | True Mid-Loop SSE Streaming via AsyncGenerator       | 2026-04-05 | AsyncGenerator-based mid-loop SSE streaming for real-time agent step visualization                                        |
+| ADR-006 | Adaptive Query Decomposition in the Retriever Prompt | 2026-04-11 | Query-type-aware search strategies in Retriever prompt, extending ADR-004                                                 |
 
 ### Design Documents
 
-| Document                         | Date       | Scope                                                                                  |
-| -------------------------------- | ---------- | -------------------------------------------------------------------------------------- |
-| M1: Scaffold & Data Layer Design | 2026-04-01 | Nx monorepo structure, CacheService design, HnService API design, health endpoint spec |
+| Document                            | Date       | Scope                                                                                  |
+| ----------------------------------- | ---------- | -------------------------------------------------------------------------------------- |
+| M1: Scaffold & Data Layer Design    | 2026-04-01 | Nx monorepo structure, CacheService design, HnService API design, health endpoint spec |
+| Result Page Redesign                | 2026-04-06 | Frontend result page layout and UX improvements                                        |
+| M6: Eval Harness Design             | 2026-04-08 | Evaluation framework, scoring, LangSmith integration                                   |
+| M8: Implementation Plan             | 2026-04-09 | Multi-agent pipeline implementation strategy                                           |
+| M8: Multi-Agent Pipeline Design     | 2026-04-09 | LangGraph pipeline architecture (Retriever/Synthesizer/Writer)                         |
+| Adaptive Query Decomposition Design | 2026-04-11 | Query decomposition strategy for complex questions                                     |
+| Orchestrator Failure Recovery       | 2026-04-11 | Per-stage failure recovery and circuit breaker design                                  |
+| LangGraph Orchestrator Refactor     | 2026-04-12 | StateGraph refactor for OrchestratorService                                            |
 
 ---
 
@@ -512,4 +520,4 @@ Environment variables are validated at startup using `class-validator` in `apps/
 
 **M7: Deploy & Observability** (~87% complete) -- Remaining items: production monitoring dashboards, alerting setup.
 
-**M8: Pipeline Hardening** (in progress on `feature/m8-pipeline-hardening`) -- SSE mobile resilience with retry, heartbeat, and visibility detection. Per-stage failure recovery in OrchestratorService.
+**M8: Pipeline Hardening** (complete) -- LangGraph StateGraph refactor, circuit breaker, SSE mobile resilience with retry/heartbeat/visibility detection, per-stage failure recovery, step streaming.

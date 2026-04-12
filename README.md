@@ -139,7 +139,7 @@ Pick your tradeoff. Switch from the UI.
 
 ### Multi-Agent Pipeline
 
-Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph. Each stage has per-stage failure recovery with retry and fallback response construction.
+Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph StateGraph. Each stage has per-stage retry with fallback response construction, circuit breaker for dry-well detection, and real-time step streaming via `dispatchCustomEvent`.
 
 ### Eval Harness
 
@@ -196,20 +196,20 @@ curl -X POST http://localhost:3000/api/rag/query \
 
 ## Architecture
 
-| Layer        | Technology                                              |
-| ------------ | ------------------------------------------------------- |
-| Monorepo     | Nx                                                      |
-| Backend      | NestJS 11 (TypeScript)                                  |
-| Frontend     | Angular 21 (standalone components, signals)             |
-| Design       | Tailwind CSS v4, "Data Noir Editorial" design system    |
-| LLM          | Claude / Mistral / Groq via LangChain.js                |
-| Pipeline     | LangGraph (OrchestratorService, 3-stage pipeline)       |
-| Streaming    | Server-Sent Events (SSE) with native EventSource        |
-| Caching      | node-cache (in-memory, TTL-based)                       |
-| Data         | HN Algolia API (search) + Firebase API (items/comments) |
-| Eval         | Custom harness + LangSmith tracing                      |
-| Markdown     | ngx-markdown + marked                                   |
-| Shared types | `@voxpopuli/shared-types`                               |
+| Layer        | Technology                                                   |
+| ------------ | ------------------------------------------------------------ |
+| Monorepo     | Nx                                                           |
+| Backend      | NestJS 11 (TypeScript)                                       |
+| Frontend     | Angular 21 (standalone components, signals)                  |
+| Design       | Tailwind CSS v4, "Data Noir Editorial" design system         |
+| LLM          | Claude / Mistral / Groq via LangChain.js                     |
+| Pipeline     | LangGraph StateGraph (OrchestratorService, 3-stage pipeline) |
+| Streaming    | Server-Sent Events (SSE) with native EventSource             |
+| Caching      | node-cache (in-memory, TTL-based)                            |
+| Data         | HN Algolia API (search) + Firebase API (items/comments)      |
+| Eval         | Custom harness + LangSmith tracing                           |
+| Markdown     | ngx-markdown + marked                                        |
+| Shared types | `@voxpopuli/shared-types`                                    |
 
 ### Frontend Components
 
@@ -228,18 +228,18 @@ See [architecture.md](architecture.md) for the full technical blueprint and [pro
 
 ## Project Status
 
-| Milestone                  | Status  | Highlights                                      |
-| -------------------------- | ------- | ----------------------------------------------- |
-| M1: Scaffold & Data Layer  | Done    | Nx monorepo, shared types, HN data + caching    |
-| M2: LLM & Chunker          | Done    | Triple-stack LLM providers, token budgeting     |
-| M3: Agent Core             | Done    | ReAct agent, RAG endpoints, trust framework     |
-| M4: Frontend               | Done    | Chat UI, real-time streaming, design system     |
-| M5: Voice Output           | Planned | ElevenLabs TTS with podcast-style narration     |
-| M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration |
-| M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging        |
-| M8: Multi-Agent Pipeline   | Done    | 3-stage pipeline, failure recovery, fallback    |
+| Milestone                  | Status  | Highlights                                                             |
+| -------------------------- | ------- | ---------------------------------------------------------------------- |
+| M1: Scaffold & Data Layer  | Done    | Nx monorepo, shared types, HN data + caching                           |
+| M2: LLM & Chunker          | Done    | Triple-stack LLM providers, token budgeting                            |
+| M3: Agent Core             | Done    | ReAct agent, RAG endpoints, trust framework                            |
+| M4: Frontend               | Done    | Chat UI, real-time streaming, design system                            |
+| M5: Voice Output           | Planned | ElevenLabs TTS with podcast-style narration                            |
+| M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration                        |
+| M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging                               |
+| M8: Multi-Agent Pipeline   | Done    | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
 
-**Current stats:** ~195 tests passing across 20 test suites.
+**Current stats:** ~173 tests passing across 13 API test suites.
 
 ---
 

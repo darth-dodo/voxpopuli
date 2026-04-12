@@ -49,7 +49,7 @@ graph TB
     subgraph Providers ["LLM Providers"]
         CLAUDE["Claude Haiku 4.5"]
         MISTRAL["Mistral Large 3"]
-        GROQ["Groq Llama 3.3 70B"]
+        GROQ["Groq Qwen3 32B"]
     end
 
     subgraph External ["External APIs"]
@@ -129,17 +129,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology         | Version                               |
-| --------------- | ------------------ | ------------------------------------- |
-| Monorepo        | Nx                 | Latest                                |
-| Backend         | NestJS             | 10+                                   |
-| Frontend        | Angular            | 21                                    |
-| LLM (quality)   | Claude Haiku 4.5   | LangChain.js (`@langchain/anthropic`) |
-| LLM (cost)      | Mistral Large 3    | LangChain.js (`@langchain/mistralai`) |
-| LLM (speed/dev) | Groq Llama 3.3 70B | LangChain.js (`@langchain/groq`)      |
-| TTS             | ElevenLabs         | elevenlabs SDK                        |
-| Cache           | node-cache         | Latest                                |
-| Shared Types    | TypeScript lib     | `@voxpopuli/shared-types`             |
+| Layer           | Technology       | Version                               |
+| --------------- | ---------------- | ------------------------------------- |
+| Monorepo        | Nx               | Latest                                |
+| Backend         | NestJS           | 10+                                   |
+| Frontend        | Angular          | 21                                    |
+| LLM (quality)   | Claude Haiku 4.5 | LangChain.js (`@langchain/anthropic`) |
+| LLM (cost)      | Mistral Large 3  | LangChain.js (`@langchain/mistralai`) |
+| LLM (speed/dev) | Groq Qwen3 32B   | LangChain.js (`@langchain/groq`)      |
+| TTS             | ElevenLabs       | elevenlabs SDK                        |
+| Cache           | node-cache       | Latest                                |
+| Shared Types    | TypeScript lib   | `@voxpopuli/shared-types`             |
 
 ### 1.4 Project Structure
 
@@ -273,7 +273,7 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 | `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                   |
 | `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                 |
 | `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                      |
-| `GroqProvider`         | `ChatGroq` wrapping `llama-3.3-70b-versatile` (128k context)                        |
+| `GroqProvider`         | `ChatGroq` wrapping `qwen/qwen3-32b` (131k context)                                 |
 | `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override |
 
 **Key implementation details:**
@@ -628,7 +628,7 @@ Epic (Linear Project or Cycle)
   - Simplified from original spec: `{ name, maxContextTokens, getModel(): BaseChatModel }`
   - `chat()`, `formatTools()`, `buildToolResultMessage()` not needed -- LangChain.js handles tool protocols internally
   - No separate `ChatOptions`, `LlmMessage`, or `LlmResponse` types needed at the provider level
-- **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `llama-3.3-70b-versatile`, 128k)
+- **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `qwen/qwen3-32b`, 131k)
 - **Story: Implement ClaudeProvider** (AI-111) -- DONE (`ChatAnthropic`, `claude-haiku-4-5-20251001`, 200k)
 - **Story: Implement MistralProvider** (AI-112) -- DONE (`ChatMistralAI`, `mistral-large-latest`, 262k)
 - **Story: Implement LlmService facade** (AI-113) -- DONE (lazy instantiation, per-request override, 22 tests)
@@ -639,7 +639,7 @@ Epic (Linear Project or Cycle)
 
 **Goal:** The ReAct loop works end-to-end. Ask a question, get a sourced answer.
 **Demo:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
-**Status:** DONE -- 14 issues, 103 tests, live-tested with Mistral.
+**Status:** DONE -- 14 issues, ~173 tests across 13 API test suites, live-tested with Mistral.
 
 #### Epic 3.1: ReAct Agent
 
@@ -1129,10 +1129,10 @@ EVAL_JUDGE_PROVIDER=mistral
 | Cache TTL (query result)        | 10 min                      | Token savings                                    |
 | Context window (Claude)         | 200k tokens                 | `claude-haiku-4-5-20251001` via LangChain        |
 | Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
-| Context window (Groq)           | 128k tokens                 | `llama-3.3-70b-versatile` via LangChain          |
+| Context window (Groq)           | 131k tokens                 | `qwen/qwen3-32b` via LangChain                   |
 | Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
 | Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
-| Token budget (Groq)             | 50k of 128k                 | Conservative headroom                            |
+| Token budget (Groq)             | 50k of 131k                 | Conservative headroom                            |
 | Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
 | TTS max chars                   | 2500                        | ElevenLabs streaming limit                       |
 | Eval query count                | 27                          | 20 general + 7 trust-specific                    |
