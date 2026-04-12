@@ -67,11 +67,43 @@ export class RagController {
   async query(@Body() dto: RagQueryDto): Promise<AgentResponse> {
     this.enforceRateLimit();
 
-    const cacheKey = `rag:query:${dto.query}`;
+    const cacheKey = `rag:query:${dto.query}:${dto.useMultiAgent ?? false}`;
+
+    if (dto.useMultiAgent) {
+      return this.cache.getOrSet(
+        cacheKey,
+        () => this.runPipeline(dto.query, dto.provider),
+        CACHE_TTL,
+      );
+    }
+
     return this.cache.getOrSet(
       cacheKey,
       () => this.agent.run(dto.query, { maxSteps: dto.maxSteps, provider: dto.provider }),
       CACHE_TTL,
+    );
+  }
+
+  /**
+   * Run the multi-agent pipeline and collect the final AgentResponse.
+   */
+  private async runPipeline(query: string, provider?: string): Promise<AgentResponse> {
+    const parsed = PipelineConfigSchema.safeParse({
+      providerMap: provider
+        ? { retriever: provider, synthesizer: provider, writer: provider }
+        : undefined,
+    });
+    const config = parsed.success ? parsed.data : PipelineConfigSchema.parse({});
+
+    for await (const event of this.orchestrator.runWithFallback(query, config)) {
+      if (event.kind === 'complete') {
+        return event.response;
+      }
+    }
+
+    throw new HttpException(
+      'Pipeline completed without a response',
+      HttpStatus.INTERNAL_SERVER_ERROR,
     );
   }
 
