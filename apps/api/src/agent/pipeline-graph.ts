@@ -24,6 +24,14 @@ export const PipelineAnnotation = Annotation.Root({
     default: () => [],
     reducer: (prev, next) => [...prev, ...next],
   }),
+  inputTokens: Annotation<number>({
+    default: () => 0,
+    reducer: (prev, next) => prev + next,
+  }),
+  outputTokens: Annotation<number>({
+    default: () => 0,
+    reducer: (prev, next) => prev + next,
+  }),
 });
 
 export type PipelineGraphState = typeof PipelineAnnotation.State;

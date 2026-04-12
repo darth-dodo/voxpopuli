@@ -90,6 +90,9 @@ export class ChunkerService {
   chunkStories(hits: HnSearchHit[]): StoryChunk[] {
     return hits.map((hit) => {
       const text = this.stripHtml(hit.story_text);
+      const postedDate = hit.created_at
+        ? new Date(hit.created_at).toISOString().split('T')[0]
+        : null;
       const metadataText = `${hit.title} by ${hit.author} (${hit.points} points)`;
       const fullText = text ? `${metadataText}\n${text}` : metadataText;
 
@@ -100,6 +103,7 @@ export class ChunkerService {
         points: hit.points,
         url: hit.url,
         text,
+        postedDate,
         tokenCount: this.estimateTokens(fullText),
       };
     });
@@ -255,6 +259,9 @@ export class ChunkerService {
         }
         if (story.text) {
           lines.push(`  Text: ${story.text}`);
+        }
+        if (story.postedDate) {
+          lines.push(`  Posted: ${story.postedDate}`);
         }
         parts.push(lines.join('\n'));
       }

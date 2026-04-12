@@ -174,6 +174,7 @@ export interface StoryChunk {
   points: number;
   url: string | null;
   text: string | null;
+  postedDate: string | null;
   tokenCount: number;
 }
 

@@ -23,12 +23,22 @@ type WriterInput = z.infer<typeof WriterInputSchema>;
  * Creates the Writer node function for the pipeline.
  * Single-pass: AnalysisResult + citation table → AgentResponseV2.
  */
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
+}
+
 export function createWriterNode(model: BaseChatModel) {
   return async (state: {
     query: string;
     bundle: EvidenceBundle;
     analysis: AnalysisResult;
-  }): Promise<{ response: AgentResponseV2 }> => {
+  }): Promise<{ response: AgentResponseV2; inputTokens: number; outputTokens: number }> => {
+    let inputTokens = 0;
+    let outputTokens = 0;
+
     const writerInput: WriterInput = {
       analysis: state.analysis,
       sources: state.bundle.allSources,
@@ -45,6 +55,9 @@ export function createWriterNode(model: BaseChatModel) {
       metadata: { pipeline_stage: 'writer', query: state.query },
       tags: ['multi-agent', 'writer'],
     });
+    const t1 = extractTokens(firstAttempt);
+    inputTokens += t1.input;
+    outputTokens += t1.output;
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
     let response: AgentResponseV2;
@@ -69,6 +82,9 @@ export function createWriterNode(model: BaseChatModel) {
           metadata: { pipeline_stage: 'writer', query: state.query },
           tags: ['multi-agent', 'writer'],
         });
+        const t2 = extractTokens(retryAttempt);
+        inputTokens += t2.input;
+        outputTokens += t2.output;
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
         response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
@@ -83,10 +99,13 @@ export function createWriterNode(model: BaseChatModel) {
         metadata: { pipeline_stage: 'writer', query: state.query },
         tags: ['multi-agent', 'writer'],
       });
+      const t2 = extractTokens(retryAttempt);
+      inputTokens += t2.input;
+      outputTokens += t2.output;
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    return { response };
+    return { response, inputTokens, outputTokens };
   };
 }

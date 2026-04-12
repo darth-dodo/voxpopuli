@@ -47,11 +47,21 @@ function formatBundleForSynthesizer(bundle: EvidenceBundle): string {
  * Creates the Synthesizer node function for the pipeline.
  * Single-pass: EvidenceBundle -> AnalysisResult with one retry on parse failure.
  */
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
+}
+
 export function createSynthesizerNode(model: BaseChatModel) {
   return async (state: {
     query: string;
     bundle: EvidenceBundle;
-  }): Promise<{ analysis: AnalysisResult }> => {
+  }): Promise<{ analysis: AnalysisResult; inputTokens: number; outputTokens: number }> => {
+    let inputTokens = 0;
+    let outputTokens = 0;
+
     const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
       new SystemMessage(SYNTHESIZER_SYSTEM_PROMPT),
       new HumanMessage(formatBundleForSynthesizer(state.bundle)),
@@ -62,6 +72,9 @@ export function createSynthesizerNode(model: BaseChatModel) {
       metadata: { pipeline_stage: 'synthesizer', query: state.query },
       tags: ['multi-agent', 'synthesizer'],
     });
+    const t1 = extractTokens(firstAttempt);
+    inputTokens += t1.input;
+    outputTokens += t1.output;
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
     let analysis: AnalysisResult;
@@ -87,6 +100,9 @@ export function createSynthesizerNode(model: BaseChatModel) {
           metadata: { pipeline_stage: 'synthesizer', query: state.query },
           tags: ['multi-agent', 'synthesizer'],
         });
+        const t2 = extractTokens(retryAttempt);
+        inputTokens += t2.input;
+        outputTokens += t2.output;
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
         analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
@@ -102,10 +118,13 @@ export function createSynthesizerNode(model: BaseChatModel) {
         metadata: { pipeline_stage: 'synthesizer', query: state.query },
         tags: ['multi-agent', 'synthesizer'],
       });
+      const t2 = extractTokens(retryAttempt);
+      inputTokens += t2.input;
+      outputTokens += t2.output;
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    return { analysis };
+    return { analysis, inputTokens, outputTokens };
   };
 }

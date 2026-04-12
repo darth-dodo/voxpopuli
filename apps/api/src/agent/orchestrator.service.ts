@@ -117,6 +117,8 @@ export class OrchestratorService {
     let analysis: import('@voxpopuli/shared-types').AnalysisResult | undefined;
     let writerResponse: AgentResponseV2 | undefined;
     let retrieverSteps: AgentStep[] = [];
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     // Emit first stage started
     yield {
@@ -149,6 +151,10 @@ export class OrchestratorService {
         const update = data as Record<string, Record<string, unknown>>;
         const nodeName = Object.keys(update)[0] as PipelineStage;
         const nodeOutput = update[nodeName];
+
+        // Accumulate token usage from each node
+        totalInputTokens += (nodeOutput.inputTokens as number) ?? 0;
+        totalOutputTokens += (nodeOutput.outputTokens as number) ?? 0;
 
         if (nodeName === 'retriever') {
           bundle = nodeOutput.bundle as typeof bundle;
@@ -234,8 +240,8 @@ export class OrchestratorService {
           sources,
           meta: {
             provider: activeProvider,
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
+            totalInputTokens,
+            totalOutputTokens,
             durationMs: elapsed(),
             cached: false,
           },
@@ -255,8 +261,8 @@ export class OrchestratorService {
           {
             provider: activeProvider,
             durationMs: elapsed(),
-            totalInputTokens: 0,
-            totalOutputTokens: 0,
+            totalInputTokens,
+            totalOutputTokens,
           },
           retrieverSteps,
         ),

@@ -116,7 +116,12 @@ export function buildDryWellBundle(query: string): EvidenceBundle {
  * during the ReAct loop. The caller (pipeline graph) is responsible for
  * forwarding steps to the SSE stream.
  */
-export type RetrieverResult = { bundle: EvidenceBundle; steps: AgentStep[] };
+export type RetrieverResult = {
+  bundle: EvidenceBundle;
+  steps: AgentStep[];
+  inputTokens: number;
+  outputTokens: number;
+};
 
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
   const reactAgent = createReactAgent({
@@ -133,6 +138,8 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     config?: LangGraphRunnableConfig,
   ): Promise<RetrieverResult> => {
     const steps: AgentStep[] = [];
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     // Phase 1: ReAct collection — accumulate steps
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,6 +164,12 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
           const msg = messages[i] as any;
           const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
           const content = typeof msg.content === 'string' ? msg.content : '';
+
+          // Track token usage from AI messages
+          if (type === 'ai' && msg.usage_metadata) {
+            if (msg.usage_metadata.input_tokens) inputTokens += msg.usage_metadata.input_tokens;
+            if (msg.usage_metadata.output_tokens) outputTokens += msg.usage_metadata.output_tokens;
+          }
 
           if (type === 'ai' && msg.tool_calls?.length > 0) {
             for (const tc of msg.tool_calls) {
@@ -217,14 +230,32 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
 
     // Dry-well circuit breaker: if raw data is too sparse, skip compaction
     if (isDryWell(rawData)) {
-      return { bundle: buildDryWellBundle(state.query), steps };
+      return { bundle: buildDryWellBundle(state.query), steps, inputTokens, outputTokens };
     }
 
     // Phase 2: Compaction
-    const bundle = await compactWithRetry(model, state.query, rawData);
+    const {
+      bundle,
+      inputTokens: compactIn,
+      outputTokens: compactOut,
+    } = await compactWithRetry(model, state.query, rawData);
 
-    return { bundle, steps };
+    return {
+      bundle,
+      steps,
+      inputTokens: inputTokens + compactIn,
+      outputTokens: outputTokens + compactOut,
+    };
   };
+}
+
+type CompactResult = { bundle: EvidenceBundle; inputTokens: number; outputTokens: number };
+
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }
 
 /**
@@ -234,7 +265,10 @@ async function compactWithRetry(
   model: BaseChatModel,
   query: string,
   rawData: string,
-): Promise<EvidenceBundle> {
+): Promise<CompactResult> {
+  let inputTokens = 0;
+  let outputTokens = 0;
+
   const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
     new SystemMessage(COMPACTOR_SYSTEM_PROMPT),
     new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
@@ -244,12 +278,15 @@ async function compactWithRetry(
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
   });
+  const t1 = extractTokens(firstAttempt);
+  inputTokens += t1.input;
+  outputTokens += t1.output;
   const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
   try {
     const parsed = JSON.parse(cleanLlmOutput(firstContent));
     const result = EvidenceBundleSchema.safeParse(parsed);
-    if (result.success) return result.data;
+    if (result.success) return { bundle: result.data, inputTokens, outputTokens };
 
     // Retry with error details
     messages.push(
@@ -275,7 +312,10 @@ async function compactWithRetry(
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
   });
+  const t2 = extractTokens(retryAttempt);
+  inputTokens += t2.input;
+  outputTokens += t2.output;
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
   const parsed = JSON.parse(cleanLlmOutput(retryContent));
-  return EvidenceBundleSchema.parse(parsed);
+  return { bundle: EvidenceBundleSchema.parse(parsed), inputTokens, outputTokens };
 }
