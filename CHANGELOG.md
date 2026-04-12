@@ -16,6 +16,9 @@ All notable changes to VoxPopuli are documented in this file.
 - **Mobile background resilience** — SSE retry with exponential backoff, heartbeat monitoring, and visibility-change detection for backgrounded tabs.
 - **Pipeline test suite** — 168 tests covering RetrieverNode, SynthesizerNode, WriterNode, and OrchestratorService with unit, edge case, and integration coverage.
 - **Eval harness documentation** — README and lessons learned from Mistral eval run.
+- **Real-time step streaming** — Retriever tool calls trickle to frontend during ReAct loop via LangGraph `config.writer` (replaces broken `dispatchCustomEvent` path). Steps show human-friendly summaries ("Found 4 stories", "Read 12 comments") instead of raw data. (AI-331)
+- **Pipeline token tracking** — `usage_metadata` accumulated across all three pipeline nodes via LangGraph state annotation reducers. Meta bar now shows actual token counts instead of zeros. (AI-331)
+- **Source card dates** — `postedDate` extracted from retriever step tool outputs and displayed on source cards. (AI-331)
 
 ### Changed
 
@@ -26,12 +29,17 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Fixed
 
+- **Trust bar all zeros in pipeline mode** — Orchestrator passed empty steps array to `computeTrustMetadata`. Now captures retriever steps (with `toolOutput` for date/ID extraction) and forwards to trust computation. Also fixed recency: chunker now includes `postedDate` from Algolia `created_at` so `search_hn` results feed into recency scoring (previously only `get_story` provided dates). (AI-331)
+- **Theme toggle overlapping new-question button** — Extracted toggle into `ng-template`, fixed-position on landing page only, inline in results header. (AI-331)
+- **Step streaming broken in pipeline mode** — `dispatchCustomEvent` only works with `.streamEvents()`, not `.stream()` with `streamMode: "custom"`. Switched to `config.writer`. (AI-331)
+- **Frontend `story_id` key mismatch** — `summarizeAction` checked `storyId`/`id` but tool schema uses `story_id`, causing "Fetched comments for story #" with missing ID. (AI-331)
 - **SSE `as any` cast** replaced with safe type cast for retry field.
 - **CORS EventSource error** — `FRONTEND_URL` was unset on Render, defaulting to `localhost:4200`. Cross-origin `EventSource` requests from the production frontend were rejected, causing `"undefined" is not valid JSON`. Set correct production origin in `render.yaml`, added defensive guard for undefined SSE data, and explicit CORS methods/headers. ([fix/cors-eventsource](https://github.com/darth-dodo/voxpopuli/tree/fix/cors-eventsource))
 
 ### Refactored
 
-- **Removed `dispatchCustomEvent`** from pipeline nodes — nodes are pure data transformers, events handled by the orchestrator.
+- **Removed `dispatchCustomEvent`** from pipeline nodes — replaced with `config.writer` for `streamMode: "custom"` compatibility.
+- **Chunker includes posted dates** — `StoryChunk.postedDate` populated from `HnSearchHit.created_at`, emitted as `Posted: YYYY-MM-DD` in `formatForPrompt`. Used by both trust recency scoring and source card display.
 
 ## [0.5.0] — 2026-04-06
 
