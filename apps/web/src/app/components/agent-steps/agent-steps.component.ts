@@ -271,11 +271,11 @@ export class AgentStepsComponent {
         return `Searched HN for "${query}"`;
       }
       case 'get_story': {
-        const id = input['id'] ?? input['storyId'] ?? '';
+        const id = input['story_id'] ?? input['storyId'] ?? input['id'] ?? '';
         return `Fetched story #${id}`;
       }
       case 'get_comments': {
-        const id = input['storyId'] ?? input['id'] ?? '';
+        const id = input['story_id'] ?? input['storyId'] ?? input['id'] ?? '';
         return `Fetched comments for story #${id}`;
       }
       default:

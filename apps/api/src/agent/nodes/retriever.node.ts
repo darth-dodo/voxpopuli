@@ -1,5 +1,5 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
@@ -9,6 +9,53 @@ import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 
 const MAX_REACT_ITERATIONS = 8;
+
+/**
+ * Produce a short, human-friendly summary of a tool's raw output.
+ * The full output is still kept in `allMessages` for the compaction phase —
+ * this summary is only used for the streamed step events shown in the UI.
+ */
+function summarizeToolOutput(toolName: string | undefined, raw: string): string {
+  if (!raw || raw.trim() === '') return 'No results';
+  if (raw.includes('No results found')) return 'No results found';
+  if (raw.includes('No comments found')) return 'No comments found';
+  if (raw.includes('No story found')) return 'Story not found';
+
+  switch (toolName) {
+    case 'search_hn': {
+      // Stories are formatted as [ID] "Title" — count them
+      const storyMatches = raw.match(/\[\d+\]/g);
+      const count = storyMatches?.length ?? 0;
+      return count > 0
+        ? `Found ${count} ${count === 1 ? 'story' : 'stories'}`
+        : 'No stories matched';
+    }
+    case 'get_story': {
+      // Output starts with [ID] "Title" by Author (score points, N comments)
+      const titleMatch = raw.match(/^\[\d+\]\s+"([^"]+)"/);
+      const pointsMatch = raw.match(/\((\d+)\s+points/);
+      if (titleMatch) {
+        const title =
+          titleMatch[1].length > 60 ? titleMatch[1].slice(0, 57) + '...' : titleMatch[1];
+        return pointsMatch ? `${title} (${pointsMatch[1]} pts)` : title;
+      }
+      return 'Loaded story details';
+    }
+    case 'get_comments': {
+      // Comments are formatted with "by <author>" lines
+      const commentMatches = raw.match(/^by\s+\S+/gm);
+      const count = commentMatches?.length ?? 0;
+      return count > 0
+        ? `Read ${count} ${count === 1 ? 'comment' : 'comments'}`
+        : 'No comment content';
+    }
+    default: {
+      // Unknown tool — take the first line, capped
+      const firstLine = raw.split('\n')[0].trim();
+      return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
+    }
+  }
+}
 
 /**
  * Minimum raw data length (in chars) to consider the ReAct collection
@@ -81,7 +128,10 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     ).replace('{{currentDate}}', new Date().toISOString().split('T')[0]),
   });
 
-  return async (state: { query: string }): Promise<RetrieverResult> => {
+  return async (
+    state: { query: string },
+    config?: LangGraphRunnableConfig,
+  ): Promise<RetrieverResult> => {
     const steps: AgentStep[] = [];
 
     // Phase 1: ReAct collection — accumulate steps
@@ -118,24 +168,28 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
                 timestamp: Date.now(),
               };
               steps.push(step);
-              await dispatchCustomEvent('retriever_step', step);
+              config?.writer?.({ type: 'retriever_step', data: step });
             }
           } else if (type === 'tool') {
+            const toolName = msg.name as string | undefined;
             const step: AgentStep = {
               type: 'observation',
-              content: content.slice(0, 500),
+              content: summarizeToolOutput(toolName, content),
+              toolName,
               timestamp: Date.now(),
             };
             steps.push(step);
-            await dispatchCustomEvent('retriever_step', step);
+            config?.writer?.({ type: 'retriever_step', data: step });
           } else if (type === 'ai' && content) {
+            // Skip verbose final-thought monologues (coverage checks, etc.)
+            if (content.length > 300) continue;
             const step: AgentStep = {
               type: 'thought',
               content,
               timestamp: Date.now(),
             };
             steps.push(step);
-            await dispatchCustomEvent('retriever_step', step);
+            config?.writer?.({ type: 'retriever_step', data: step });
           }
         }
       }
