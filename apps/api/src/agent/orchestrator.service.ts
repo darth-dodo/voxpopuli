@@ -5,7 +5,7 @@ import type {
   AgentResponseV2,
   AgentStep,
   AgentResponse,
-  AnalysisResult,
+  PipelineStage,
 } from '@voxpopuli/shared-types';
 import { AgentService, type AgentStreamEvent } from './agent.service';
 import { LlmService } from '../llm/llm.service';
@@ -17,6 +17,7 @@ import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
+import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
 
 // ---------------------------------------------------------------------------
 // Stream event types
@@ -30,14 +31,14 @@ export type PipelineStreamEvent =
   | { kind: 'complete'; response: AgentResponse };
 
 /**
- * Orchestrates the multi-agent pipeline with direct sequential node calls.
+ * Orchestrates the multi-agent pipeline via a LangGraph StateGraph.
  *
  * Pipeline: Retriever → Synthesizer → Writer
  *
  * Recovery matrix:
  * - Retriever fails → bubbles to runWithFallback → legacy AgentService
- * - Synthesizer fails → retry once with same EvidenceBundle, then bubble → legacy
- * - Writer fails → retry once with same AnalysisResult, then buildFallbackResponse
+ * - Synthesizer fails → retry once (via withRetry wrapper), then bubble → legacy
+ * - Writer fails → retry once then fallback (via withWriterFallback), does NOT bubble
  *
  * Key invariant: the Retriever is never re-run on a downstream failure.
  */
@@ -83,36 +84,40 @@ export class OrchestratorService {
   }
 
   /**
-   * Run the pipeline by calling nodes directly with per-stage error handling.
+   * Run the pipeline by streaming a LangGraph StateGraph with per-stage event emission.
    */
   async *runStream(query: string, config: PipelineConfig): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
-    const totalInputTokens = 0;
-    const totalOutputTokens = 0;
 
-    // The active provider is whatever was passed per-request (all stages use same provider by default)
     const activeProvider =
       config.providerMap.retriever ??
       config.providerMap.synthesizer ??
       config.providerMap.writer ??
       this.llm.getProviderName();
 
-    // Resolve model per stage (fallback to global provider)
     const getModel = (stage: 'retriever' | 'synthesizer' | 'writer') =>
       this.llm.getModel(config.providerMap[stage]);
 
     const tools = createAgentTools(this.hn, this.chunker);
-    const retrieverFn = createRetrieverNode(getModel('retriever'), tools);
-    const synthesizerFn = createSynthesizerNode(getModel('synthesizer'));
-    const writerFn = createWriterNode(getModel('writer'));
 
-    const elapsed = () => Date.now() - startTime;
+    const graph = buildPipelineGraph({
+      retriever: createRetrieverNode(getModel('retriever'), tools),
+      synthesizer: withRetry(createSynthesizerNode(getModel('synthesizer'))),
+      writer: withWriterFallback(createWriterNode(getModel('writer')), () => ({
+        response: undefined,
+      })),
+    });
+
+    const stageOrder: PipelineStage[] = ['retriever', 'synthesizer', 'writer'];
+    let stageIdx = 0;
     let stageStart = Date.now();
-    const stageDuration = () => Date.now() - stageStart;
 
-    // ── Stage 1: Retriever ──────────────────────────────────────────
-    // Failures bubble to runWithFallback → legacy agent
-    stageStart = Date.now();
+    // Accumulated state for building final response
+    let bundle: import('@voxpopuli/shared-types').EvidenceBundle | undefined;
+    let analysis: import('@voxpopuli/shared-types').AnalysisResult | undefined;
+    let writerResponse: AgentResponseV2 | undefined;
+
+    // Emit first stage started
     yield {
       kind: 'pipeline',
       event: {
@@ -123,128 +128,77 @@ export class OrchestratorService {
       },
     };
 
-    const { bundle, steps: retrieverSteps } = await retrieverFn({ query });
+    const stream = await graph.stream({ query }, { streamMode: 'updates' as const });
 
-    // Emit collected ReAct steps from the retriever
-    for (const step of retrieverSteps) {
-      yield { kind: 'step', step };
-    }
+    for await (const update of stream) {
+      const nodeName = Object.keys(update)[0] as PipelineStage;
+      const nodeOutput = (update as Record<string, Record<string, unknown>>)[nodeName];
 
-    yield {
-      kind: 'pipeline',
-      event: {
-        stage: 'retriever',
-        status: 'done',
-        detail: `${bundle.themes.length} themes from ${bundle.allSources.length} sources`,
-        elapsed: stageDuration(),
-      },
-    };
-
-    // ── Stage 2: Synthesizer ────────────────────────────────────────
-    // Retry once, then bubble to runWithFallback → legacy agent
-    stageStart = Date.now();
-    yield {
-      kind: 'pipeline',
-      event: {
-        stage: 'synthesizer',
-        status: 'started',
-        detail: `Analyzing ${bundle.themes.length} themes...`,
-        elapsed: 0,
-      },
-    };
-
-    let analysis: AnalysisResult;
-    try {
-      ({ analysis } = await synthesizerFn({ query, bundle }));
-    } catch (firstError) {
-      this.logger.warn(
-        `Synthesizer failed, retrying: ${
-          firstError instanceof Error ? firstError.message : firstError
-        }`,
-      );
-      yield {
-        kind: 'pipeline',
-        event: {
-          stage: 'synthesizer',
-          status: 'error',
-          detail: 'Retrying analysis...',
-          elapsed: stageDuration(),
-        },
-      };
-      ({ analysis } = await synthesizerFn({ query, bundle }));
-    }
-
-    yield {
-      kind: 'pipeline',
-      event: {
-        stage: 'synthesizer',
-        status: 'done',
-        detail: `${analysis.insights.length} insights, confidence: ${analysis.confidence}`,
-        elapsed: stageDuration(),
-      },
-    };
-
-    // ── Stage 3: Writer ─────────────────────────────────────────────
-    // Retry once, then buildFallbackResponse (does NOT bubble)
-    stageStart = Date.now();
-    yield {
-      kind: 'pipeline',
-      event: {
-        stage: 'writer',
-        status: 'started',
-        detail: 'Composing headline and sections...',
-        elapsed: 0,
-      },
-    };
-
-    let writerResponse: AgentResponseV2 | undefined;
-    try {
-      ({ response: writerResponse } = await writerFn({ query, bundle, analysis }));
-    } catch (firstError) {
-      this.logger.warn(
-        `Writer failed, retrying: ${firstError instanceof Error ? firstError.message : firstError}`,
-      );
-      yield {
-        kind: 'pipeline',
-        event: {
-          stage: 'writer',
-          status: 'error',
-          detail: 'Retrying composition...',
-          elapsed: stageDuration(),
-        },
-      };
-      try {
-        ({ response: writerResponse } = await writerFn({ query, bundle, analysis }));
-      } catch (retryError) {
-        this.logger.warn(
-          `Writer retry failed, using fallback: ${
-            retryError instanceof Error ? retryError.message : retryError
-          }`,
-        );
+      if (nodeName === 'retriever') {
+        bundle = nodeOutput.bundle as typeof bundle;
+        const steps = (nodeOutput.steps ?? []) as AgentStep[];
+        for (const step of steps) {
+          yield { kind: 'step', step };
+        }
+        yield {
+          kind: 'pipeline',
+          event: {
+            stage: 'retriever',
+            status: 'done',
+            detail: `${bundle?.themes.length ?? 0} themes from ${
+              bundle?.allSources.length ?? 0
+            } sources`,
+            elapsed: Date.now() - stageStart,
+          },
+        };
+      } else if (nodeName === 'synthesizer') {
+        analysis = nodeOutput.analysis as typeof analysis;
+        yield {
+          kind: 'pipeline',
+          event: {
+            stage: 'synthesizer',
+            status: 'done',
+            detail: `${analysis?.insights.length ?? 0} insights, confidence: ${
+              analysis?.confidence ?? 'unknown'
+            }`,
+            elapsed: Date.now() - stageStart,
+          },
+        };
+      } else if (nodeName === 'writer') {
+        writerResponse = nodeOutput.response as typeof writerResponse;
         yield {
           kind: 'pipeline',
           event: {
             stage: 'writer',
-            status: 'error',
-            detail: 'Using fallback response from analysis',
-            elapsed: stageDuration(),
+            status: 'done',
+            detail: writerResponse
+              ? `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`
+              : 'Using fallback response from analysis',
+            elapsed: Date.now() - stageStart,
           },
+        };
+      }
+
+      // Emit next stage started
+      stageIdx++;
+      if (stageIdx < stageOrder.length) {
+        stageStart = Date.now();
+        const nextStage = stageOrder[stageIdx];
+        const detail =
+          nextStage === 'synthesizer'
+            ? `Analyzing ${bundle?.themes.length ?? 0} themes...`
+            : 'Composing headline and sections...';
+        yield {
+          kind: 'pipeline',
+          event: { stage: nextStage, status: 'started', detail, elapsed: 0 },
         };
       }
     }
 
-    // ── Emit final response ─────────────────────────────────────────
-    if (writerResponse) {
-      yield {
-        kind: 'pipeline',
-        event: {
-          stage: 'writer',
-          status: 'done',
-          detail: `${writerResponse.sections.length} sections, ${writerResponse.sources.length} sources`,
-          elapsed: stageDuration(),
-        },
-      };
+    // Emit final response
+    const elapsed = () => Date.now() - startTime;
 
+    if (writerResponse) {
       const sources = writerResponse.sources.map((s) => ({
         storyId: s.storyId,
         title: s.title,
@@ -266,8 +220,8 @@ export class OrchestratorService {
           sources,
           meta: {
             provider: activeProvider,
-            totalInputTokens,
-            totalOutputTokens,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
             durationMs: elapsed(),
             cached: false,
           },
@@ -278,14 +232,14 @@ export class OrchestratorService {
           ),
         },
       };
-    } else {
+    } else if (analysis && bundle) {
       yield {
         kind: 'complete',
         response: buildFallbackResponse(analysis, bundle, {
           provider: activeProvider,
           durationMs: elapsed(),
-          totalInputTokens,
-          totalOutputTokens,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
         }),
       };
     }

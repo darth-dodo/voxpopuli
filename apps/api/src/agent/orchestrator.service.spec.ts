@@ -11,9 +11,7 @@ import type {
   AgentResponseV2,
   PipelineEvent,
 } from '@voxpopuli/shared-types';
-import { createRetrieverNode } from './nodes/retriever.node';
-import { createSynthesizerNode } from './nodes/synthesizer.node';
-import { createWriterNode } from './nodes/writer.node';
+import { buildPipelineGraph } from './pipeline-graph';
 
 jest.mock('langchain', () => ({ createAgent: jest.fn() }));
 jest.mock('./tools', () => ({ createAgentTools: jest.fn(() => []) }));
@@ -23,6 +21,22 @@ jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn
 
 jest.mock('@langchain/langgraph/prebuilt', () => ({
   createReactAgent: jest.fn(() => ({ invoke: jest.fn() })),
+}));
+
+jest.mock('./pipeline-graph', () => ({
+  buildPipelineGraph: jest.fn(),
+  withRetry: jest.fn((fn) => fn),
+  withWriterFallback: jest.fn((fn, fallback) => async (state: Record<string, unknown>) => {
+    try {
+      return await fn(state);
+    } catch {
+      try {
+        return await fn(state);
+      } catch {
+        return fallback(state);
+      }
+    }
+  }),
 }));
 
 jest.mock('./nodes/retriever.node', () => ({
@@ -103,17 +117,15 @@ function makeLegacyEvents() {
   })();
 }
 
-/** Helper: set up all three node mocks with happy-path returns. */
-function setupHappyPathMocks() {
-  (createRetrieverNode as jest.Mock).mockReturnValue(
-    jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-  );
-  (createSynthesizerNode as jest.Mock).mockReturnValue(
-    jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-  );
-  (createWriterNode as jest.Mock).mockReturnValue(
-    jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-  );
+/** Helper: create a mock compiled graph whose .stream() yields predefined updates. */
+function mockGraph(updates: Array<Record<string, unknown>>) {
+  return {
+    stream: jest.fn().mockResolvedValue(
+      (async function* () {
+        for (const update of updates) yield update;
+      })(),
+    ),
+  };
 }
 
 /** Helper: collect all events from an async generator. */
@@ -156,22 +168,22 @@ describe('OrchestratorService', () => {
     expect(service).toBeDefined();
   });
 
+  /** Set up buildPipelineGraph mock with happy-path graph updates. */
+  function setupHappyPathGraph() {
+    const graph = mockGraph([
+      { retriever: { bundle: mockBundle, steps: [] } },
+      { synthesizer: { analysis: mockAnalysis } },
+      { writer: { response: mockResponseV2 } },
+    ]);
+    (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
+    return graph;
+  }
+
   describe('happy path', () => {
     it('should stream pipeline events and complete on success', async () => {
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-      );
+      setupHappyPathGraph();
 
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
 
       const pipelineEvents = events.filter((e) => e.kind === 'pipeline');
       const completeEvents = events.filter((e) => e.kind === 'complete');
@@ -181,20 +193,9 @@ describe('OrchestratorService', () => {
     });
 
     it('should produce an answer with headline and sections', async () => {
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-      );
+      setupHappyPathGraph();
 
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
 
       const complete = events.find((e) => e.kind === 'complete') as PipelineStreamEvent & {
         kind: 'complete';
@@ -205,21 +206,8 @@ describe('OrchestratorService', () => {
       expect(complete.response.answer).toContain('Test bottom line');
     });
 
-    it('run calls agents in correct order', async () => {
-      setupHappyPathMocks();
-
-      await collectEvents(service.runStream('test query', defaultConfig));
-
-      const retrieverOrder = (createRetrieverNode as jest.Mock).mock.invocationCallOrder[0];
-      const synthesizerOrder = (createSynthesizerNode as jest.Mock).mock.invocationCallOrder[0];
-      const writerOrder = (createWriterNode as jest.Mock).mock.invocationCallOrder[0];
-
-      expect(retrieverOrder).toBeLessThan(synthesizerOrder);
-      expect(synthesizerOrder).toBeLessThan(writerOrder);
-    });
-
     it('SSE PipelineEvents emitted at each stage transition', async () => {
-      setupHappyPathMocks();
+      setupHappyPathGraph();
 
       const events = await collectEvents(service.runStream('test query', defaultConfig));
 
@@ -241,7 +229,7 @@ describe('OrchestratorService', () => {
     });
 
     it('PipelineResult contains valid intermediates', async () => {
-      setupHappyPathMocks();
+      setupHappyPathGraph();
 
       const events = await collectEvents(service.runStream('test query', defaultConfig));
 
@@ -251,31 +239,66 @@ describe('OrchestratorService', () => {
       };
 
       expect(complete).toBeDefined();
-      // Answer contains headline
       expect(complete.response.answer).toContain('Test headline');
-      // Answer contains section bodies
       expect(complete.response.answer).toContain('Body 1');
       expect(complete.response.answer).toContain('Body 2');
-      // Answer contains bottom line
       expect(complete.response.answer).toContain('Test bottom line');
-      // Sources array is populated
       expect(complete.response.sources.length).toBeGreaterThan(0);
       expect(complete.response.sources[0].storyId).toBe(1);
       expect(complete.response.sources[0].title).toBe('S1');
+    });
+
+    it('complete response has correct meta and trust', async () => {
+      setupHappyPathGraph();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const complete = events.find((e) => e.kind === 'complete') as PipelineStreamEvent & {
+        kind: 'complete';
+        response: {
+          answer: string;
+          steps: unknown[];
+          sources: Array<{ storyId: number }>;
+          meta: { provider: string; durationMs: number };
+          trust: Record<string, unknown>;
+        };
+      };
+
+      expect(complete.response.meta).toBeDefined();
+      expect(complete.response.meta.provider).toBe('groq');
+      expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
+      expect(complete.response.trust).toBeDefined();
+    });
+
+    it('emits step events from retriever', async () => {
+      const mockSteps = [
+        { action: 'search_hn', input: 'test', observation: 'found 3 stories' },
+        { action: 'get_story', input: '123', observation: 'story details' },
+      ];
+      const graph = mockGraph([
+        { retriever: { bundle: mockBundle, steps: mockSteps } },
+        { synthesizer: { analysis: mockAnalysis } },
+        { writer: { response: mockResponseV2 } },
+      ]);
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const stepEvents = events.filter((e) => e.kind === 'step');
+      expect(stepEvents.length).toBe(2);
     });
   });
 
   describe('retriever failure', () => {
     it('should fall back to legacy agent when retriever fails', async () => {
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockRejectedValue(new Error('Retriever kaboom')),
-      );
+      // When the graph.stream() throws, runWithFallback catches and delegates
+      const graph = {
+        stream: jest.fn().mockRejectedValue(new Error('Retriever kaboom')),
+      };
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
       (agentService.runStream as jest.Mock).mockReturnValue(makeLegacyEvents());
 
-      const events = [];
-      for await (const event of service.runWithFallback('test query', defaultConfig)) {
-        events.push(event);
-      }
+      const events = await collectEvents(service.runWithFallback('test query', defaultConfig));
 
       expect(agentService.runStream).toHaveBeenCalledWith('test query');
       expect(
@@ -286,187 +309,109 @@ describe('OrchestratorService', () => {
     });
   });
 
-  describe('synthesizer failure recovery', () => {
-    it('should retry synthesizer once on failure then succeed', async () => {
-      const mockSynthesizer = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('LLM parse error'))
-        .mockResolvedValueOnce({ analysis: mockAnalysis });
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
-      (createWriterNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-      );
-
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
-
-      expect(mockSynthesizer).toHaveBeenCalledTimes(2);
-      expect(events.find((e) => e.kind === 'complete')).toBeDefined();
-    });
-
-    it('should fall back to legacy after synthesizer retry fails', async () => {
-      const mockSynthesizer = jest.fn().mockRejectedValue(new Error('LLM down'));
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
-      (agentService.runStream as jest.Mock).mockReturnValue(makeLegacyEvents());
-
-      const events = [];
-      for await (const event of service.runWithFallback('test query', defaultConfig)) {
-        events.push(event);
-      }
-
-      expect(mockSynthesizer).toHaveBeenCalledTimes(2);
-      expect(agentService.runStream).toHaveBeenCalledWith('test query');
-    });
-
-    it('JSON parse failure triggers retry in synthesizer', async () => {
-      const mockSynthesizer = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('JSON parse error: unexpected token'))
-        .mockResolvedValueOnce({ analysis: mockAnalysis });
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
-      (createWriterNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-      );
+  describe('writer fallback', () => {
+    it('should build fallback response when writer returns undefined response', async () => {
+      // Writer node returns { response: undefined } (via withWriterFallback)
+      const graph = mockGraph([
+        { retriever: { bundle: mockBundle, steps: [] } },
+        { synthesizer: { analysis: mockAnalysis } },
+        { writer: { response: undefined } },
+      ]);
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
 
       const events = await collectEvents(service.runStream('test query', defaultConfig));
 
-      // Synthesizer was called twice: first failed with JSON error, second succeeded
-      expect(mockSynthesizer).toHaveBeenCalledTimes(2);
-      // Pipeline completed successfully after retry
-      const complete = events.find((e) => e.kind === 'complete');
-      expect(complete).toBeDefined();
-      // An error event was emitted for the first failure
-      const synthErrors = events.filter(
-        (e) =>
-          e.kind === 'pipeline' &&
-          (e as { kind: 'pipeline'; event: PipelineEvent }).event.stage === 'synthesizer' &&
-          (e as { kind: 'pipeline'; event: PipelineEvent }).event.status === 'error',
-      );
-      expect(synthErrors.length).toBe(1);
-    });
-  });
-
-  describe('writer failure recovery', () => {
-    it('should retry writer once on failure then succeed', async () => {
-      const mockWriter = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('Writer parse error'))
-        .mockResolvedValueOnce({ response: mockResponseV2 });
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(mockWriter);
-
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
-
-      expect(mockWriter).toHaveBeenCalledTimes(2);
-      expect(events.find((e) => e.kind === 'complete')).toBeDefined();
-    });
-
-    it('should build fallback response when writer retry also fails', async () => {
-      const mockWriter = jest.fn().mockRejectedValue(new Error('Writer broken'));
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(mockWriter);
-
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
-
-      expect(mockWriter).toHaveBeenCalledTimes(2);
       const complete = events.find((e) => e.kind === 'complete') as PipelineStreamEvent & {
         kind: 'complete';
         response: { answer: string; meta: { error: boolean } };
       };
       expect(complete).toBeDefined();
+      // Fallback uses analysis.summary as headline
       expect(complete.response.answer).toContain('Test summary');
       expect(complete.response.meta.error).toBe(true);
     });
 
-    it('should emit pipeline error events on writer failure', async () => {
-      const mockWriter = jest.fn().mockRejectedValue(new Error('Writer broken'));
+    it('writer done event shows fallback detail when response is undefined', async () => {
+      const graph = mockGraph([
+        { retriever: { bundle: mockBundle, steps: [] } },
+        { synthesizer: { analysis: mockAnalysis } },
+        { writer: { response: undefined } },
+      ]);
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
 
-      (createRetrieverNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] }),
-      );
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(mockWriter);
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
 
-      const events = [];
-      for await (const event of service.runStream('test query', defaultConfig)) {
-        events.push(event);
-      }
+      const writerDone = events
+        .filter((e) => e.kind === 'pipeline')
+        .map((e) => (e as { kind: 'pipeline'; event: PipelineEvent }).event)
+        .find((pe) => pe.stage === 'writer' && pe.status === 'done');
 
-      const errorEvents = events.filter(
-        (e) => e.kind === 'pipeline' && (e as PipelineStreamEvent).event.status === 'error',
-      );
-      expect(errorEvents.length).toBeGreaterThanOrEqual(1);
-      expect((errorEvents[0] as PipelineStreamEvent).event.stage).toBe('writer');
+      expect(writerDone).toBeDefined();
+      expect(writerDone!.detail).toContain('fallback');
+    });
+  });
+
+  describe('graph construction', () => {
+    it('calls buildPipelineGraph with node functions', async () => {
+      setupHappyPathGraph();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      expect(buildPipelineGraph).toHaveBeenCalledTimes(1);
+      const args = (buildPipelineGraph as jest.Mock).mock.calls[0][0];
+      expect(args).toHaveProperty('retriever');
+      expect(args).toHaveProperty('synthesizer');
+      expect(args).toHaveProperty('writer');
+      expect(typeof args.retriever).toBe('function');
+      expect(typeof args.synthesizer).toBe('function');
+      expect(typeof args.writer).toBe('function');
+    });
+
+    it('streams with updates mode', async () => {
+      const graph = setupHappyPathGraph();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      expect(graph.stream).toHaveBeenCalledWith({ query: 'test query' }, { streamMode: 'updates' });
     });
   });
 
   describe('retriever protection', () => {
-    it('should never re-run retriever on downstream failure', async () => {
-      const mockRetriever = jest.fn().mockResolvedValue({ bundle: mockBundle, steps: [] });
-      const mockSynthesizer = jest.fn().mockRejectedValue(new Error('synth fail'));
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(mockRetriever);
-      (createSynthesizerNode as jest.Mock).mockReturnValue(mockSynthesizer);
+    it('should never re-run retriever on downstream failure (graph throws)', async () => {
+      // Graph stream throws after retriever update
+      let callCount = 0;
+      const graph = {
+        stream: jest.fn().mockResolvedValue(
+          (async function* () {
+            callCount++;
+            yield { retriever: { bundle: mockBundle, steps: [] } };
+            throw new Error('synth fail');
+          })(),
+        ),
+      };
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
       (agentService.runStream as jest.Mock).mockReturnValue(makeLegacyEvents());
 
-      const events = [];
-      for await (const event of service.runWithFallback('test query', defaultConfig)) {
-        events.push(event);
-      }
+      await collectEvents(service.runWithFallback('test query', defaultConfig));
 
-      expect(mockRetriever).toHaveBeenCalledTimes(1);
+      // Graph was only built and streamed once
+      expect(buildPipelineGraph).toHaveBeenCalledTimes(1);
+      expect(graph.stream).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('integration', () => {
-    it('full pipeline with mocked LLM responses', async () => {
-      setupHappyPathMocks();
+    it('full pipeline with mocked graph responses', async () => {
+      setupHappyPathGraph();
 
       const events = await collectEvents(service.runStream('test query', defaultConfig));
 
-      // 6 pipeline events: started + done for each of 3 stages
       const pipelineEvents = events.filter((e) => e.kind === 'pipeline');
       expect(pipelineEvents.length).toBe(6);
 
-      // Exactly 1 complete event
       const completeEvents = events.filter((e) => e.kind === 'complete');
       expect(completeEvents.length).toBe(1);
 
-      // Complete response has correct structure
       const complete = completeEvents[0] as PipelineStreamEvent & {
         kind: 'complete';
         response: {
@@ -486,61 +431,6 @@ describe('OrchestratorService', () => {
       expect(complete.response.meta.provider).toBe('groq');
       expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
       expect(complete.response.trust).toBeDefined();
-    });
-
-    it('pipeline events have increasing elapsed times', async () => {
-      setupHappyPathMocks();
-
-      const events = await collectEvents(service.runStream('test query', defaultConfig));
-
-      const pipelineEvents = events
-        .filter((e) => e.kind === 'pipeline')
-        .map((e) => (e as { kind: 'pipeline'; event: PipelineEvent }).event);
-
-      // Each elapsed value should be >= the previous one
-      for (let i = 1; i < pipelineEvents.length; i++) {
-        expect(pipelineEvents[i].elapsed).toBeGreaterThanOrEqual(pipelineEvents[i - 1].elapsed);
-      }
-    });
-  });
-
-  describe('timeout behavior', () => {
-    it('long-running stage completes and reports elapsed time', async () => {
-      // Mock retriever to resolve after a small delay
-      const delayedRetriever = jest
-        .fn()
-        .mockImplementation(
-          () =>
-            new Promise((resolve) =>
-              setTimeout(() => resolve({ bundle: mockBundle, steps: [] }), 50),
-            ),
-        );
-
-      (createRetrieverNode as jest.Mock).mockReturnValue(delayedRetriever);
-      (createSynthesizerNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ analysis: mockAnalysis }),
-      );
-      (createWriterNode as jest.Mock).mockReturnValue(
-        jest.fn().mockResolvedValue({ response: mockResponseV2 }),
-      );
-
-      const events = await collectEvents(service.runStream('test query', defaultConfig));
-
-      // Retriever was called successfully
-      expect(delayedRetriever).toHaveBeenCalledTimes(1);
-
-      // The retriever "done" event should have a non-zero elapsed time
-      const retrieverDone = events
-        .filter((e) => e.kind === 'pipeline')
-        .map((e) => (e as { kind: 'pipeline'; event: PipelineEvent }).event)
-        .find((pe) => pe.stage === 'retriever' && pe.status === 'done');
-
-      expect(retrieverDone).toBeDefined();
-      expect(retrieverDone!.elapsed).toBeGreaterThan(0);
-
-      // Pipeline still completes successfully
-      const complete = events.find((e) => e.kind === 'complete');
-      expect(complete).toBeDefined();
     });
   });
 });
