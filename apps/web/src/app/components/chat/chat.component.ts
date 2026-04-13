@@ -346,6 +346,7 @@ export class ChatComponent implements OnInit, OnDestroy {
             this.isStreaming.set(false);
             this.loading.set(false);
             this.stopElapsedTimer();
+            this.stopActiveStages('Error');
             this.activeTab.set('answer');
             break;
         }
@@ -357,6 +358,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.isStreaming.set(false);
         this.loading.set(false);
         this.stopElapsedTimer();
+        this.stopActiveStages('Connection lost');
         this.activeTab.set('answer');
       },
       complete: () => {
@@ -410,10 +412,22 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   /**
+   * Mark any in-progress pipeline stages as stopped so their icons and timers
+   * reflect that the stream is no longer active. Called on cancel, SSE error,
+   * and stall detection.
+   */
+  private stopActiveStages(detail: string): void {
+    const elapsedMs = Date.now() - this.streamStartTime;
+    this.pipelineEvents.update((events) =>
+      events.map((e) =>
+        e.status === 'started' ? { ...e, status: 'error', detail, elapsed: elapsedMs } : e,
+      ),
+    );
+  }
+
+  /**
    * Cancel the active SSE stream. Collected steps and pipeline events are
    * preserved so the fallback UI can display what was gathered before cancel.
-   * Any in-progress pipeline stages are marked as 'error' so their icons
-   * stop pulsing.
    */
   cancel(): void {
     if (this.streamSub) {
@@ -423,19 +437,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.isStreaming.set(false);
     this.loading.set(false);
     this.stopElapsedTimer();
-
-    // Mark in-progress pipeline stages as cancelled so their icons reflect the stop.
-    // Use the overall stream elapsed as a reasonable approximation for stage duration.
-    const elapsedMs = Date.now() - this.streamStartTime;
-    this.pipelineEvents.update((events) =>
-      events.map((e) =>
-        e.status === 'started'
-          ? { ...e, status: 'error', detail: 'Cancelled', elapsed: elapsedMs }
-          : e,
-      ),
-    );
-
-    // Surface a cancellation notice — not a hard error, so the user sees collected context.
+    this.stopActiveStages('Cancelled');
     this.error.set('Query cancelled.');
     this.activeTab.set('answer');
   }
