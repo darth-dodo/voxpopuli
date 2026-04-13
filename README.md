@@ -1,11 +1,13 @@
 # VoxPopuli
 
 [![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
 [![Angular](https://img.shields.io/badge/Angular-21-dd0031?style=flat-square&logo=angular)](https://angular.dev)
+[![Qwen3](https://img.shields.io/badge/Qwen3_32B-via_Groq-6366f1?style=flat-square)](https://console.groq.com)
+[![Mistral](https://img.shields.io/badge/Mistral_Large_3-ff7000?style=flat-square)](https://console.mistral.ai)
+[![Claude](https://img.shields.io/badge/Claude_Haiku_4.5-d4a574?style=flat-square)](https://console.anthropic.com)
 
 > _"Voice of the People."_
 
@@ -25,16 +27,17 @@ VoxPopuli is an agentic RAG system that turns 18+ years of [HackerNews](https://
 
 ## How It Works
 
-Ask a question in natural language. The agent runs a multi-step reasoning loop, searching HackerNews, reading comments, and synthesizing what it finds into a sourced answer.
+Ask a question in natural language. A **multi-agent pipeline** collects evidence, synthesizes insights, and writes a sourced editorial answer.
 
 ```
 You:   "Is SQLite good enough for production web apps?"
 
 VoxPopuli:
-  Searching for "SQLite production"           5 stories
-  Searching for "SQLite scaling"              3 stories
-  Reading comments #39482731                  28 comments
-  Reading story #41205003                     loaded
+  [Retriever]   Searching "SQLite production"       5 stories
+  [Retriever]   Searching "SQLite scaling"           3 stories
+  [Retriever]   Reading comments #39482731           28 comments
+  [Synthesizer] Extracting insights & contradictions
+  [Writer]      Composing editorial answer
 
   "HN is broadly positive, with caveats around write-heavy workloads.
    Specific projects like Litestream and Turso were frequently cited..."
@@ -42,39 +45,70 @@ VoxPopuli:
   All 4 sources verified · Mostly recent sources · Multiple viewpoints
 ```
 
-The agent loops up to 7 times using three tools:
+The pipeline has three stages:
 
-- **search_hn** -- query stories with filters (points, date, relevance)
-- **get_story** -- fetch full story details
-- **get_comments** -- fetch comment trees (up to 30 comments, 3 levels deep)
+1. **Retriever** -- ReAct agent (up to 7 tool calls) collects and compacts HN evidence
+2. **Synthesizer** -- extracts insights, contradictions, and sentiment from the evidence bundle
+3. **Writer** -- produces an editorial answer with citations and trust metadata
+
+The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). Both modes use the same three tools: `search_hn`, `get_story`, and `get_comments`.
 
 ---
 
-## Screenshots
+## Query Flow
+
+Asking "AI tools" — from query to answer in three pipeline stages.
 
 <table>
 <tr>
-<td width="60%">
+<td width="50%">
 
-**Desktop -- Dark Theme**
+**1. Type your question**
 
-<img src="docs/screenshots/landing-full-dark.png" alt="Full landing page" width="100%" />
+<img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="100%" />
 
 </td>
-<td width="40%">
+<td width="50%">
 
-**Mobile**
+**2. Pipeline starts — Retriever searching HN**
 
-<img src="docs/screenshots/landing-dark-mobile.png" alt="Mobile view" width="100%" />
+<img src="docs/screenshots/flow-02-streaming-steps.png" alt="Pipeline streaming" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**3. All stages complete — Writer composing**
+
+<img src="docs/screenshots/flow-05-steps-complete.png" alt="Pipeline stages complete" width="100%" />
+
+</td>
+<td width="50%">
+
+**4. Editorial answer with citations**
+
+<img src="docs/screenshots/flow-06-steps-done.png" alt="Answer with sections" width="100%" />
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**5. Sources tab — 8 HN stories referenced**
+
+<img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="100%" />
+
+</td>
+<td width="50%">
+
+**6. Full answer — sections, trust badges, meta**
+
+<img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer page" width="100%" />
 
 </td>
 </tr>
 </table>
-
-<p align="center">
-  <img src="docs/screenshots/landing-light-desktop.png" alt="Light theme" width="720" />
-</p>
-<p align="center"><em>Light theme with warm, papery surfaces</em></p>
 
 ---
 
@@ -97,11 +131,19 @@ Every answer comes with verification metadata:
 
 Pick your tradeoff. Switch from the UI.
 
-| Provider                 | Best for               | Speed         |
-| ------------------------ | ---------------------- | ------------- |
-| **Groq** (Llama 3.3 70B) | Fast development       | ~300 tokens/s |
-| **Mistral** Large 3      | Cost-optimized         | ~80 tokens/s  |
-| **Claude** Sonnet 4      | Best synthesis quality | ~50 tokens/s  |
+| Provider             | Best for               | Speed         |
+| -------------------- | ---------------------- | ------------- |
+| **Qwen3** 32B (Groq) | Fast development       | ~300 tokens/s |
+| **Mistral** Large 3  | Cost-optimized         | ~80 tokens/s  |
+| **Claude** Haiku 4.5 | Best synthesis quality | ~100 tokens/s |
+
+### Multi-Agent Pipeline
+
+Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph StateGraph. Each stage has per-stage retry with fallback response construction, circuit breaker for dry-well detection, and real-time step streaming via `dispatchCustomEvent`.
+
+### Eval Harness
+
+Automated quality scoring with 27 test queries across 5 evaluators (source accuracy, quality judge, efficiency, latency, cost). LangSmith integration for tracing and dataset management.
 
 ### Dark + Light Themes
 
@@ -113,9 +155,9 @@ Toggle between a dark OLED theme (optimized for eye comfort) and a warm light th
 
 ### Prerequisites
 
-- Node.js >= 18, pnpm
+- Node.js >= 22, pnpm
 - At least one LLM API key:
-  - [Groq](https://console.groq.com) (free tier -- recommended for development)
+  - [Groq](https://console.groq.com) (hosts Qwen3 -- free tier, recommended for development)
   - [Mistral](https://console.mistral.ai)
   - [Anthropic](https://console.anthropic.com)
 
@@ -127,7 +169,7 @@ cd voxpopuli
 pnpm install
 
 cp .env.example .env
-# Add at least one LLM API key, set LLM_PROVIDER=groq
+# Add at least one LLM API key, set LLM_PROVIDER=groq (Qwen3)
 ```
 
 ### Run
@@ -154,29 +196,31 @@ curl -X POST http://localhost:3000/api/rag/query \
 
 ## Architecture
 
-| Layer        | Technology                                              |
-| ------------ | ------------------------------------------------------- |
-| Monorepo     | Nx                                                      |
-| Backend      | NestJS 11 (TypeScript)                                  |
-| Frontend     | Angular 21 (standalone components, signals)             |
-| Design       | Tailwind CSS v4, "Data Noir Editorial" design system    |
-| LLM          | Claude / Mistral / Groq via LangChain.js                |
-| Streaming    | Server-Sent Events (SSE) with native EventSource        |
-| Caching      | node-cache (in-memory, TTL-based)                       |
-| Data         | HN Algolia API (search) + Firebase API (items/comments) |
-| Markdown     | ngx-markdown + marked                                   |
-| Shared types | `@voxpopuli/shared-types`                               |
+| Layer        | Technology                                                   |
+| ------------ | ------------------------------------------------------------ |
+| Monorepo     | Nx                                                           |
+| Backend      | NestJS 11 (TypeScript)                                       |
+| Frontend     | Angular 21 (standalone components, signals)                  |
+| Design       | Tailwind CSS v4, "Data Noir Editorial" design system         |
+| LLM          | Claude / Mistral / Groq via LangChain.js                     |
+| Pipeline     | LangGraph StateGraph (OrchestratorService, 3-stage pipeline) |
+| Streaming    | Server-Sent Events (SSE) with native EventSource             |
+| Caching      | node-cache (in-memory, TTL-based)                            |
+| Data         | HN Algolia API (search) + Firebase API (items/comments)      |
+| Eval         | Custom harness + LangSmith tracing                           |
+| Markdown     | ngx-markdown + marked                                        |
+| Shared types | `@voxpopuli/shared-types`                                    |
 
 ### Frontend Components
 
-| Component        | Purpose                                         |
-| ---------------- | ----------------------------------------------- |
-| ChatComponent    | Landing page + results page with SSE streaming  |
-| AgentSteps       | Compact timeline with merged action/result rows |
-| SourceCard       | Clickable HN story card with metadata           |
-| TrustBar         | Human-friendly trust indicators                 |
-| ProviderSelector | LLM provider chip selector                      |
-| MetaBar          | Provider, tokens, human-readable latency        |
+| Component        | Purpose                                                                     |
+| ---------------- | --------------------------------------------------------------------------- |
+| ChatComponent    | Landing page + results page with SSE streaming                              |
+| AgentSteps       | Compact timeline with merged action/result rows + pipeline stage indicators |
+| SourceCard       | Clickable HN story card with metadata                                       |
+| TrustBar         | Human-friendly trust indicators                                             |
+| ProviderSelector | LLM provider chip selector                                                  |
+| MetaBar          | Provider, tokens, human-readable latency                                    |
 
 See [architecture.md](architecture.md) for the full technical blueprint and [product.md](product.md) for the product specification.
 
@@ -184,16 +228,18 @@ See [architecture.md](architecture.md) for the full technical blueprint and [pro
 
 ## Project Status
 
-| Milestone                 | Status  | Highlights                                                |
-| ------------------------- | ------- | --------------------------------------------------------- |
-| M1: Scaffold & Data Layer | Done    | Nx monorepo, shared types, HN data + caching              |
-| M2: LLM & Chunker         | Done    | Triple-stack LLM providers, token budgeting               |
-| M3: Agent Core            | Done    | ReAct agent, RAG endpoints, trust framework               |
-| M4: Frontend              | Done    | Chat UI, real-time streaming, design system, 91% coverage |
-| M5: Voice Output          | Planned | ElevenLabs TTS with podcast-style narration               |
-| M6: Eval Harness          | Planned | Automated quality scoring                                 |
+| Milestone                  | Status  | Highlights                                                             |
+| -------------------------- | ------- | ---------------------------------------------------------------------- |
+| M1: Scaffold & Data Layer  | Done    | Nx monorepo, shared types, HN data + caching                           |
+| M2: LLM & Chunker          | Done    | Triple-stack LLM providers, token budgeting                            |
+| M3: Agent Core             | Done    | ReAct agent, RAG endpoints, trust framework                            |
+| M4: Frontend               | Done    | Chat UI, real-time streaming, design system                            |
+| M5: Voice Output           | Planned | ElevenLabs TTS with podcast-style narration                            |
+| M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration                        |
+| M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging                               |
+| M8: Multi-Agent Pipeline   | Done    | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
 
-**Current stats:** 198 tests passing (91 web + 107 API), 91% frontend coverage, 44 files in M4.
+**Current stats:** ~173 tests passing across 13 API test suites.
 
 ---
 
@@ -218,6 +264,11 @@ npx nx lint              # Lint all projects
 npx nx build api         # Build backend
 npx nx build web         # Build frontend
 npx nx test web --coverage  # Coverage report
+
+# Eval harness (requires running API)
+npx tsx evals/run-eval.ts               # Run eval harness
+npx tsx evals/run-eval.ts -p groq       # Test Qwen3 (via Groq)
+npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
 ```
 
 ---

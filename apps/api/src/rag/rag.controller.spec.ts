@@ -124,7 +124,7 @@ describe('RagController', () => {
       provider: undefined,
     });
     expect(cacheService.getOrSet).toHaveBeenCalledWith(
-      'rag:query:What is Rust?',
+      'rag:query:What is Rust?:false',
       expect.any(Function),
       600,
     );

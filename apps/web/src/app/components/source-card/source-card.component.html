@@ -30,5 +30,8 @@
     <span>{{ source().author }}</span>
     <span aria-label="points">{{ source().points }} pts</span>
     <span aria-label="comments">{{ source().commentCount }} comments</span>
+    @if (source().postedDate) {
+    <span class="text-text-faint" aria-label="posted date">{{ source().postedDate }}</span>
+    }
   </div>
 </a>

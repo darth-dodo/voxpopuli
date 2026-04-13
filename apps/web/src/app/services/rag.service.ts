@@ -82,6 +82,9 @@ export class RagService {
    * @param provider - Optional LLM provider override (groq / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
+  /** Maximum number of SSE reconnection attempts before giving up. */
+  private static readonly MAX_SSE_RETRIES = 3;
+
   stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
@@ -95,65 +98,113 @@ export class RagService {
     }
 
     return new Observable<StreamEvent>((subscriber) => {
-      const eventSource = new EventSource(url);
+      let retryCount = 0;
+      let activeEventSource: EventSource | null = null;
+      /** Tracks consecutive null-data events to avoid false positives on reconnect. */
+      let nullDataCount = 0;
+      const NULL_DATA_THRESHOLD = 3;
 
-      const EVENT_TYPES = [
-        'thought',
-        'action',
-        'observation',
-        'answer',
-        'error',
-        'pipeline',
-        'token',
-      ] as const;
+      const attachListeners = (es: EventSource): void => {
+        const EVENT_TYPES = [
+          'thought',
+          'action',
+          'observation',
+          'answer',
+          'error',
+          'pipeline',
+          'token',
+        ] as const;
 
-      for (const eventType of EVENT_TYPES) {
-        eventSource.addEventListener(eventType, (event: MessageEvent) => {
-          try {
-            if (event.data === undefined || event.data === null) {
-              // CORS-blocked EventSource may fire listeners with undefined data
-              const message = 'Unable to connect to the API. This may be a CORS or network issue.';
+        for (const eventType of EVENT_TYPES) {
+          es.addEventListener(eventType, (event: MessageEvent) => {
+            try {
+              if (event.data === undefined || event.data === null) {
+                // After reconnect the first event may arrive with undefined data.
+                // Skip it unless we see repeated null payloads, which signals a
+                // real CORS / network issue.
+                nullDataCount++;
+                if (nullDataCount >= NULL_DATA_THRESHOLD) {
+                  const message =
+                    'Unable to connect to the API. This may be a CORS or network issue.';
+                  this.error.set(message);
+                  this.loading.set(false);
+                  subscriber.error(new Error(message));
+                  es.close();
+                }
+                return;
+              }
+
+              // Reset counter on any valid payload
+              nullDataCount = 0;
+
+              const data: unknown = JSON.parse(event.data);
+              const streamEvent = this.parseStreamEvent(eventType, data);
+              subscriber.next(streamEvent);
+
+              if (eventType === 'answer' || eventType === 'error') {
+                this.loading.set(false);
+                if (eventType === 'error') {
+                  const msg = (streamEvent as { type: 'error'; message: string }).message;
+                  this.error.set(msg);
+                }
+                es.close();
+                activeEventSource = null;
+                subscriber.complete();
+              }
+            } catch (parseError) {
+              const message =
+                parseError instanceof Error ? parseError.message : 'Failed to parse SSE event';
               this.error.set(message);
               this.loading.set(false);
               subscriber.error(new Error(message));
-              eventSource.close();
-              return;
+              es.close();
+              activeEventSource = null;
             }
-            const data: unknown = JSON.parse(event.data);
-            const streamEvent = this.parseStreamEvent(eventType, data);
-            subscriber.next(streamEvent);
+          });
+        }
 
-            if (eventType === 'answer' || eventType === 'error') {
-              this.loading.set(false);
-              if (eventType === 'error') {
-                const msg = (streamEvent as { type: 'error'; message: string }).message;
-                this.error.set(msg);
-              }
-              eventSource.close();
-              subscriber.complete();
-            }
-          } catch (parseError) {
-            const message =
-              parseError instanceof Error ? parseError.message : 'Failed to parse SSE event';
+        es.onerror = () => {
+          if (es.readyState === EventSource.CONNECTING) {
+            // Browser is auto-reconnecting — let it proceed without surfacing
+            // an error to the UI. This commonly happens when a mobile browser
+            // resumes after being backgrounded.
+            return;
+          }
+
+          // Connection is fully closed (readyState === CLOSED).
+          // Attempt a manual reconnect if we haven't exhausted retries.
+          es.close();
+          activeEventSource = null;
+
+          if (retryCount < RagService.MAX_SSE_RETRIES) {
+            retryCount++;
+            // Re-create the EventSource after a brief backoff.
+            // Do NOT update loading/error signals — keep the streaming UI visible.
+            const backoffMs = retryCount * 1000;
+            setTimeout(() => {
+              if (subscriber.closed) return;
+              const newEs = new EventSource(url);
+              activeEventSource = newEs;
+              attachListeners(newEs);
+            }, backoffMs);
+          } else {
+            const message = 'SSE connection lost after multiple retries';
             this.error.set(message);
             this.loading.set(false);
             subscriber.error(new Error(message));
-            eventSource.close();
           }
-        });
-      }
-
-      eventSource.onerror = () => {
-        const message = 'SSE connection error';
-        this.error.set(message);
-        this.loading.set(false);
-        subscriber.error(new Error(message));
-        eventSource.close();
+        };
       };
+
+      activeEventSource = new EventSource(url);
+      attachListeners(activeEventSource);
 
       // Teardown: close EventSource when the subscriber unsubscribes.
       return () => {
-        eventSource.close();
+        if (activeEventSource) {
+          activeEventSource.close();
+          activeEventSource = null;
+        }
         this.loading.set(false);
       };
     });

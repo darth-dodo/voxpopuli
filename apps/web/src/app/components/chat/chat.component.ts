@@ -1,4 +1,13 @@
-import { Component, type OnInit, inject, signal, computed, model } from '@angular/core';
+import {
+  Component,
+  type OnInit,
+  type OnDestroy,
+  inject,
+  signal,
+  computed,
+  model,
+} from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
@@ -25,6 +34,7 @@ const MAX_QUERY_LENGTH = 500;
   selector: 'app-chat',
   standalone: true,
   imports: [
+    NgTemplateOutlet,
     FormsModule,
     MarkdownComponent,
     AgentStepsComponent,
@@ -35,8 +45,23 @@ const MAX_QUERY_LENGTH = 500;
   ],
   templateUrl: './chat.component.html',
 })
-export class ChatComponent implements OnInit {
+export class ChatComponent implements OnInit, OnDestroy {
   private readonly ragService = inject(RagService);
+
+  /** Whether the page was backgrounded while a stream was active. */
+  readonly wasBackgrounded = signal(false);
+
+  /** Bound reference to the visibility-change handler for cleanup. */
+  private readonly onVisibilityChange = this.handleVisibilityChange.bind(this);
+
+  /** Timer handle for the delayed retry after returning from background. */
+  private backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Interval handle for the elapsed-time counter shown during streaming. */
+  private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Elapsed seconds since the current query was submitted. */
+  readonly elapsedSeconds = signal(0);
 
   /** Current theme ('dark' | 'light'). */
   readonly theme = signal<'dark' | 'light'>('dark');
@@ -58,9 +83,52 @@ export class ChatComponent implements OnInit {
     document.documentElement.className = next;
   }
 
-  /** Initialize default theme on document root. */
+  /** Initialize default theme on document root and register visibility listener. */
   ngOnInit(): void {
     document.documentElement.className = 'dark';
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+  }
+
+  /** Clean up the visibility-change listener and any pending timers. */
+  ngOnDestroy(): void {
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    if (this.backgroundRetryTimer !== null) {
+      clearTimeout(this.backgroundRetryTimer);
+      this.backgroundRetryTimer = null;
+    }
+    this.stopElapsedTimer();
+  }
+
+  /**
+   * Handle transitions between foreground and background.
+   *
+   * When the page is hidden during an active stream, a flag is set so that
+   * on return we can distinguish a background-induced error from a normal one.
+   * When the page becomes visible again and the stream has errored while
+   * backgrounded, an automatic retry is triggered after a short delay.
+   */
+  private handleVisibilityChange(): void {
+    if (document.hidden) {
+      // Page is being backgrounded
+      if (this.isStreaming()) {
+        this.wasBackgrounded.set(true);
+      }
+    } else {
+      // Page is returning to the foreground
+      if (this.wasBackgrounded()) {
+        this.wasBackgrounded.set(false);
+
+        if (this.error() && !this.isStreaming()) {
+          // The stream errored while we were away — show a friendlier message
+          // and schedule an automatic retry.
+          this.error.set('Connection interrupted. Retrying...');
+          this.backgroundRetryTimer = setTimeout(() => {
+            this.backgroundRetryTimer = null;
+            this.retry();
+          }, 1000);
+        }
+      }
+    }
   }
 
   /** Current query string bound to the input field. */
@@ -210,6 +278,7 @@ export class ChatComponent implements OnInit {
     this.isPipelineMode.set(false);
     this.tokenContent.set('');
     this.activeTab.set('steps');
+    this.startElapsedTimer();
 
     this.ragService.stream(q, this.selectedProvider(), true).subscribe({
       next: (event: StreamEvent) => {
@@ -242,6 +311,7 @@ export class ChatComponent implements OnInit {
             this.response.set(event.response);
             this.isStreaming.set(false);
             this.loading.set(false);
+            this.stopElapsedTimer();
             // Auto-switch to answer tab when answer arrives
             this.activeTab.set('answer');
             break;
@@ -264,6 +334,7 @@ export class ChatComponent implements OnInit {
             this.error.set(event.message);
             this.isStreaming.set(false);
             this.loading.set(false);
+            this.stopElapsedTimer();
             this.activeTab.set('answer');
             break;
         }
@@ -274,6 +345,7 @@ export class ChatComponent implements OnInit {
         this.error.set(message);
         this.isStreaming.set(false);
         this.loading.set(false);
+        this.stopElapsedTimer();
         this.activeTab.set('answer');
       },
       complete: () => {
@@ -303,6 +375,23 @@ export class ChatComponent implements OnInit {
     });
   }
 
+  /** Start a 1-second interval that increments the elapsed counter. */
+  private startElapsedTimer(): void {
+    this.stopElapsedTimer();
+    this.elapsedSeconds.set(0);
+    this.elapsedTimer = setInterval(() => {
+      this.elapsedSeconds.update((s) => s + 1);
+    }, 1000);
+  }
+
+  /** Stop the elapsed-time interval. */
+  private stopElapsedTimer(): void {
+    if (this.elapsedTimer !== null) {
+      clearInterval(this.elapsedTimer);
+      this.elapsedTimer = null;
+    }
+  }
+
   /** Retry the current query. */
   retry(): void {
     this.submit();
@@ -315,6 +404,7 @@ export class ChatComponent implements OnInit {
     this.error.set(null);
     this.steps.set([]);
     this.pipelineEvents.set([]);
+    this.stopElapsedTimer();
     this.isPipelineMode.set(false);
     this.tokenContent.set('');
     this.loading.set(false);

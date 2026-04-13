@@ -68,11 +68,9 @@
       <div class="flex-1 min-w-0">
         <div class="flex items-baseline justify-between gap-2">
           <h4 class="text-ui text-sm font-medium text-text-primary capitalize">{{ stage.name }}</h4>
-          @if (stage.elapsed > 0) {
           <span class="text-mono text-xs text-text-muted tabular-nums"
-            >{{ (stage.elapsed / 1000).toFixed(1) }}s</span
+            >{{ (stageElapsed(stage) / 1000).toFixed(1) }}s</span
           >
-          }
         </div>
 
         @if (stage.status === 'done') {

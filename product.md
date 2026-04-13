@@ -160,11 +160,11 @@ The Retriever collects raw HN data and **compacts** it into themed evidence grou
 
 By default, all three agents use the **globally selected provider** (the `LLM_PROVIDER` env var or the UI provider selector). This keeps behavior consistent with the single-agent path and avoids requiring multiple API keys.
 
-| Agent       | Default Provider        | `optimized` Preset Provider           | Why (optimized)                                                |
-| ----------- | ----------------------- | ------------------------------------- | -------------------------------------------------------------- |
-| Retriever   | Global (`LLM_PROVIDER`) | **Groq** (Llama 3.3 70B)              | Speed. Multiple tool calls need fast inference.                |
-| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-sonnet-4-20250514) | Reasoning depth. Pattern extraction needs the strongest model. |
-| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-large-latest)    | Cost-optimized. Structured prose from structured input.        |
+| Agent       | Default Provider        | `optimized` Preset Provider            | Why (optimized)                                                |
+| ----------- | ----------------------- | -------------------------------------- | -------------------------------------------------------------- |
+| Retriever   | Global (`LLM_PROVIDER`) | **Groq** (Llama 3.3 70B)               | Speed. Multiple tool calls need fast inference.                |
+| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-haiku-4-5-20251001) | Reasoning depth. Pattern extraction needs the strongest model. |
+| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-large-latest)     | Cost-optimized. Structured prose from structured input.        |
 
 Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (Groq/Claude/Mistral split), `speed` (all Groq), `cost` (all Mistral).
 
@@ -427,11 +427,11 @@ No single LLM wins on every axis. Different stages of the project need different
 | **Development**            | Groq (Llama 3.3 70B) | Free tier, 300+ t/s speed, instant feedback loops      |
 | **Testing/CI**             | Groq or Mistral      | Cheap, fast, good enough for regression detection      |
 | **Cost-optimized prod**    | Mistral Large 3      | Best quality-per-dollar, 262k context                  |
-| **Quality-optimized prod** | Claude (Sonnet 4)    | Best multi-source synthesis, strongest agent reasoning |
+| **Quality-optimized prod** | Claude (Haiku 4.5)   | Best multi-source synthesis, strongest agent reasoning |
 
 ### 5.2 Provider Comparison
 
-| Factor                | Claude (Sonnet 4)        | Mistral Large 3             | Groq (Llama 3.3 70B)              |
+| Factor                | Claude (Haiku 4.5)       | Mistral Large 3             | Groq (Llama 3.3 70B)              |
 | --------------------- | ------------------------ | --------------------------- | --------------------------------- |
 | **Context window**    | 200k                     | 262k                        | 128k                              |
 | **Output speed**      | ~50 t/s                  | ~80 t/s                     | 300+ t/s                          |

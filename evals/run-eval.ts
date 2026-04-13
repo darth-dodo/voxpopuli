@@ -35,6 +35,7 @@ const program = new Command()
   .option('-t, --timeout <seconds>', 'per-query timeout in seconds', '300')
   .option('-n, --concurrency <n>', 'max parallel queries (API supports up to 5)', '3')
   .option('--no-judge', 'skip LLM-as-judge (faster, scores only source/efficiency/latency/cost)')
+  .option('--multi-agent', 'use multi-agent pipeline instead of legacy single-agent')
   .parse();
 
 const opts = program.opts<{
@@ -48,6 +49,7 @@ const opts = program.opts<{
   timeout: string;
   concurrency: string;
   judge: boolean;
+  multiAgent?: boolean;
 }>();
 
 // ---------------------------------------------------------------------------
@@ -74,13 +76,14 @@ async function runQuery(
   provider: string,
   apiUrl: string,
   timeoutMs: number,
+  useMultiAgent = false,
 ): Promise<EvalRunResult> {
   const start = performance.now();
   try {
     const res = await fetch(`${apiUrl}/api/rag/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, provider }),
+      body: JSON.stringify({ query, provider, useMultiAgent }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -213,9 +216,9 @@ async function main(): Promise<void> {
 
   for (const p of providers) {
     console.log(
-      `\nRunning eval for provider: ${p} (${queries.length} queries, concurrency=${concurrency}${
-        skipJudge ? ', no-judge' : ''
-      })\n`,
+      `\nRunning eval for provider: ${p}${opts.multiAgent ? ' [pipeline]' : ' [legacy]'} (${
+        queries.length
+      } queries, concurrency=${concurrency}${skipJudge ? ', no-judge' : ''})\n`,
     );
 
     const scores: EvalScore[] = new Array(queries.length);
@@ -232,7 +235,13 @@ async function main(): Promise<void> {
       const batchResults = await Promise.allSettled(
         batchQueries.map(async (q, batchIdx) => {
           const idx = batch + batchIdx;
-          const result = await runQuery(q.query, p, EVAL_API_URL, timeoutMs);
+          const result = await runQuery(
+            q.query,
+            p,
+            EVAL_API_URL,
+            timeoutMs,
+            opts.multiAgent ?? false,
+          );
           result.queryId = q.id;
 
           const score = await scoreRun(result, q, p, skipJudge);

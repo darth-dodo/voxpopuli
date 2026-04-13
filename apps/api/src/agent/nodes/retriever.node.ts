@@ -1,9 +1,9 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
-import { EvidenceBundleSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
+import { EvidenceBundleSchema, type EvidenceBundle, type AgentStep } from '@voxpopuli/shared-types';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
@@ -11,12 +11,118 @@ import { cleanLlmOutput } from './parse-llm-json';
 const MAX_REACT_ITERATIONS = 8;
 
 /**
+ * Produce a short, human-friendly summary of a tool's raw output.
+ * The full output is still kept in `allMessages` for the compaction phase —
+ * this summary is only used for the streamed step events shown in the UI.
+ */
+function summarizeToolOutput(toolName: string | undefined, raw: string): string {
+  if (!raw || raw.trim() === '') return 'No results';
+  if (raw.includes('No results found')) return 'No results found';
+  if (raw.includes('No comments found')) return 'No comments found';
+  if (raw.includes('No story found')) return 'Story not found';
+
+  switch (toolName) {
+    case 'search_hn': {
+      // Stories are formatted as [ID] "Title" — count them
+      const storyMatches = raw.match(/\[\d+\]/g);
+      const count = storyMatches?.length ?? 0;
+      return count > 0
+        ? `Found ${count} ${count === 1 ? 'story' : 'stories'}`
+        : 'No stories matched';
+    }
+    case 'get_story': {
+      // Output starts with [ID] "Title" by Author (score points, N comments)
+      const titleMatch = raw.match(/^\[\d+\]\s+"([^"]+)"/);
+      const pointsMatch = raw.match(/\((\d+)\s+points/);
+      if (titleMatch) {
+        const title =
+          titleMatch[1].length > 60 ? titleMatch[1].slice(0, 57) + '...' : titleMatch[1];
+        return pointsMatch ? `${title} (${pointsMatch[1]} pts)` : title;
+      }
+      return 'Loaded story details';
+    }
+    case 'get_comments': {
+      // Comments are formatted with "by <author>" lines
+      const commentMatches = raw.match(/^by\s+\S+/gm);
+      const count = commentMatches?.length ?? 0;
+      return count > 0
+        ? `Read ${count} ${count === 1 ? 'comment' : 'comments'}`
+        : 'No comment content';
+    }
+    default: {
+      // Unknown tool — take the first line, capped
+      const firstLine = raw.split('\n')[0].trim();
+      return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
+    }
+  }
+}
+
+/**
+ * Minimum raw data length (in chars) to consider the ReAct collection
+ * as having found useful content. Below this threshold the compaction
+ * LLM call is skipped and a minimal "dry-well" bundle is returned.
+ */
+const MIN_USEFUL_DATA_LENGTH = 200;
+
+/**
+ * Returns true when the raw data collected by the ReAct agent is too
+ * sparse to justify a compaction LLM call. Two heuristics:
+ *   1. Total content is very short (< MIN_USEFUL_DATA_LENGTH chars).
+ *   2. No story-like data patterns (point counts, story IDs).
+ */
+export function isDryWell(rawData: string): boolean {
+  const trimmed = rawData.trim();
+  if (trimmed.length < MIN_USEFUL_DATA_LENGTH) return true;
+  // Check for presence of any story-like content (point counts or story references)
+  const hasStoryData = /\d+\s+points?/i.test(trimmed) || /Story\s+\d+/i.test(trimmed);
+  return !hasStoryData;
+}
+
+/**
+ * Builds a minimal EvidenceBundle for queries where the ReAct agent
+ * found no substantial HN discussion ("dry well"). Skips the
+ * compaction LLM call entirely to save tokens.
+ */
+export function buildDryWellBundle(query: string): EvidenceBundle {
+  return {
+    query,
+    themes: [
+      {
+        label: 'No substantial discussion found',
+        items: [
+          {
+            sourceId: 0,
+            text: 'Limited or no relevant Hacker News discussion was found on this topic.',
+            type: 'opinion' as const,
+            relevance: 0.1,
+          },
+        ],
+      },
+    ],
+    allSources: [],
+    totalSourcesScanned: 0,
+    tokenCount: 50,
+  };
+}
+
+/**
  * Creates the Retriever node function for the pipeline.
  *
  * Two phases:
  * 1. ReAct loop (createReactAgent) — collects raw HN data via tools
  * 2. Compaction (single LLM call) — converts raw data → EvidenceBundle
+ *
+ * Returns the compacted EvidenceBundle and all AgentSteps accumulated
+ * during the ReAct loop. The caller (pipeline graph) is responsible for
+ * forwarding steps to the SSE stream.
  */
+export type RetrieverResult = {
+  bundle: EvidenceBundle;
+  steps: AgentStep[];
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
   const reactAgent = createReactAgent({
     llm: model,
@@ -27,47 +133,129 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     ).replace('{{currentDate}}', new Date().toISOString().split('T')[0]),
   });
 
-  return async (state: {
-    query: string;
-    events: unknown[];
-  }): Promise<{ bundle: EvidenceBundle }> => {
-    const startTime = Date.now();
+  return async (
+    state: { query: string },
+    config?: LangGraphRunnableConfig,
+  ): Promise<RetrieverResult> => {
+    const steps: AgentStep[] = [];
+    let inputTokens = 0;
+    let outputTokens = 0;
 
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'retriever',
-      status: 'started',
-      detail: `Searching HN for "${state.query}"...`,
-      elapsed: 0,
-    });
+    // Phase 1: ReAct collection — accumulate steps
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allMessages: any[] = [];
 
-    // Phase 1: ReAct collection
-    const reactResult = await reactAgent.invoke({
-      messages: [new HumanMessage(state.query)],
-    });
+    const stream = await reactAgent.stream(
+      { messages: [new HumanMessage(state.query)] },
+      {
+        metadata: { pipeline_stage: 'retriever', phase: 'react', query: state.query },
+        tags: ['multi-agent', 'retriever', 'react'],
+        streamMode: 'values',
+      },
+    );
 
-    const rawData = reactResult.messages
+    let prevMessageCount = 0;
+    for await (const chunk of stream) {
+      const messages = chunk.messages ?? [];
+      // Accumulate steps for newly added messages
+      if (messages.length > prevMessageCount) {
+        for (let i = prevMessageCount; i < messages.length; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const msg = messages[i] as any;
+          const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
+          const content = typeof msg.content === 'string' ? msg.content : '';
+
+          // Track token usage from AI messages
+          if (type === 'ai' && msg.usage_metadata) {
+            if (msg.usage_metadata.input_tokens) inputTokens += msg.usage_metadata.input_tokens;
+            if (msg.usage_metadata.output_tokens) outputTokens += msg.usage_metadata.output_tokens;
+          }
+
+          if (type === 'ai' && msg.tool_calls?.length > 0) {
+            for (const tc of msg.tool_calls) {
+              const step: AgentStep = {
+                type: 'action',
+                content: `${tc.name}(${JSON.stringify(tc.args)})`,
+                toolName: tc.name,
+                toolInput: tc.args,
+                timestamp: Date.now(),
+              };
+              steps.push(step);
+              config?.writer?.({ type: 'retriever_step', data: step });
+            }
+          } else if (type === 'tool') {
+            const toolName = msg.name as string | undefined;
+            const step: AgentStep = {
+              type: 'observation',
+              content: summarizeToolOutput(toolName, content),
+              toolName,
+              toolOutput: content,
+              timestamp: Date.now(),
+            };
+            steps.push(step);
+            // Stream summary only — toolOutput is kept for trust computation, not the UI
+            const { toolOutput: _raw, ...streamStep } = step;
+            config?.writer?.({ type: 'retriever_step', data: streamStep });
+          } else if (type === 'ai' && content) {
+            // Skip verbose final-thought monologues (coverage checks, etc.)
+            if (content.length > 300) continue;
+            const step: AgentStep = {
+              type: 'thought',
+              content,
+              timestamp: Date.now(),
+            };
+            steps.push(step);
+            config?.writer?.({ type: 'retriever_step', data: step });
+          }
+        }
+      }
+      prevMessageCount = messages.length;
+      // Keep final messages for rawData extraction
+      if (messages.length > 0) {
+        allMessages.length = 0;
+        allMessages.push(...messages);
+      }
+    }
+
+    // Keep only tool results + assistant reasoning; drop system prompt and
+    // the initial human query (already passed separately to compactWithRetry).
+    const rawData = allMessages
+      .filter((m: { _getType?: () => string }) => {
+        if (typeof m._getType !== 'function') return true;
+        const type = m._getType();
+        return type !== 'system' && type !== 'human';
+      })
       .map((m: { content: unknown }) => (typeof m.content === 'string' ? m.content : ''))
       .join('\n\n');
 
+    // Dry-well circuit breaker: if raw data is too sparse, skip compaction
+    if (isDryWell(rawData)) {
+      return { bundle: buildDryWellBundle(state.query), steps, inputTokens, outputTokens };
+    }
+
     // Phase 2: Compaction
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'retriever',
-      status: 'progress',
-      detail: 'Compacting sources into themes...',
-      elapsed: Date.now() - startTime,
-    });
+    const {
+      bundle,
+      inputTokens: compactIn,
+      outputTokens: compactOut,
+    } = await compactWithRetry(model, state.query, rawData);
 
-    const bundle = await compactWithRetry(model, state.query, rawData);
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'retriever',
-      status: 'done',
-      detail: `${bundle.themes.length} themes from ${bundle.allSources.length} sources (~${bundle.tokenCount} tokens)`,
-      elapsed: Date.now() - startTime,
-    });
-
-    return { bundle };
+    return {
+      bundle,
+      steps,
+      inputTokens: inputTokens + compactIn,
+      outputTokens: outputTokens + compactOut,
+    };
   };
+}
+
+type CompactResult = { bundle: EvidenceBundle; inputTokens: number; outputTokens: number };
+
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }
 
 /**
@@ -77,19 +265,28 @@ async function compactWithRetry(
   model: BaseChatModel,
   query: string,
   rawData: string,
-): Promise<EvidenceBundle> {
+): Promise<CompactResult> {
+  let inputTokens = 0;
+  let outputTokens = 0;
+
   const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
     new SystemMessage(COMPACTOR_SYSTEM_PROMPT),
     new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
   ];
 
-  const firstAttempt = await model.invoke(messages);
+  const firstAttempt = await model.invoke(messages, {
+    metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
+    tags: ['multi-agent', 'retriever', 'compaction'],
+  });
+  const t1 = extractTokens(firstAttempt);
+  inputTokens += t1.input;
+  outputTokens += t1.output;
   const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
   try {
     const parsed = JSON.parse(cleanLlmOutput(firstContent));
     const result = EvidenceBundleSchema.safeParse(parsed);
-    if (result.success) return result.data;
+    if (result.success) return { bundle: result.data, inputTokens, outputTokens };
 
     // Retry with error details
     messages.push(
@@ -111,8 +308,14 @@ async function compactWithRetry(
     );
   }
 
-  const retryAttempt = await model.invoke(messages);
+  const retryAttempt = await model.invoke(messages, {
+    metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
+    tags: ['multi-agent', 'retriever', 'compaction'],
+  });
+  const t2 = extractTokens(retryAttempt);
+  inputTokens += t2.input;
+  outputTokens += t2.output;
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
   const parsed = JSON.parse(cleanLlmOutput(retryContent));
-  return EvidenceBundleSchema.parse(parsed);
+  return { bundle: EvidenceBundleSchema.parse(parsed), inputTokens, outputTokens };
 }

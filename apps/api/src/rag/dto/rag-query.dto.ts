@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, MaxLength, Min, Max } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsBoolean, MaxLength, Min, Max } from 'class-validator';
 
 /** Validated DTO for RAG query requests. */
 export class RagQueryDto {
@@ -15,4 +15,8 @@ export class RagQueryDto {
   @IsOptional()
   @IsString()
   provider?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  useMultiAgent?: boolean;
 }

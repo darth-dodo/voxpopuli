@@ -1,5 +1,4 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AnalysisResultSchema,
@@ -10,30 +9,72 @@ import { SYNTHESIZER_SYSTEM_PROMPT } from '../prompts/synthesizer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 
 /**
+ * Builds a token-efficient, structured text representation of an EvidenceBundle
+ * for the Synthesizer LLM. Strips fields the Synthesizer does not need
+ * (url, commentCount, tokenCount) and formats as readable text rather than
+ * raw JSON, which LLMs handle more efficiently for analysis tasks.
+ */
+function formatBundleForSynthesizer(bundle: EvidenceBundle): string {
+  const lines: string[] = [];
+
+  lines.push(`Query: "${bundle.query}"`);
+  lines.push('');
+
+  // Sources section — numbered list with author and points only
+  lines.push(`## Sources (${bundle.totalSourcesScanned} stories scanned)`);
+  for (const src of bundle.allSources) {
+    lines.push(`[${src.storyId}] "${src.title}" by ${src.author} (${src.points} pts)`);
+  }
+  lines.push('');
+
+  // Themes section — each theme with its evidence items
+  lines.push('## Themes');
+  for (let i = 0; i < bundle.themes.length; i++) {
+    const theme = bundle.themes[i];
+    lines.push('');
+    lines.push(`### Theme ${i + 1}: ${theme.label}`);
+    for (const item of theme.items) {
+      lines.push(
+        `- [${item.type}] ${item.text} (source ${item.sourceId}, relevance: ${item.relevance})`,
+      );
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Creates the Synthesizer node function for the pipeline.
  * Single-pass: EvidenceBundle -> AnalysisResult with one retry on parse failure.
  */
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
+}
+
 export function createSynthesizerNode(model: BaseChatModel) {
   return async (state: {
     query: string;
     bundle: EvidenceBundle;
-  }): Promise<{ analysis: AnalysisResult }> => {
-    const startTime = Date.now();
-
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'synthesizer',
-      status: 'started',
-      detail: `Analyzing ${state.bundle.themes.length} themes...`,
-      elapsed: Date.now() - startTime,
-    });
+  }): Promise<{ analysis: AnalysisResult; inputTokens: number; outputTokens: number }> => {
+    let inputTokens = 0;
+    let outputTokens = 0;
 
     const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
       new SystemMessage(SYNTHESIZER_SYSTEM_PROMPT),
-      new HumanMessage(JSON.stringify(state.bundle)),
+      new HumanMessage(formatBundleForSynthesizer(state.bundle)),
     ];
 
     // First attempt
-    const firstAttempt = await model.invoke(messages);
+    const firstAttempt = await model.invoke(messages, {
+      metadata: { pipeline_stage: 'synthesizer', query: state.query },
+      tags: ['multi-agent', 'synthesizer'],
+    });
+    const t1 = extractTokens(firstAttempt);
+    inputTokens += t1.input;
+    outputTokens += t1.output;
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
     let analysis: AnalysisResult;
@@ -55,7 +96,13 @@ export function createSynthesizerNode(model: BaseChatModel) {
             )}\n\nRespond with valid JSON only.`,
           ),
         );
-        const retryAttempt = await model.invoke(messages);
+        const retryAttempt = await model.invoke(messages, {
+          metadata: { pipeline_stage: 'synthesizer', query: state.query },
+          tags: ['multi-agent', 'synthesizer'],
+        });
+        const t2 = extractTokens(retryAttempt);
+        inputTokens += t2.input;
+        outputTokens += t2.output;
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
         analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
@@ -67,18 +114,17 @@ export function createSynthesizerNode(model: BaseChatModel) {
           'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
         ),
       );
-      const retryAttempt = await model.invoke(messages);
+      const retryAttempt = await model.invoke(messages, {
+        metadata: { pipeline_stage: 'synthesizer', query: state.query },
+        tags: ['multi-agent', 'synthesizer'],
+      });
+      const t2 = extractTokens(retryAttempt);
+      inputTokens += t2.input;
+      outputTokens += t2.output;
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'synthesizer',
-      status: 'done',
-      detail: `${analysis.insights.length} insights, ${analysis.contradictions.length} contradictions, confidence: ${analysis.confidence}`,
-      elapsed: Date.now() - startTime,
-    });
-
-    return { analysis };
+    return { analysis, inputTokens, outputTokens };
   };
 }

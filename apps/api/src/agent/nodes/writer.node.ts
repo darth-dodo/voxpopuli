@@ -1,38 +1,49 @@
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   AgentResponseV2Schema,
+  AnalysisResultSchema,
+  SourceMetadataSchema,
   type AgentResponseV2,
   type AnalysisResult,
   type EvidenceBundle,
 } from '@voxpopuli/shared-types';
+import { z } from 'zod';
 import { WRITER_SYSTEM_PROMPT } from '../prompts/writer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 
+/** Schema for the Writer's input payload — analysis + citation sources only, no evidence. */
+export const WriterInputSchema = z.object({
+  analysis: AnalysisResultSchema,
+  sources: z.array(SourceMetadataSchema),
+});
+type WriterInput = z.infer<typeof WriterInputSchema>;
+
 /**
  * Creates the Writer node function for the pipeline.
- * Single-pass: AnalysisResult + EvidenceBundle → AgentResponseV2.
+ * Single-pass: AnalysisResult + citation table → AgentResponseV2.
  */
+/** Extract token counts from a LangChain AI message response. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTokens(msg: any): { input: number; output: number } {
+  const usage = msg?.usage_metadata;
+  return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
+}
+
 export function createWriterNode(model: BaseChatModel) {
   return async (state: {
     query: string;
     bundle: EvidenceBundle;
     analysis: AnalysisResult;
-  }): Promise<{ response: AgentResponseV2 }> => {
-    const startTime = Date.now();
+  }): Promise<{ response: AgentResponseV2; inputTokens: number; outputTokens: number }> => {
+    let inputTokens = 0;
+    let outputTokens = 0;
 
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'writer',
-      status: 'started',
-      detail: 'Composing headline and sections...',
-      elapsed: Date.now() - startTime,
-    });
-
-    const input = JSON.stringify({
+    const writerInput: WriterInput = {
       analysis: state.analysis,
-      bundle: state.bundle,
-    });
+      sources: state.bundle.allSources,
+    };
+    const input = JSON.stringify(writerInput);
 
     const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
       new SystemMessage(WRITER_SYSTEM_PROMPT),
@@ -40,7 +51,13 @@ export function createWriterNode(model: BaseChatModel) {
     ];
 
     // First attempt
-    const firstAttempt = await model.invoke(messages);
+    const firstAttempt = await model.invoke(messages, {
+      metadata: { pipeline_stage: 'writer', query: state.query },
+      tags: ['multi-agent', 'writer'],
+    });
+    const t1 = extractTokens(firstAttempt);
+    inputTokens += t1.input;
+    outputTokens += t1.output;
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
     let response: AgentResponseV2;
@@ -61,7 +78,13 @@ export function createWriterNode(model: BaseChatModel) {
             )}\n\nRespond with valid JSON only.`,
           ),
         );
-        const retryAttempt = await model.invoke(messages);
+        const retryAttempt = await model.invoke(messages, {
+          metadata: { pipeline_stage: 'writer', query: state.query },
+          tags: ['multi-agent', 'writer'],
+        });
+        const t2 = extractTokens(retryAttempt);
+        inputTokens += t2.input;
+        outputTokens += t2.output;
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
         response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
@@ -72,23 +95,17 @@ export function createWriterNode(model: BaseChatModel) {
           'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
         ),
       );
-      const retryAttempt = await model.invoke(messages);
+      const retryAttempt = await model.invoke(messages, {
+        metadata: { pipeline_stage: 'writer', query: state.query },
+        tags: ['multi-agent', 'writer'],
+      });
+      const t2 = extractTokens(retryAttempt);
+      inputTokens += t2.input;
+      outputTokens += t2.output;
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
       response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    await dispatchCustomEvent('pipeline_event', {
-      stage: 'writer',
-      status: 'done',
-      detail: `${response.sections.length} sections, ${response.sources.length} sources cited`,
-      elapsed: Date.now() - startTime,
-    });
-
-    // Emit the structured response for reliable capture by the orchestrator.
-    // LangGraph's on_chain_end events don't reliably carry sub-graph state,
-    // so we use a dedicated custom event instead.
-    await dispatchCustomEvent('pipeline_response', response);
-
-    return { response };
+    return { response, inputTokens, outputTokens };
   };
 }
