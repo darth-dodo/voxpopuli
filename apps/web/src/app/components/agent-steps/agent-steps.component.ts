@@ -87,6 +87,16 @@ export class AgentStepsComponent {
     // Watch pipeline events to track stage start times and manage the tick interval
     effect(() => {
       const stages = this.pipelineStages();
+
+      // When pipeline events are fully reset (e.g. on retry), clear stale timers
+      // so the next run starts counters from zero.
+      if (stages.length === 0) {
+        this.stageStartTimes.clear();
+        this.liveElapsed.set(new Map());
+        this.stopTicking();
+        return;
+      }
+
       let hasActiveStage = false;
 
       for (const stage of stages) {
@@ -111,14 +121,34 @@ export class AgentStepsComponent {
     this.destroyRef.onDestroy(() => this.stopTicking());
   }
 
+  /**
+   * Maximum elapsed time (ms) the live counter will display for a single stage.
+   * Beyond this the stage is assumed stalled and the counter freezes.
+   * Aligned with the agent timeout (180s).
+   */
+  private static readonly MAX_STAGE_ELAPSED_MS = 180_000;
+
   private startTicking(): void {
     this.tickInterval = setInterval(() => {
       const now = Date.now();
       const updated = new Map<string, number>();
+      let anyActive = false;
+
       for (const [name, startTime] of this.stageStartTimes) {
-        updated.set(name, now - startTime);
+        const elapsed = now - startTime;
+        // Cap the counter so it doesn't run to infinity on a stalled connection.
+        updated.set(name, Math.min(elapsed, AgentStepsComponent.MAX_STAGE_ELAPSED_MS));
+        if (elapsed < AgentStepsComponent.MAX_STAGE_ELAPSED_MS) {
+          anyActive = true;
+        }
       }
+
       this.liveElapsed.set(updated);
+
+      // If every tracked stage has exceeded the cap, stop ticking.
+      if (!anyActive) {
+        this.stopTicking();
+      }
     }, 100);
   }
 

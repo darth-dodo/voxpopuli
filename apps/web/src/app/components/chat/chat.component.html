@@ -7,7 +7,7 @@
   }
 
   <!-- Main content area -->
-  <main class="flex-1 flex flex-col w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+  <main class="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
     <!-- ═══════════════════════════════════════════════
          EMPTY STATE: Landing page
          ═══════════════════════════════════════════════ -->
@@ -315,13 +315,13 @@
          ═══════════════════════════════════════════════ -->
     @if (loading() || error() || response()) {
     <div
-      class="py-6 flex-1 flex flex-col"
+      class="py-6 flex-1 flex flex-col min-w-0"
       role="region"
       aria-live="polite"
       aria-label="Agent response"
     >
       <!-- Header -->
-      <header class="flex items-center justify-between mb-4">
+      <header class="sticky top-0 z-40 bg-surface-base/90 backdrop-blur-sm flex items-center justify-between mb-4 py-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div class="flex items-center gap-3">
           <button
             type="button"
@@ -356,6 +356,13 @@
         </div>
       </header>
 
+      <!-- Submitted query -->
+      @if (query()) {
+      <p class="text-editorial text-base sm:text-lg text-text-primary mb-4 leading-snug">
+        &ldquo;{{ query() }}&rdquo;
+      </p>
+      }
+
       <!-- Tab bar -->
       <nav
         class="flex border-b border-border-subtle mb-6"
@@ -365,10 +372,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'answer'"
           [class.border-b-2]="activeTab() === 'answer'"
           [class.border-accent-amber]="activeTab() === 'answer'"
+          [class.bg-surface-overlay/40]="activeTab() === 'answer'"
           [class.text-text-muted]="activeTab() !== 'answer'"
           [class.hover:text-text-secondary]="activeTab() !== 'answer'"
           [attr.aria-selected]="activeTab() === 'answer'"
@@ -379,10 +387,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'sources'"
           [class.border-b-2]="activeTab() === 'sources'"
           [class.border-accent-amber]="activeTab() === 'sources'"
+          [class.bg-surface-overlay/40]="activeTab() === 'sources'"
           [class.text-text-muted]="activeTab() !== 'sources'"
           [class.hover:text-text-secondary]="activeTab() !== 'sources'"
           [attr.aria-selected]="activeTab() === 'sources'"
@@ -393,10 +402,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'steps'"
           [class.border-b-2]="activeTab() === 'steps'"
           [class.border-accent-amber]="activeTab() === 'steps'"
+          [class.bg-surface-overlay/40]="activeTab() === 'steps'"
           [class.text-text-muted]="activeTab() !== 'steps'"
           [class.hover:text-text-secondary]="activeTab() !== 'steps'"
           [attr.aria-selected]="activeTab() === 'steps'"
@@ -407,7 +417,7 @@
       </nav>
 
       <!-- ─── Answer Tab ─── -->
-      <div [hidden]="activeTab() !== 'answer'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'answer'">
         <!-- Pipeline status message while waiting for answer -->
         @if (isPipelineMode() && !response() && isStreaming()) {
         <div class="mt-4">
@@ -420,9 +430,19 @@
                 <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
               </span>
               <span class="text-ui text-sm text-text-secondary">{{ pipelineStatusMessage() }}</span>
-              <span class="ml-auto text-ui text-xs tabular-nums text-text-tertiary"
-                >{{ elapsedSeconds() }}s</span
-              >
+              <span class="ml-auto flex items-center gap-3">
+                <span class="text-ui text-xs tabular-nums text-text-tertiary"
+                  >{{ elapsedSeconds() }}s</span
+                >
+                <button
+                  type="button"
+                  class="text-mono text-xs text-text-muted hover:text-trust-danger transition-colors cursor-pointer"
+                  (click)="cancel()"
+                  aria-label="Cancel query"
+                >
+                  Cancel
+                </button>
+              </span>
             </div>
           </div>
         </div>
@@ -434,9 +454,19 @@
           <div class="vp-card p-5 sm:p-8">
             <div class="flex items-center justify-between mb-4">
               <span class="text-ui text-sm text-text-secondary">Searching Hacker News...</span>
-              <span class="text-ui text-xs tabular-nums text-text-tertiary"
-                >{{ elapsedSeconds() }}s</span
-              >
+              <span class="flex items-center gap-3">
+                <span class="text-ui text-xs tabular-nums text-text-tertiary"
+                  >{{ elapsedSeconds() }}s</span
+                >
+                <button
+                  type="button"
+                  class="text-mono text-xs text-text-muted hover:text-trust-danger transition-colors cursor-pointer"
+                  (click)="cancel()"
+                  aria-label="Cancel query"
+                >
+                  Cancel
+                </button>
+              </span>
             </div>
             <div class="space-y-3 animate-pulse">
               <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
@@ -550,7 +580,7 @@
           }
 
           <!-- Answer prose + trust + meta in one card -->
-          <div class="vp-card overflow-hidden">
+          <div class="vp-card overflow-hidden min-w-0">
             <div class="p-4 sm:p-6 lg:p-8">
               <!-- Copy button -->
               <div class="flex justify-end mb-3">
@@ -610,7 +640,7 @@
       </div>
 
       <!-- ─── Sources Tab ─── -->
-      <div [hidden]="activeTab() !== 'sources'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'sources'">
         @if (response(); as res) { @if (res.sources.length > 0) {
         <div>
           <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
@@ -630,7 +660,7 @@
       </div>
 
       <!-- ─── Steps Tab ─── -->
-      <div [hidden]="activeTab() !== 'steps'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'steps'">
         @if (steps().length > 0 || isStreaming()) {
         <app-agent-steps
           [steps]="steps()"

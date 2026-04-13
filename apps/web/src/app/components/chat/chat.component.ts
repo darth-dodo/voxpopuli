@@ -10,6 +10,7 @@ import {
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
+import type { Subscription } from 'rxjs';
 import type { AgentResponse, AgentStep } from '@voxpopuli/shared-types';
 import { RagService, StreamEvent } from '../../services/rag.service';
 import { AgentStepsComponent } from '../agent-steps/agent-steps.component';
@@ -54,11 +55,17 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Bound reference to the visibility-change handler for cleanup. */
   private readonly onVisibilityChange = this.handleVisibilityChange.bind(this);
 
+  /** Active SSE subscription, kept so cancel() can tear it down. */
+  private streamSub: Subscription | null = null;
+
   /** Timer handle for the delayed retry after returning from background. */
   private backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Interval handle for the elapsed-time counter shown during streaming. */
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** Wall-clock timestamp when the current stream started. */
+  private streamStartTime = 0;
 
   /** Elapsed seconds since the current query was submitted. */
   readonly elapsedSeconds = signal(0);
@@ -89,9 +96,10 @@ export class ChatComponent implements OnInit, OnDestroy {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
-  /** Clean up the visibility-change listener and any pending timers. */
+  /** Clean up the visibility-change listener, active stream, and any pending timers. */
   ngOnDestroy(): void {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.streamSub?.unsubscribe();
     if (this.backgroundRetryTimer !== null) {
       clearTimeout(this.backgroundRetryTimer);
       this.backgroundRetryTimer = null;
@@ -105,7 +113,13 @@ export class ChatComponent implements OnInit, OnDestroy {
    * When the page is hidden during an active stream, a flag is set so that
    * on return we can distinguish a background-induced error from a normal one.
    * When the page becomes visible again and the stream has errored while
-   * backgrounded, an automatic retry is triggered after a short delay.
+   * backgrounded, we show a user-friendly message with the collected context
+   * preserved — the user can choose to retry manually.
+   *
+   * We deliberately do NOT auto-retry because:
+   * 1. Retrying calls `submit()` which wipes all collected pipeline events and steps.
+   * 2. Each retry starts a new server-side agent run, wasting resources.
+   * 3. The user may have useful partial results from before the interruption.
    */
   private handleVisibilityChange(): void {
     if (document.hidden) {
@@ -120,12 +134,8 @@ export class ChatComponent implements OnInit, OnDestroy {
 
         if (this.error() && !this.isStreaming()) {
           // The stream errored while we were away — show a friendlier message
-          // and schedule an automatic retry.
-          this.error.set('Connection interrupted. Retrying...');
-          this.backgroundRetryTimer = setTimeout(() => {
-            this.backgroundRetryTimer = null;
-            this.retry();
-          }, 1000);
+          // but preserve collected steps / pipeline events for the fallback UI.
+          this.error.set('Connection interrupted while in the background. Tap retry to try again.');
         }
       }
     }
@@ -280,7 +290,8 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.activeTab.set('steps');
     this.startElapsedTimer();
 
-    this.ragService.stream(q, this.selectedProvider(), true).subscribe({
+    this.streamSub?.unsubscribe();
+    this.streamSub = this.ragService.stream(q, this.selectedProvider(), true).subscribe({
       next: (event: StreamEvent) => {
         switch (event.type) {
           case 'thought':
@@ -375,12 +386,18 @@ export class ChatComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Start a 1-second interval that increments the elapsed counter. */
+  /**
+   * Start a 1-second interval that computes elapsed time from a wall-clock
+   * timestamp. Unlike an increment-based counter this is resilient to mobile
+   * browsers throttling or pausing `setInterval` when backgrounded — the
+   * displayed value jumps to the correct elapsed on resume.
+   */
   private startElapsedTimer(): void {
     this.stopElapsedTimer();
+    this.streamStartTime = Date.now();
     this.elapsedSeconds.set(0);
     this.elapsedTimer = setInterval(() => {
-      this.elapsedSeconds.update((s) => s + 1);
+      this.elapsedSeconds.set(Math.floor((Date.now() - this.streamStartTime) / 1000));
     }, 1000);
   }
 
@@ -392,6 +409,37 @@ export class ChatComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Cancel the active SSE stream. Collected steps and pipeline events are
+   * preserved so the fallback UI can display what was gathered before cancel.
+   * Any in-progress pipeline stages are marked as 'error' so their icons
+   * stop pulsing.
+   */
+  cancel(): void {
+    if (this.streamSub) {
+      this.streamSub.unsubscribe();
+      this.streamSub = null;
+    }
+    this.isStreaming.set(false);
+    this.loading.set(false);
+    this.stopElapsedTimer();
+
+    // Mark in-progress pipeline stages as cancelled so their icons reflect the stop.
+    // Use the overall stream elapsed as a reasonable approximation for stage duration.
+    const elapsedMs = Date.now() - this.streamStartTime;
+    this.pipelineEvents.update((events) =>
+      events.map((e) =>
+        e.status === 'started'
+          ? { ...e, status: 'error', detail: 'Cancelled', elapsed: elapsedMs }
+          : e,
+      ),
+    );
+
+    // Surface a cancellation notice — not a hard error, so the user sees collected context.
+    this.error.set('Query cancelled.');
+    this.activeTab.set('answer');
+  }
+
   /** Retry the current query. */
   retry(): void {
     this.submit();
@@ -399,6 +447,8 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   /** Reset to the landing page state. */
   goHome(): void {
+    this.streamSub?.unsubscribe();
+    this.streamSub = null;
     this.query.set('');
     this.response.set(null);
     this.error.set(null);
