@@ -154,7 +154,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   readonly response = signal<AgentResponse | null>(null);
 
   /** Currently selected LLM provider. */
-  readonly selectedProvider = model('groq');
+  readonly selectedProvider = model('mistral');
 
   /** Agent reasoning steps accumulated during streaming. */
   readonly steps = signal<AgentStep[]>([]);
