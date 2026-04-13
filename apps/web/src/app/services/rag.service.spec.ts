@@ -69,6 +69,10 @@ describe('RagService', () => {
     expect(service.error()).toBeNull();
   });
 
+  it('should initialise with connectionState=idle', () => {
+    expect(service.connectionState()).toBe('idle');
+  });
+
   // -----------------------------------------------------------------------
   // query()
   // -----------------------------------------------------------------------
@@ -219,15 +223,57 @@ describe('RagService', () => {
       }
     }
 
+    /** Stub for document.hidden to simulate visibility changes. */
+    let documentHidden = false;
+    /** Captured visibilitychange listeners on document. */
+    let visibilityListeners: Array<() => void> = [];
+
     beforeEach(() => {
       originalEventSource = globalThis.EventSource;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       globalThis.EventSource = MockEventSource as any;
+
+      // Mock document.hidden
+      documentHidden = false;
+      Object.defineProperty(document, 'hidden', {
+        get: () => documentHidden,
+        configurable: true,
+      });
+
+      // Capture visibilitychange event listeners
+      visibilityListeners = [];
+      const originalAddEventListener = document.addEventListener.bind(document);
+      const originalRemoveEventListener = document.removeEventListener.bind(document);
+      vi.spyOn(document, 'addEventListener').mockImplementation(
+        (type: string, listener: EventListenerOrEventListenerObject) => {
+          if (type === 'visibilitychange') {
+            visibilityListeners.push(listener as () => void);
+          }
+          originalAddEventListener(type, listener);
+        },
+      );
+      vi.spyOn(document, 'removeEventListener').mockImplementation(
+        (type: string, listener: EventListenerOrEventListenerObject) => {
+          if (type === 'visibilitychange') {
+            visibilityListeners = visibilityListeners.filter((l) => l !== listener);
+          }
+          originalRemoveEventListener(type, listener);
+        },
+      );
     });
 
     afterEach(() => {
       globalThis.EventSource = originalEventSource;
+      vi.restoreAllMocks();
     });
+
+    /** Simulate a visibility change to hidden or visible. */
+    function simulateVisibilityChange(hidden: boolean): void {
+      documentHidden = hidden;
+      for (const listener of visibilityListeners) {
+        listener();
+      }
+    }
 
     it('should construct EventSource with encoded query', () => {
       service.stream('hello world').subscribe();
@@ -341,15 +387,15 @@ describe('RagService', () => {
         error: () => (errorThrown = true),
       });
 
-      // Retry 1 -- CLOSED triggers manual reconnect with 1s backoff
+      // Retry 1 -- CLOSED triggers manual reconnect with exponential backoff
       mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(false); // still retrying
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(2000); // 1s base + up to 500ms jitter
 
       // Retry 2
       mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(false);
-      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(3000); // 2s base + up to 500ms jitter
 
       // Retry 3 -- exhausted (MAX_SSE_RETRIES = 2), should error
       mockEventSource.simulateError(MockEventSource.CLOSED);
@@ -560,6 +606,263 @@ describe('RagService', () => {
         detail: '',
         elapsed: 0,
       });
+    });
+
+    // -------------------------------------------------------------------
+    // Ping event handling
+    // -------------------------------------------------------------------
+
+    it('should handle ping events by resetting stall timer without emitting', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      // Simulate a ping event
+      const listener = mockEventSource.listeners.get('ping');
+      expect(listener).toBeDefined();
+      if (listener) {
+        listener(new MessageEvent('ping', { data: JSON.stringify({}) }));
+      }
+
+      // No events should be emitted to the subscriber
+      expect(events).toHaveLength(0);
+    });
+
+    // -------------------------------------------------------------------
+    // Connection state lifecycle
+    // -------------------------------------------------------------------
+
+    it('should set connectionState through lifecycle', () => {
+      // Before stream: idle
+      expect(service.connectionState()).toBe('idle');
+
+      const events: StreamEvent[] = [];
+      let completed = false;
+      const sub = service.stream('test').subscribe({
+        next: (e) => events.push(e),
+        complete: () => (completed = true),
+      });
+
+      // After stream() called: connecting
+      expect(service.connectionState()).toBe('connecting');
+
+      // After first event: open
+      mockEventSource.simulateEvent('thought', { content: 'Thinking', timestamp: 1000 });
+      expect(service.connectionState()).toBe('open');
+
+      // After answer: closed
+      mockEventSource.simulateEvent('answer', stubAgentResponse());
+      expect(service.connectionState()).toBe('closed');
+      expect(completed).toBe(true);
+
+      // Terminal states are preserved after teardown (unsubscribe doesn't reset)
+      sub.unsubscribe();
+      expect(service.connectionState()).toBe('closed');
+    });
+
+    it('should set connectionState to reconnecting on retry', () => {
+      vi.useFakeTimers();
+
+      service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+
+      // First event to get to 'open'
+      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
+      expect(service.connectionState()).toBe('open');
+
+      // Connection error -> reconnecting
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      expect(service.connectionState()).toBe('reconnecting');
+
+      vi.useRealTimers();
+    });
+
+    it('should set connectionState to failed after max retries', () => {
+      vi.useFakeTimers();
+
+      service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+
+      // Exhaust retries
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(2000);
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(3000);
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+
+      expect(service.connectionState()).toBe('failed');
+
+      vi.useRealTimers();
+    });
+
+    // -------------------------------------------------------------------
+    // Exponential backoff with jitter
+    // -------------------------------------------------------------------
+
+    it('should use exponential backoff with jitter on retry', () => {
+      vi.useFakeTimers();
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 250ms
+
+      service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+
+      // First retry: base = min(1000 * 2^0, 10000) = 1000, jitter = 250 → 1250ms
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      expect(service.connectionState()).toBe('reconnecting');
+
+      // Should NOT reconnect yet at 1249ms
+      vi.advanceTimersByTime(1249);
+      expect(mockEventSource.closed).toBe(true); // still the old closed one
+
+      // At 1250ms it should reconnect (new EventSource created)
+      vi.advanceTimersByTime(1);
+      // The new MockEventSource is assigned to mockEventSource
+      expect(mockEventSource.closed).toBe(false); // new EventSource is open
+
+      // Second retry: base = min(1000 * 2^1, 10000) = 2000, jitter = 250 → 2250ms
+      mockEventSource.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(2249);
+      expect(mockEventSource.closed).toBe(true); // still closed
+
+      vi.advanceTimersByTime(1);
+      expect(mockEventSource.closed).toBe(false); // reconnected
+
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    });
+
+    // -------------------------------------------------------------------
+    // Stall timeout reduction
+    // -------------------------------------------------------------------
+
+    it('should use 200s stall timeout', () => {
+      vi.useFakeTimers();
+      let errorThrown = false;
+      let errorMessage = '';
+
+      // Ensure page is visible for stall detection
+      documentHidden = false;
+
+      service.stream('test').subscribe({
+        error: (err: Error) => {
+          errorThrown = true;
+          errorMessage = err.message;
+        },
+      });
+
+      // Should NOT stall at 120s (old timeout)
+      vi.advanceTimersByTime(120_000);
+      expect(errorThrown).toBe(false);
+
+      // Should stall after 200s
+      vi.advanceTimersByTime(85_000); // total 205s
+      expect(errorThrown).toBe(true);
+      expect(errorMessage).toContain('stalled');
+
+      vi.useRealTimers();
+    });
+
+    // -------------------------------------------------------------------
+    // Visibility-aware lifecycle
+    // -------------------------------------------------------------------
+
+    it('should set backgrounded state when page is hidden during open connection', () => {
+      service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+
+      // Get to open state
+      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
+      expect(service.connectionState()).toBe('open');
+
+      // Background the page
+      simulateVisibilityChange(true);
+
+      expect(service.connectionState()).toBe('backgrounded');
+      expect(mockEventSource.closed).toBe(true);
+    });
+
+    it('should reconnect when foregrounded after short background', () => {
+      service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+
+      // Get to open state
+      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
+      expect(service.connectionState()).toBe('open');
+
+      const firstEs = mockEventSource;
+
+      // Background the page
+      simulateVisibilityChange(true);
+      expect(service.connectionState()).toBe('backgrounded');
+
+      // Foreground quickly (within stall timeout)
+      simulateVisibilityChange(false);
+      expect(service.connectionState()).toBe('reconnecting');
+
+      // A new EventSource should have been created
+      expect(mockEventSource).not.toBe(firstEs);
+      expect(mockEventSource.closed).toBe(false);
+    });
+
+    it('should handle stall on foreground after long background', () => {
+      vi.useFakeTimers();
+      let errorThrown = false;
+
+      service.stream('test').subscribe({ error: () => (errorThrown = true) });
+
+      // Get to open state
+      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
+      expect(service.connectionState()).toBe('open');
+
+      // Background the page
+      simulateVisibilityChange(true);
+      expect(service.connectionState()).toBe('backgrounded');
+
+      // Wait longer than stall timeout (200s)
+      vi.advanceTimersByTime(205_000);
+
+      // Foreground — should detect stall immediately
+      simulateVisibilityChange(false);
+
+      expect(service.connectionState()).toBe('stalled');
+      expect(errorThrown).toBe(true);
+
+      vi.useRealTimers();
+    });
+
+    it('should remove visibility listener on unsubscribe', () => {
+      const removeSpy = vi.spyOn(document, 'removeEventListener');
+
+      const sub = service.stream('test').subscribe({
+        error: () => {
+          /* noop */
+        },
+      });
+      sub.unsubscribe();
+
+      expect(removeSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
+    });
+
+    it('should set connectionState to idle on unsubscribe', () => {
+      const sub = service.stream('test').subscribe();
+      expect(service.connectionState()).toBe('connecting');
+
+      sub.unsubscribe();
+      expect(service.connectionState()).toBe('idle');
     });
   });
 });
