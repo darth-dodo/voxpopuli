@@ -39,8 +39,8 @@ apps/api/src/          # NestJS backend (agent, cache, chunker, hn, llm, rag, tt
   hn/                  #   HN API client (stories, comments, search, retry with backoff)
 apps/web/src/app/      # Angular frontend (Data Noir Editorial design system)
   components/           #   UI components
-    agent-steps/        #     Agent reasoning timeline (compact merged rows)
-    chat/               #     Main chat page (landing + results + streaming)
+    agent-steps/        #     Agent reasoning timeline (compact merged rows, stage timer cap)
+    chat/               #     Main chat page (landing + results + streaming + cancel + stall recovery)
     meta-bar/           #     Response metadata display
     provider-selector/  #     LLM provider chip selector
     source-card/        #     HN story source card
@@ -111,7 +111,10 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 - **Tailwind CSS v4** for styling. CSS-first config via `@theme` block in `styles.css` (no `tailwind.config.js`).
 - **Design system: "Data Noir Editorial"** with light theme support. Light/dark theme via CSS variable overrides (`.light` class on `<html>`).
 - **`ngx-markdown`** for answer rendering (Markdown-to-HTML in the chat component).
-- SSE via native `EventSource`, not libraries.
+- SSE via native `EventSource`, not libraries. RagService includes stall detection (120s watchdog), retry logic (2 attempts with backoff), and null-data threshold handling.
+- **Streaming UX**: Sticky header with backdrop-blur on the results page. Submitted query shown below header during results. Cancel button available on both pipeline and legacy streaming states. Wall-clock based elapsed timer resilient to background throttling.
+- **Background tab handling**: When the page is backgrounded during a stream, the component preserves collected context (steps, pipeline events) and does not auto-retry on return. The user can manually retry if the connection was lost.
+- **Homepage design**: `vp-noise` texture, radial amber gradient on hero, masthead rule beneath title, editorial timeline layout (replacing "How It Works"), example preview card matching actual answer view with trust indicators, footer with "Try it now" scroll CTA and v0.8 version badge, example cards in 3x2 grid with numbered labels.
 - Proxy config at `apps/web/proxy.conf.json` for dev server to API forwarding.
 - Angular 21's Vite-based dev server requires `/api/**` glob pattern for proxy routes.
 
@@ -124,29 +127,31 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 
 ## Key Constraints
 
-| Constraint            | Value                                                          |
-| --------------------- | -------------------------------------------------------------- |
-| Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit)        |
-| Agent timeout         | 180s                                                           |
-| Concurrent agents     | 5 (semaphore)                                                  |
-| Comment cap per story | 30                                                             |
-| Query max length      | 500 chars                                                      |
-| Rate limit (global)   | 60 req/min                                                     |
-| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                                    |
-| TTS max chars         | 2500                                                           |
-| Eval query count      | 27 (20 general + 7 trust)                                      |
-| Eval pass threshold   | 0.6 weighted score                                             |
-| Eval judge provider   | Mistral (configurable via EVAL_JUDGE_PROVIDER)                 |
-| Eval score weights    | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10% |
-| Eval concurrency      | 3 default, 5 max                                               |
-| Eval timeout          | 300s default per query                                         |
-| Pipeline feature flag | `useMultiAgent` query param on SSE endpoint, default `false`   |
-| Pipeline stages       | Retriever (ReAct+compact) → Synthesizer → Writer               |
-| Pipeline timeout      | 30s default (configurable via PipelineConfig)                  |
+| Constraint            | Value                                                                                      |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| Max agent steps       | 7 (hard exit after 7 actions, not just recursion limit)                                    |
+| Agent timeout         | 180s                                                                                       |
+| Concurrent agents     | 5 (semaphore)                                                                              |
+| Comment cap per story | 30                                                                                         |
+| Query max length      | 500 chars                                                                                  |
+| Rate limit (global)   | 60 req/min                                                                                 |
+| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                                                                |
+| TTS max chars         | 2500                                                                                       |
+| Eval query count      | 27 (20 general + 7 trust)                                                                  |
+| Eval pass threshold   | 0.6 weighted score                                                                         |
+| Eval judge provider   | Mistral (configurable via EVAL_JUDGE_PROVIDER)                                             |
+| Eval score weights    | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10%                             |
+| Eval concurrency      | 3 default, 5 max                                                                           |
+| Eval timeout          | 300s default per query                                                                     |
+| Pipeline feature flag | `useMultiAgent` query param on SSE endpoint, default `true` (frontend always sends `true`) |
+| Pipeline stages       | Retriever (ReAct+compact) → Synthesizer → Writer                                           |
+| Pipeline timeout      | 30s default (configurable via PipelineConfig)                                              |
+| Stage timer cap       | 180s (MAX_STAGE_ELAPSED_MS in AgentStepsComponent)                                         |
+| SSE stall timeout     | 120s watchdog in RagService (checks every 5s, only when page visible)                      |
 
 ## Environment Variables
 
-The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only that provider's API key is required. See `.env.example` for all keys.
+The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude), defaulting to `mistral`. Only that provider's API key is required. The frontend also defaults to Mistral via the `selectedProvider` model signal. See `.env.example` for all keys.
 
 ## Common Pitfalls
 
@@ -171,6 +176,8 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude). Only th
 19. **Agent token tracking uses LangChain `usage_metadata`.** If tokens show as 0, the provider may not report them.
 20. **Don't mix pipeline and legacy event types.** The frontend detects pipeline mode from `pipeline` SSE events. Legacy `thought`/`action`/`observation` events come from the Retriever's inner ReAct loop within the pipeline — they coexist, not replace.
 21. **LangGraph Annotation types must match node return types.** If you change what a node returns, update the StateGraph annotation. Zod 4's `.default()` on nested objects needs a factory function, not `{}`.
+22. **SSE stall detection in RagService.** A 120s watchdog (`STALL_TIMEOUT_MS`) fires `handleStall()` if no events arrive while the page is visible. Don't remove the `lastEventTime = Date.now()` bump in the event handler — it resets the watchdog on every received event.
+23. **Pipeline stage timer cap.** AgentStepsComponent caps live elapsed at 180s (`MAX_STAGE_ELAPSED_MS`) to prevent runaway counters on stalled connections. The timer stops updating for a stage once it hits the cap.
 
 ## Architecture Decision Records
 
