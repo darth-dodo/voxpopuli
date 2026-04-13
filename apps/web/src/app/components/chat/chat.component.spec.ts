@@ -186,7 +186,7 @@ describe('ChatComponent', () => {
   it('should call ragService.stream with the trimmed query and selected provider', () => {
     component.query.set('  trending topics  ');
     component.submit();
-    expect(ragServiceStub.stream).toHaveBeenCalledWith('trending topics', 'groq', true);
+    expect(ragServiceStub.stream).toHaveBeenCalledWith('trending topics', 'mistral', true);
   });
 
   it('should submit on Enter keydown', () => {
@@ -216,8 +216,8 @@ describe('ChatComponent', () => {
     expect(component.error()).toBeNull();
   });
 
-  it('should initialize selectedProvider to groq', () => {
-    expect(component.selectedProvider()).toBe('groq');
+  it('should initialize selectedProvider to mistral', () => {
+    expect(component.selectedProvider()).toBe('mistral');
   });
 
   // ---------------------------------------------------------------------------
