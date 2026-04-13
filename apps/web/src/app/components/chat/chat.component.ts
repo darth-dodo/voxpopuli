@@ -58,9 +58,6 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Active SSE subscription, kept so cancel() can tear it down. */
   private streamSub: Subscription | null = null;
 
-  /** Timer handle for the delayed retry after returning from background. */
-  private backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
-
   /** Interval handle for the elapsed-time counter shown during streaming. */
   private elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -100,10 +97,6 @@ export class ChatComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.streamSub?.unsubscribe();
-    if (this.backgroundRetryTimer !== null) {
-      clearTimeout(this.backgroundRetryTimer);
-      this.backgroundRetryTimer = null;
-    }
     this.stopElapsedTimer();
   }
 
@@ -128,15 +121,16 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.wasBackgrounded.set(true);
       }
     } else {
-      // Page is returning to the foreground
-      if (this.wasBackgrounded()) {
+      // Page returning to foreground
+      if (this.wasBackgrounded() && !this.isStreaming()) {
         this.wasBackgrounded.set(false);
-
-        if (this.error() && !this.isStreaming()) {
-          // The stream errored while we were away — show a friendlier message
-          // but preserve collected steps / pipeline events for the fallback UI.
-          this.error.set('Connection interrupted while in the background. Tap retry to try again.');
+        // RagService handles reconnection — check if it failed
+        const state = this.ragService.connectionState();
+        if (state === 'failed' || state === 'stalled') {
+          this.error.set('Connection lost while in the background. Tap retry to try again.');
+          this.stopActiveStages('Connection lost');
         }
+        // If state is 'reconnecting' or 'open', the stream is still alive — no action needed
       }
     }
   }
@@ -175,6 +169,23 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   /** Whether the answer was recently copied to clipboard. */
   readonly copied = signal(false);
+
+  /** Human-readable connection status for UI display during streaming. */
+  readonly connectionStatus = computed(() => {
+    const state = this.ragService.connectionState();
+    switch (state) {
+      case 'reconnecting':
+        return 'Reconnecting...';
+      case 'backgrounded':
+        return 'Paused (app in background)';
+      case 'stalled':
+        return 'Connection stalled';
+      case 'failed':
+        return 'Connection failed';
+      default:
+        return null;
+    }
+  });
 
   /** Human-readable status message derived from the latest pipeline event. */
   readonly pipelineStatusMessage = computed(() => {
@@ -281,6 +292,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.isStreaming.set(true);
+    this.wasBackgrounded.set(false);
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
@@ -354,7 +366,15 @@ export class ChatComponent implements OnInit, OnDestroy {
       error: (err: unknown) => {
         const message =
           err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-        this.error.set(message);
+
+        // If we were backgrounded and the connection was lost, show a friendlier message
+        if (this.wasBackgrounded()) {
+          this.wasBackgrounded.set(false);
+          this.error.set('Connection interrupted while in the background. Tap retry to try again.');
+        } else {
+          this.error.set(message);
+        }
+
         this.isStreaming.set(false);
         this.loading.set(false);
         this.stopElapsedTimer();

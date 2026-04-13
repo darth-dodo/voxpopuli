@@ -1,10 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { of, NEVER, throwError } from 'rxjs';
+import { signal } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { provideMarkdown } from 'ngx-markdown';
 import type { AgentResponse } from '@voxpopuli/shared-types';
-import type { StreamEvent } from '../../services/rag.service';
+import type { StreamEvent, ConnectionState } from '../../services/rag.service';
 import { ChatComponent } from './chat.component';
 import { RagService } from '../../services/rag.service';
 import { AgentStepsComponent } from '../agent-steps/agent-steps.component';
@@ -60,12 +61,17 @@ function mockAnswerStream(response?: AgentResponse) {
 describe('ChatComponent', () => {
   let component: ChatComponent;
   let fixture: ComponentFixture<ChatComponent>;
-  let ragServiceStub: { stream: ReturnType<typeof vi.fn>; query: ReturnType<typeof vi.fn> };
+  let ragServiceStub: {
+    stream: ReturnType<typeof vi.fn>;
+    query: ReturnType<typeof vi.fn>;
+    connectionState: ReturnType<typeof signal<ConnectionState>>;
+  };
 
   beforeEach(async () => {
     ragServiceStub = {
       stream: vi.fn().mockReturnValue(mockAnswerStream()),
       query: vi.fn().mockReturnValue(of(mockAgentResponse())),
+      connectionState: signal<ConnectionState>('idle'),
     };
 
     await TestBed.configureTestingModule({
@@ -305,13 +311,15 @@ describe('ChatComponent', () => {
       component.wasBackgrounded.set(true);
       component.error.set('Connection lost');
       component.isStreaming.set(false);
+      // Simulate RagService reporting a failed connection
+      ragServiceStub.connectionState.set('failed');
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
       // Should show a user-friendly message but NOT auto-retry (preserves collected state)
       expect(component.error()).toBe(
-        'Connection interrupted while in the background. Tap retry to try again.',
+        'Connection lost while in the background. Tap retry to try again.',
       );
       expect(component.wasBackgrounded()).toBe(false);
       expect(ragServiceStub.stream).not.toHaveBeenCalled();
@@ -319,8 +327,10 @@ describe('ChatComponent', () => {
 
     it('should not retry when returning from background without error', () => {
       component.wasBackgrounded.set(true);
-      component.isStreaming.set(true);
+      component.isStreaming.set(false);
       component.error.set(null);
+      // Connection is still open — no error state
+      ragServiceStub.connectionState.set('open');
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));

@@ -23,8 +23,8 @@ import { RagQueryDto } from './dto/rag-query.dto';
 /** Cache TTL for query results (10 minutes). */
 const CACHE_TTL = 600;
 
-/** SSE heartbeat interval in milliseconds (15 seconds). */
-const HEARTBEAT_INTERVAL_MS = 15_000;
+/** SSE heartbeat interval in milliseconds (10 seconds). */
+const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /** SSE retry directive in milliseconds (5 seconds). */
 const SSE_RETRY_MS = 5_000;
@@ -146,8 +146,9 @@ export class RagController {
    * Legacy streaming path — delegates to AgentService.runStream().
    *
    * Emits SSE events with incrementing `id` fields for reconnection support,
-   * a `retry` directive on the first event, and periodic heartbeat comments
-   * to keep the connection alive on mobile browsers.
+   * a `retry` directive on the first event, and periodic `ping` events
+   * to keep the connection alive on mobile browsers and enable client-side
+   * stall detection.
    */
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
@@ -156,7 +157,7 @@ export class RagController {
 
       const heartbeatInterval = setInterval(() => {
         if (!cancelled) {
-          subscriber.next({ type: 'heartbeat', data: '' } as MessageEvent);
+          subscriber.next({ type: 'ping', data: '', id: String(++eventId) } as MessageEvent);
         }
       }, HEARTBEAT_INTERVAL_MS);
 
@@ -243,8 +244,9 @@ export class RagController {
    * - `kind: 'complete'` → SSE type `answer`
    *
    * Emits SSE events with incrementing `id` fields for reconnection support,
-   * a `retry` directive on the first event, and periodic heartbeat comments
-   * to keep the connection alive on mobile browsers.
+   * a `retry` directive on the first event, and periodic `ping` events
+   * to keep the connection alive on mobile browsers and enable client-side
+   * stall detection.
    */
   private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
@@ -253,7 +255,7 @@ export class RagController {
 
       const heartbeatInterval = setInterval(() => {
         if (!cancelled) {
-          subscriber.next({ type: 'heartbeat', data: '' } as MessageEvent);
+          subscriber.next({ type: 'ping', data: '', id: String(++eventId) } as MessageEvent);
         }
       }, HEARTBEAT_INTERVAL_MS);
 
