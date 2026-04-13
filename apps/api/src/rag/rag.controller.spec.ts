@@ -265,4 +265,263 @@ describe('RagController', () => {
       expect((err as HttpException).message).toContain('Rate limit exceeded');
     }
   });
+
+  // -------------------------------------------------------------------------
+  // 8. POST /query with useMultiAgent should route through orchestrator
+  // -------------------------------------------------------------------------
+  it('POST /query with useMultiAgent should route through orchestrator pipeline', async () => {
+    const expected = fakeAgentResponse('Pipeline answer');
+
+    cacheService.getOrSet.mockImplementation(
+      (_key: string, factory: () => Promise<AgentResponse>) => factory(),
+    );
+
+    // Mock the orchestrator to yield a complete event
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'complete', response: expected };
+      })(),
+    );
+
+    const result = await controller.query({
+      query: 'Pipeline test',
+      useMultiAgent: true,
+    });
+
+    expect(result).toEqual(expected);
+    expect(agentService.run).not.toHaveBeenCalled();
+    expect(orchestratorService.runWithFallback).toHaveBeenCalled();
+    expect(cacheService.getOrSet).toHaveBeenCalledWith(
+      'rag:query:Pipeline test:true',
+      expect.any(Function),
+      600,
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. POST /query with provider should pass provider to agent.run
+  // -------------------------------------------------------------------------
+  it('POST /query with provider should pass provider to agent.run', async () => {
+    const expected = fakeAgentResponse();
+
+    cacheService.getOrSet.mockImplementation(
+      (_key: string, factory: () => Promise<AgentResponse>) => factory(),
+    );
+    agentService.run.mockResolvedValue(expected);
+
+    await controller.query({ query: 'test', provider: 'mistral' });
+
+    expect(agentService.run).toHaveBeenCalledWith('test', {
+      maxSteps: undefined,
+      provider: 'mistral',
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. GET /stream with useMultiAgent should emit pipeline events
+  // -------------------------------------------------------------------------
+  it('GET /stream with useMultiAgent should emit pipeline/step/token/answer events', async () => {
+    const response = fakeAgentResponse('Multi-agent answer');
+    const step = fakeStep('thought', 'Pipeline thinking');
+
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'pipeline', event: { stage: 'retriever', status: 'running' } };
+        yield { kind: 'step', step };
+        yield { kind: 'token', content: 'partial ' };
+        yield { kind: 'complete', response };
+      })(),
+    );
+
+    const observable = controller.stream('multi-agent query', undefined, 'true');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(events).toHaveLength(4);
+
+    // Pipeline event
+    expect(events[0].type).toBe('pipeline');
+    expect(JSON.parse(events[0].data as string)).toEqual({
+      stage: 'retriever',
+      status: 'running',
+    });
+
+    // Step event
+    expect(events[1].type).toBe('thought');
+    expect(JSON.parse(events[1].data as string).content).toBe('Pipeline thinking');
+
+    // Token event
+    expect(events[2].type).toBe('token');
+    expect(JSON.parse(events[2].data as string).content).toBe('partial ');
+
+    // Answer event
+    expect(events[3].type).toBe('answer');
+    const answerData = JSON.parse(events[3].data as string);
+    expect(answerData.answer).toBe('Multi-agent answer');
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. GET /stream multi-agent error handling
+  // -------------------------------------------------------------------------
+  it('GET /stream multi-agent should emit error event on pipeline failure', async () => {
+    orchestratorService.runWithFallback.mockReturnValue(
+      // eslint-disable-next-line require-yield
+      (async function* () {
+        throw new Error('Pipeline stage failed');
+      })(),
+    );
+
+    const observable = controller.stream('failing pipeline', undefined, 'true');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('error');
+    expect(JSON.parse(events[0].data as string).message).toBe('Pipeline stage failed');
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. SSE events should have incrementing IDs
+  // -------------------------------------------------------------------------
+  it('SSE events should have incrementing IDs', async () => {
+    const response = fakeAgentResponse();
+
+    agentService.runStream.mockReturnValue(
+      mockRunStream([
+        { kind: 'step', step: response.steps[0] },
+        { kind: 'step', step: response.steps[1] },
+        { kind: 'complete', response },
+      ]),
+    );
+
+    const observable = controller.stream('test query');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(events[0].id).toBe('1');
+    expect(events[1].id).toBe('2');
+    expect(events[2].id).toBe('3');
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. SSE first event should include retry directive
+  // -------------------------------------------------------------------------
+  it('SSE first event should include retry directive', async () => {
+    const response = fakeAgentResponse();
+
+    agentService.runStream.mockReturnValue(
+      mockRunStream([
+        { kind: 'step', step: response.steps[0] },
+        { kind: 'complete', response },
+      ]),
+    );
+
+    const observable = controller.stream('test query');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    // First event should have retry set to 5000ms
+    expect((events[0] as unknown as Record<string, unknown>).retry).toBe(5_000);
+    // Second event should NOT have retry
+    expect((events[1] as unknown as Record<string, unknown>).retry).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // 14. Pipeline completing without response should throw 500
+  // -------------------------------------------------------------------------
+  it('POST /query with useMultiAgent should throw 500 when pipeline yields no complete event', async () => {
+    cacheService.getOrSet.mockImplementation(
+      (_key: string, factory: () => Promise<AgentResponse>) => factory(),
+    );
+
+    // Mock orchestrator that yields pipeline events but never a complete event
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'pipeline', event: { stage: 'retriever', status: 'running' } };
+        yield { kind: 'pipeline', event: { stage: 'retriever', status: 'done' } };
+        // No 'complete' event
+      })(),
+    );
+
+    await expect(controller.query({ query: 'no-response', useMultiAgent: true })).rejects.toThrow(
+      HttpException,
+    );
+
+    try {
+      await controller.query({ query: 'no-response-2', useMultiAgent: true });
+    } catch (err) {
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 15. POST /query useMultiAgent with provider should pass provider to pipeline
+  // -------------------------------------------------------------------------
+  it('POST /query useMultiAgent with provider should configure pipeline providerMap', async () => {
+    const expected = fakeAgentResponse();
+
+    cacheService.getOrSet.mockImplementation(
+      (_key: string, factory: () => Promise<AgentResponse>) => factory(),
+    );
+
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'complete', response: expected };
+      })(),
+    );
+
+    await controller.query({
+      query: 'provider test',
+      useMultiAgent: true,
+      provider: 'claude',
+    });
+
+    // Verify that orchestrator was called with a config containing providerMap
+    expect(orchestratorService.runWithFallback).toHaveBeenCalledWith(
+      'provider test',
+      expect.objectContaining({
+        providerMap: expect.objectContaining({
+          retriever: 'claude',
+          synthesizer: 'claude',
+          writer: 'claude',
+        }),
+      }),
+    );
+  });
+
+  // -------------------------------------------------------------------------
+  // 16. Multi-agent SSE events should have incrementing IDs
+  // -------------------------------------------------------------------------
+  it('multi-agent SSE events should have incrementing IDs', async () => {
+    const response = fakeAgentResponse();
+
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'pipeline', event: { stage: 'retriever', status: 'running' } };
+        yield { kind: 'complete', response };
+      })(),
+    );
+
+    const observable = controller.stream('test', undefined, 'true');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(events[0].id).toBe('1');
+    expect(events[1].id).toBe('2');
+  });
+
+  // -------------------------------------------------------------------------
+  // 17. Multi-agent SSE first event should include retry directive
+  // -------------------------------------------------------------------------
+  it('multi-agent SSE first event should include retry directive', async () => {
+    const response = fakeAgentResponse();
+
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'pipeline', event: { stage: 'retriever', status: 'running' } };
+        yield { kind: 'complete', response };
+      })(),
+    );
+
+    const observable = controller.stream('test', undefined, 'true');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect((events[0] as unknown as Record<string, unknown>).retry).toBe(5_000);
+    expect((events[1] as unknown as Record<string, unknown>).retry).toBeUndefined();
+  });
 });

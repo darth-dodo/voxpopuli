@@ -149,17 +149,19 @@ voxpopuli/
 |   +-- api/src/
 |   |   +-- app/           # AppModule, main.ts
 |   |   +-- agent/         # Multi-agent pipeline
-|   |   |   +-- orchestrator.service.ts  # Pipeline coordination
-|   |   |   +-- retriever.agent.ts       # ReAct search + compaction
-|   |   |   +-- synthesizer.agent.ts     # Single-pass analysis
-|   |   |   +-- writer.agent.ts          # Single-pass prose
+|   |   |   +-- orchestrator.service.ts  # LangGraph pipeline coordination
+|   |   |   +-- pipeline-graph.ts        # LangGraph StateGraph definition + retry wrappers
+|   |   |   +-- nodes/                   # Pipeline node implementations
+|   |   |   |   +-- retriever.node.ts    # ReAct search + compaction
+|   |   |   |   +-- synthesizer.node.ts  # Single-pass analysis
+|   |   |   |   +-- writer.node.ts       # Single-pass prose
 |   |   |   +-- agent.service.ts         # Legacy ReAct (fallback)
 |   |   |   +-- tools.ts, system-prompt.ts
 |   |   |   +-- prompts/                 # Per-agent system prompts
 |   |   +-- cache/         # CacheService (node-cache wrapper)
 |   |   +-- chunker/       # ChunkerService (HTML cleanup, token budgeting)
 |   |   +-- hn/            # HnService (Algolia + Firebase + caching)
-|   |   +-- llm/           # LlmService, LlmProviderInterface, providers/
+|   |   +-- llm/           # LlmService, LlmProviderInterface, providers/, invoke-with-retry.ts
 |   |   +-- rag/           # RagController (POST + SSE)
 |   |   +-- tts/           # TtsService, TtsController, podcast-rewrite prompt
 |   +-- web/src/app/
@@ -291,31 +293,39 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 
 #### Multi-Agent Pipeline (v3.0)
 
-| Component             | Pattern                    | Description                                                     |
-| --------------------- | -------------------------- | --------------------------------------------------------------- |
-| `OrchestratorService` | Pipeline coordinator       | Runs Retriever → Synthesizer → Writer, emits SSE PipelineEvents |
-| `RetrieverAgent`      | ReAct loop + compaction    | Searches HN, collects data, compacts into `EvidenceBundle`      |
-| `SynthesizerAgent`    | Single-pass structured I/O | Extracts insights from bundle, produces `AnalysisResult`        |
-| `WriterAgent`         | Single-pass structured I/O | Composes prose from analysis, produces `AgentResponse`          |
+| Component             | Pattern                    | Description                                                                              |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| `OrchestratorService` | Pipeline coordinator       | Runs Retriever → Synthesizer → Writer via LangGraph StateGraph, emits SSE PipelineEvents |
+| `RetrieverAgent`      | ReAct loop + compaction    | Searches HN, collects data, compacts into `EvidenceBundle`                               |
+| `SynthesizerAgent`    | Single-pass structured I/O | Extracts insights from bundle, produces `AnalysisResult`                                 |
+| `WriterAgent`         | Single-pass structured I/O | Composes prose from analysis, produces `AgentResponse`                                   |
 
 **Pipeline flow:**
 
+The pipeline is orchestrated by a LangGraph `StateGraph` defined in `pipeline-graph.ts`. The graph declares a `PipelineAnnotation` that tracks query, bundle, analysis, response, steps, and token usage across nodes. Each node corresponds to one pipeline stage, connected by linear edges (retriever → synthesizer → writer).
+
 ```
 Query → OrchestratorService.run(query, config)
-  ├── RetrieverAgent.retrieve(query)  →  EvidenceBundle
-  ├── SynthesizerAgent.analyze(bundle)  →  AnalysisResult
-  └── WriterAgent.compose(query, analysis, bundle)  →  AgentResponse
+  ├── LangGraph StateGraph compiles and streams through:
+  │     retriever node  →  EvidenceBundle
+  │     synthesizer node  →  AnalysisResult
+  │     writer node  →  AgentResponseV2
+  └── SSE PipelineEvents emitted at each stage transition
 ```
+
+**Retry logic:** All three pipeline nodes use a shared `invokeWithRetry` utility (`apps/api/src/llm/invoke-with-retry.ts`) that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. The Synthesizer and Writer nodes attempt a second invocation with a "respond with valid JSON only" instruction on parse failure before falling back.
+
+**LangGraph wrappers:** `pipeline-graph.ts` also exports `withRetry` (single retry wrapper for a node function) and `withWriterFallback` (retry once, then fall back to a raw response builder). These are applied when compiling the graph.
 
 **Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets (including `synthesizerInput` for bundle size guarding), and timeout.
 
-**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
 
 Additional presets (`optimized`, `speed`, `cost`) are deferred until eval data shows a need for per-stage provider splitting. The eval harness can use cache bypass via environment variable (`CACHE_DISABLED=true`) rather than a dedicated preset.
 
 **Eval mode:** The eval harness disables caching via `CACHE_DISABLED=true` environment variable and uses the default pipeline config with extended timeout (60s). No dedicated preset needed.
 
-**Feature flag:** `PipelineConfig.useMultiAgent` (default: `false` during rollout). When `false`, falls back to legacy `AgentService`.
+**Feature flag:** `PipelineConfig.useMultiAgent` (default: `true`). The frontend always passes `useMultiAgent: true`, making the pipeline the default mode. When `false`, falls back to legacy `AgentService`.
 
 #### PipelineEvent Detail Contracts
 
@@ -489,25 +499,25 @@ See product.md Section 18 for full pipeline, voice config, and cost analysis.
 All components are **Angular 21 standalone components** (no NgModules). Reactive state is managed with **Angular signals** -- no RxJS stores or BehaviorSubjects.
 
 ```
-ChatComponent (page shell — query input, answer display, conversation layout)
-├── AgentStepsComponent    — pipeline stage timeline (retriever/synthesizer/writer); shows PipelineEvent progress; falls back to ReAct step view for legacy mode
+ChatComponent (page shell — sticky header with query input, answer display, cancel button, background-resilient elapsed timer)
+├── AgentStepsComponent    — pipeline stage timeline (retriever/synthesizer/writer) with per-stage elapsed counters and stall detection; shows PipelineEvent progress; falls back to ReAct step view for legacy mode
 ├── TrustBarComponent      — trust metadata visualization (source count, recency, diversity)
 ├── SourceCardComponent    — story card with title, author, points, HN link
 ├── MetaBarComponent       — response metadata (provider, timing, step count)
 └── ProviderSelectorComponent — LLM provider dropdown
 ```
 
-| Component                   | Responsibility                                                                                                                         |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatComponent`             | Page shell: query input, answer display with `ngx-markdown` rendering, conversation layout                                             |
-| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE; legacy mode falls back to ReAct step view |
-| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                     |
-| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                         |
-| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                  |
-| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                  |
-| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                                                              |
-| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming                                                                |
-| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                                                               |
+| Component                   | Responsibility                                                                                                                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatComponent`             | Page shell: query input (sticky header), answer display with `ngx-markdown` rendering, query display during streaming, cancel button, background-resilient elapsed timer                           |
+| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE with per-stage elapsed counters (capped at stall threshold); legacy mode falls back to ReAct step view |
+| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                                                                                 |
+| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                                                                                     |
+| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                                                                              |
+| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                                                                              |
+| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                                                                                                                          |
+| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming with 45-second stall detection watchdog                                                                                    |
+| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                                                                                                                           |
 
 #### Styling
 
@@ -942,10 +952,12 @@ evals/
 
 - **Story: Implement OrchestratorService** (AI-TBD)
 
-  - Sequential pipeline: Retriever → Synthesizer → Writer
+  - LangGraph `StateGraph` pipeline: Retriever → Synthesizer → Writer (defined in `pipeline-graph.ts`)
+  - `PipelineAnnotation` tracks query, bundle, analysis, response, steps, and token usage across nodes
   - SSE `PipelineEvent` emissions at each stage transition
   - Global timeout via `Promise.race`
   - `runWithFallback()` degrades to legacy `AgentService` on error
+  - Shared `invokeWithRetry` utility for all three nodes (exponential backoff, TPM rate limit detection)
   - `PipelineConfig` resolution (presets + global provider default)
 
 - **Story: Implement orchestrator partial failure recovery** (AI-TBD)
@@ -991,10 +1003,19 @@ evals/
 
 - **Story: Update AgentStepsComponent for PipelineEvent** (AI-TBD)
 
-  - Three-stage timeline: retriever → synthesizer → writer
-  - Progress detail display per stage
+  - Three-stage timeline: retriever → synthesizer → writer with merged compact rows
+  - Progress detail display per stage with per-stage elapsed counters
+  - Stall detection: counters freeze beyond threshold to prevent runaway display
   - Elapsed time and summary on completion
   - Fallback to existing ReAct step view when `useMultiAgent: false`
+
+- **Story: Frontend UX hardening** (AI-TBD)
+
+  - Sticky header with query input during streaming
+  - Cancel button to abort active SSE stream (preserves collected steps/events)
+  - Background-resilient elapsed timer using `Date.now()` wall-clock comparison
+  - Visibility change detection: flag when backgrounded, show contextual message on return
+  - 45-second stall detection watchdog in RagService that surfaces user-friendly error
 
 - **Story: Update RagService for pipeline SSE** (AI-TBD)
   - Parse `PipelineEvent` SSE alongside legacy event types
@@ -1004,9 +1025,9 @@ evals/
 
 - **Story: Wire feature flag** (AI-TBD)
 
-  - `useMultiAgent` in `PipelineConfig`, default `false`
-  - API parameter to enable per-request
-  - Document toggle in `.env.example`
+  - `useMultiAgent` in `PipelineConfig`, default `true` (pipeline is the default mode)
+  - Frontend always passes `useMultiAgent: true` in SSE stream URL
+  - API parameter available per-request for toggling
 
 - **Story: A/B eval: multi-agent vs single-agent** (AI-TBD)
 
@@ -1085,7 +1106,7 @@ As a solo developer, this is the recommended build order. Each milestone builds 
 
 ```env
 # LLM Provider (required)
-LLM_PROVIDER=groq                          # claude | mistral | groq
+LLM_PROVIDER=mistral                        # claude | mistral | groq
 
 # API Keys (only active provider required)
 GROQ_API_KEY=gsk_...
@@ -1185,8 +1206,8 @@ A story is **not done** until all of the following are met:
 
 ### ADRs
 
-| ADR                                              | Milestone | Decision                                                  |
-| ------------------------------------------------ | --------- | --------------------------------------------------------- |
-| `docs/adr/002-chunker-strategy.md`               | M2        | Token budgeting approach and priority ordering            |
-| `docs/adr/003-llm-provider-architecture.md`      | M2        | LangChain.js wrapper pattern, lazy provider instantiation |
-| `docs/adr/006-multi-agent-pipeline.md` (planned) | M8        | Three-agent pipeline vs single ReAct, compaction design   |
+| ADR                                            | Milestone | Decision                                                  |
+| ---------------------------------------------- | --------- | --------------------------------------------------------- |
+| `docs/adr/002-chunker-strategy.md`             | M2        | Token budgeting approach and priority ordering            |
+| `docs/adr/003-llm-provider-architecture.md`    | M2        | LangChain.js wrapper pattern, lazy provider instantiation |
+| `docs/adr/006-adaptive-query-decomposition.md` | M8        | LangGraph pipeline design, adaptive query decomposition   |

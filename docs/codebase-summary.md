@@ -7,7 +7,7 @@
 
 ## 1. Project Overview
 
-VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns Hacker News into a queryable knowledge base. A user submits a natural-language question; an autonomous research agent searches HN stories via Algolia, crawls comment threads from the Firebase API, reasons about the retrieved content through a ReAct loop, and delivers a sourced, synthesized answer. The system supports three LLM providers (Claude, Mistral, Groq), includes a planned voice-output layer via ElevenLabs TTS, and exposes full transparency into the agent's reasoning steps. A multi-agent pipeline (Retriever -> Synthesizer -> Writer) is available as an opt-in alternative to the single-agent ReAct loop, producing structured editorial responses via LangGraph orchestration.
+VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns Hacker News into a queryable knowledge base. A user submits a natural-language question; an autonomous research agent searches HN stories via Algolia, crawls comment threads from the Firebase API, reasons about the retrieved content through a ReAct loop, and delivers a sourced, synthesized answer. The system supports three LLM providers (Claude, Mistral, Groq), includes a planned voice-output layer via ElevenLabs TTS, and exposes full transparency into the agent's reasoning steps. The default execution path is the LangGraph multi-agent pipeline (Retriever -> Synthesizer -> Writer), which produces structured editorial responses with per-stage retry and fallback. The legacy single-agent ReAct loop remains available via the `useMultiAgent=false` query parameter but is no longer the primary path. The default LLM provider is Mistral.
 
 ---
 
@@ -85,6 +85,7 @@ voxpopuli/
 |   |       +-- health/              # HealthModule, HealthController, health.controller.spec.ts
 |   |       +-- hn/                  # HnModule, HnService, HnController, hn.service.spec.ts
 |   |       +-- llm/                 # LlmModule, LlmService, llm-provider.interface.ts
+|   |       |   +-- invoke-with-retry.ts  # Shared LLM invoke helper with exponential backoff retry
 |   |       |   +-- providers/       # groq.provider.ts, claude.provider.ts, mistral.provider.ts
 |   |       +-- rag/                 # RagModule, RagController, rate limiting, input validation
 |   |           +-- rag.controller.ts         # POST /query, GET /stream (SSE)
@@ -217,6 +218,8 @@ voxpopuli/
 
 All providers implement `LlmProviderInterface` with three members: `name`, `maxContextTokens`, and `getModel()`. Each wraps a LangChain `BaseChatModel` instance that is lazily created on first access.
 
+**Shared utility:** `invoke-with-retry.ts` exports an `invokeWithRetry()` helper used by pipeline nodes to call LLM models with automatic retry on transient failures. This centralizes retry logic (exponential backoff, configurable attempts) so individual nodes do not need to implement their own.
+
 ### 5.6 AgentModule (`apps/api/src/agent/`)
 
 | Attribute       | Value                                                                                                                      |
@@ -227,7 +230,7 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 | Dependencies    | `LlmService`, `HnService`, `ChunkerService`, `langchain` (createAgent), `@langchain/langgraph`, `zod`                      |
 | Agent framework | LangChain `createAgent` (v1.2+) with `tool()` helper and Zod schemas                                                       |
 | Constraints     | Max 7 steps (`recursionLimit`) with action count guard, 60s timeout (`AbortSignal`), 5 concurrent runs (counter semaphore) |
-| Feature flag    | Pipeline activated via `useMultiAgent` query param on SSE endpoint (default `false`)                                       |
+| Feature flag    | Pipeline activated via `useMultiAgent` query param on SSE endpoint; frontend hardcodes `true`, making pipeline the default |
 
 **Tools** (defined in `tools.ts`):
 
@@ -291,7 +294,7 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 **Rate limiting:** Global 60 req/min via timestamp array (no per-IP tracking, no external dependency).
 
-**SSE model:** Legacy mode uses post-completion replay. Pipeline mode (`useMultiAgent=true`) emits `pipeline` events at stage transitions alongside legacy `thought`/`action`/`observation` events from the Retriever's inner ReAct loop. Frontend `RagService` includes retry logic, heartbeat detection, and visibility-aware reconnection for mobile resilience.
+**SSE model:** Legacy mode uses post-completion replay. Pipeline mode (`useMultiAgent=true`) emits `pipeline` events at stage transitions alongside legacy `thought`/`action`/`observation` events from the Retriever's inner ReAct loop. Frontend `RagService` includes retry logic, heartbeat detection, visibility-aware reconnection for mobile resilience, and a stall-detection watchdog (120s timeout) that surfaces a user-facing error if the server stops sending events. The `ChatComponent` supports explicit query cancellation (tearing down the SSE subscription and resetting UI state while preserving any partially received content) and handles page backgrounding gracefully -- when the browser throttles the connection in the background, the component detects this on return and offers a retry prompt rather than showing a cryptic error.
 
 ### 5.8 ConfigModule (`apps/api/src/config/`)
 
@@ -420,18 +423,18 @@ All pipeline types use Zod schemas with runtime validation and inferred TypeScri
 
 ### Environment Variables
 
-| Variable              | Required              | Default                  | Purpose                                              |
-| --------------------- | --------------------- | ------------------------ | ---------------------------------------------------- |
-| `LLM_PROVIDER`        | Yes                   | `groq`                   | Active LLM provider (`groq`, `claude`, or `mistral`) |
-| `GROQ_API_KEY`        | When provider=groq    | --                       | Groq API authentication                              |
-| `MISTRAL_API_KEY`     | When provider=mistral | --                       | Mistral API authentication                           |
-| `ANTHROPIC_API_KEY`   | When provider=claude  | --                       | Anthropic API authentication                         |
-| `ELEVENLABS_API_KEY`  | For M5 (TTS)          | --                       | ElevenLabs TTS authentication                        |
-| `ELEVENLABS_VOICE_ID` | For M5 (TTS)          | `nPczCjzI2devNBz1zQrb`   | ElevenLabs narrator voice (Brian)                    |
-| `ELEVENLABS_MODEL`    | For M5 (TTS)          | `eleven_multilingual_v2` | ElevenLabs model selection                           |
-| `PORT`                | No                    | `3000`                   | HTTP server port                                     |
-| `LOG_LEVEL`           | No                    | `info`                   | Pino log level                                       |
-| `NODE_ENV`            | No                    | `development`            | Enables pretty-printed logs in non-production        |
+| Variable              | Required              | Default                  | Purpose                                                                                                                                                                      |
+| --------------------- | --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`        | Yes                   | `groq`                   | Active LLM provider (`groq`, `claude`, or `mistral`). Note: the frontend provider selector defaults to `mistral`, which overrides this server-side default for SSE requests. |
+| `GROQ_API_KEY`        | When provider=groq    | --                       | Groq API authentication                                                                                                                                                      |
+| `MISTRAL_API_KEY`     | When provider=mistral | --                       | Mistral API authentication                                                                                                                                                   |
+| `ANTHROPIC_API_KEY`   | When provider=claude  | --                       | Anthropic API authentication                                                                                                                                                 |
+| `ELEVENLABS_API_KEY`  | For M5 (TTS)          | --                       | ElevenLabs TTS authentication                                                                                                                                                |
+| `ELEVENLABS_VOICE_ID` | For M5 (TTS)          | `nPczCjzI2devNBz1zQrb`   | ElevenLabs narrator voice (Brian)                                                                                                                                            |
+| `ELEVENLABS_MODEL`    | For M5 (TTS)          | `eleven_multilingual_v2` | ElevenLabs model selection                                                                                                                                                   |
+| `PORT`                | No                    | `3000`                   | HTTP server port                                                                                                                                                             |
+| `LOG_LEVEL`           | No                    | `info`                   | Pino log level                                                                                                                                                               |
+| `NODE_ENV`            | No                    | `development`            | Enables pretty-printed logs in non-production                                                                                                                                |
 
 ### Validation
 

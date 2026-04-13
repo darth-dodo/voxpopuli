@@ -63,16 +63,30 @@ export class OrchestratorService {
     try {
       yield* this.runStream(query, config);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Pipeline failed, falling back to legacy AgentService: ${message}`);
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Pipeline failed, falling back to legacy AgentService: ${rawMessage}`);
 
+      // Show a user-friendly message instead of raw API error JSON.
+      const detail =
+        rawMessage.includes('rate_limit_exceeded') || rawMessage.includes('Request too large')
+          ? 'Rate limit reached — retrying with fallback agent...'
+          : 'Pipeline error — retrying with fallback agent...';
+
+      // Mark all pipeline stages as failed so the UI shows the error
+      for (const stage of ['retriever', 'synthesizer', 'writer'] as const) {
+        yield {
+          kind: 'pipeline',
+          event: { stage, status: 'error' as const, detail, elapsed: 0 },
+        } as PipelineStreamEvent;
+      }
+
+      // Signal that the fallback agent is starting
       yield {
-        kind: 'pipeline',
-        event: {
-          stage: 'retriever' as const,
-          status: 'error' as const,
-          detail: message,
-          elapsed: 0,
+        kind: 'step',
+        step: {
+          type: 'thought' as const,
+          content: `Pipeline unavailable — switching to single-agent mode.`,
+          timestamp: Date.now(),
         },
       } as PipelineStreamEvent;
 

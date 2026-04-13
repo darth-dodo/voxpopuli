@@ -1,5 +1,7 @@
-import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { AIMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { invokeWithRetry } from '../../llm/invoke-with-retry';
 import {
   AgentResponseV2Schema,
   AnalysisResultSchema,
@@ -45,13 +47,13 @@ export function createWriterNode(model: BaseChatModel) {
     };
     const input = JSON.stringify(writerInput);
 
-    const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
+    const messages: BaseMessage[] = [
       new SystemMessage(WRITER_SYSTEM_PROMPT),
       new HumanMessage(input),
     ];
 
     // First attempt
-    const firstAttempt = await model.invoke(messages, {
+    const firstAttempt = await invokeWithRetry(model, messages, {
       metadata: { pipeline_stage: 'writer', query: state.query },
       tags: ['multi-agent', 'writer'],
     });
@@ -69,7 +71,7 @@ export function createWriterNode(model: BaseChatModel) {
         response = result.data;
       } else {
         messages.push(
-          { role: 'assistant', content: firstContent },
+          new AIMessage(firstContent),
           new HumanMessage(
             `Validation errors:\n${JSON.stringify(
               result.error.issues,
@@ -78,7 +80,7 @@ export function createWriterNode(model: BaseChatModel) {
             )}\n\nRespond with valid JSON only.`,
           ),
         );
-        const retryAttempt = await model.invoke(messages, {
+        const retryAttempt = await invokeWithRetry(model, messages, {
           metadata: { pipeline_stage: 'writer', query: state.query },
           tags: ['multi-agent', 'writer'],
         });
@@ -90,12 +92,12 @@ export function createWriterNode(model: BaseChatModel) {
       }
     } catch {
       messages.push(
-        { role: 'assistant', content: firstContent },
+        new AIMessage(firstContent),
         new HumanMessage(
           'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
         ),
       );
-      const retryAttempt = await model.invoke(messages, {
+      const retryAttempt = await invokeWithRetry(model, messages, {
         metadata: { pipeline_stage: 'writer', query: state.query },
         tags: ['multi-agent', 'writer'],
       });

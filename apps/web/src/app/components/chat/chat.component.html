@@ -1,4 +1,4 @@
-<div class="min-h-screen bg-surface-base flex flex-col overflow-x-hidden">
+<div class="min-h-screen bg-surface-base flex flex-col overflow-x-hidden vp-noise">
   <!-- Theme toggle — fixed position on landing page only -->
   @if (!loading() && !error() && !response()) {
   <div class="fixed top-5 right-5 z-50">
@@ -7,7 +7,7 @@
   }
 
   <!-- Main content area -->
-  <main class="flex-1 flex flex-col w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+  <main class="flex-1 flex flex-col w-full max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
     <!-- ═══════════════════════════════════════════════
          EMPTY STATE: Landing page
          ═══════════════════════════════════════════════ -->
@@ -15,7 +15,7 @@
 
     <!-- SECTION 1: Hero + Examples (centered as a unit) -->
     <section
-      class="min-h-[calc(100vh-2rem)] flex flex-col items-center justify-center text-center py-8 sm:py-16"
+      class="min-h-[calc(100vh-2rem)] flex flex-col items-center justify-center text-center py-8 sm:py-16 bg-[radial-gradient(ellipse_at_center,rgba(245,158,11,0.06)_0%,transparent_60%)]"
     >
       <p
         class="text-mono text-[10px] sm:text-xs tracking-[0.25em] uppercase text-accent-amber mb-2 sm:mb-4"
@@ -28,6 +28,10 @@
       >
         VoxPopuli
       </h1>
+      <span
+        class="block w-16 h-0.5 bg-accent-amber/60 mx-auto mb-3 sm:mb-5 rounded-full"
+        aria-hidden="true"
+      ></span>
       <p
         class="text-editorial text-base sm:text-lg md:text-xl text-text-secondary max-w-lg mb-6 sm:mb-12 leading-relaxed px-2"
       >
@@ -83,15 +87,30 @@
       </div>
 
       <!-- Example questions (inside hero for vertical centering) -->
-      <div class="w-full max-w-xl mt-8 sm:mt-12 px-4" role="region" aria-label="Example questions">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          @for (q of exampleQueries; track q) {
+      <div class="w-full max-w-2xl mt-8 sm:mt-12 px-4" role="region" aria-label="Example questions">
+        <div class="flex items-center gap-3 mb-5">
+          <span class="h-px flex-1 bg-border-subtle"></span>
+          <span class="text-mono text-xs text-text-faint uppercase tracking-[0.15em]"
+            >Try asking</span
+          >
+          <span class="h-px flex-1 bg-border-subtle"></span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          @for (q of exampleQueries; track q; let i = $index) {
           <button
             type="button"
-            class="vp-card vp-card--interactive p-4 text-left"
+            class="group vp-card vp-card--interactive p-3.5 text-left flex items-start gap-2.5"
             (click)="query.set(q)"
           >
-            <p class="text-ui text-sm text-text-secondary leading-relaxed">{{ q }}</p>
+            <span
+              class="text-mono text-xs text-text-faint group-hover:text-accent-amber transition-colors mt-0.5 shrink-0"
+              >0{{ i + 1 }}</span
+            >
+            <p
+              class="text-ui text-sm text-text-secondary leading-relaxed group-hover:text-text-primary transition-colors"
+            >
+              {{ q }}
+            </p>
           </button>
           }
         </div>
@@ -100,8 +119,8 @@
 
     <hr class="vp-divider max-w-2xl mx-auto" aria-hidden="true" />
 
-    <!-- SECTION 3: Feature highlights -->
-    <section class="py-8 sm:py-16 max-w-3xl mx-auto w-full px-2 sm:px-0" aria-label="How it works">
+    <!-- SECTION 3: Feature highlights (editorial timeline) -->
+    <section class="py-8 sm:py-16 max-w-2xl mx-auto w-full px-4 sm:px-0" aria-label="How it works">
       <p class="text-mono text-xs tracking-[0.2em] uppercase text-text-muted text-center mb-2">
         How it works
       </p>
@@ -111,89 +130,108 @@
         Intelligence, not search
       </h2>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-8">
-        <!-- Ask -->
-        <div class="text-center">
-          <div
-            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-6 h-6 text-accent-amber"
-              aria-hidden="true"
+      <div class="relative space-y-10">
+        <!-- Timeline spine -->
+        <div
+          class="absolute left-[1.0625rem] top-3 bottom-3 w-px bg-gradient-to-b from-accent-amber/40 via-accent-amber/20 to-transparent hidden sm:block"
+          aria-hidden="true"
+        ></div>
+
+        <!-- Step 1: Ask -->
+        <div class="flex gap-5 sm:gap-6">
+          <div class="shrink-0 relative">
+            <div
+              class="w-[2.125rem] h-[2.125rem] rounded-full bg-surface-overlay border border-border-default flex items-center justify-center"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-              />
-            </svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4 text-accent-amber"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                />
+              </svg>
+            </div>
           </div>
-          <h3 class="text-ui font-semibold text-text-primary mb-2">Ask anything</h3>
-          <p class="text-sm text-text-secondary leading-relaxed">
-            Natural language queries about any HackerNews topic, trend, or discussion.
-          </p>
-          <p class="text-mono text-xs text-text-muted mt-3">search &rarr; fetch &rarr; read</p>
+          <div class="pt-1">
+            <h3 class="text-ui font-semibold text-text-primary mb-1.5">Ask anything</h3>
+            <p class="text-sm text-text-secondary leading-relaxed mb-2">
+              Natural language queries about any HackerNews topic, trend, or discussion.
+            </p>
+            <p class="text-mono text-xs text-text-muted">search &rarr; fetch &rarr; read</p>
+          </div>
         </div>
 
-        <!-- Agent Reasons -->
-        <div class="text-center">
-          <div
-            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-6 h-6 text-accent-amber"
-              aria-hidden="true"
+        <!-- Step 2: Agent reasons -->
+        <div class="flex gap-5 sm:gap-6">
+          <div class="shrink-0 relative">
+            <div
+              class="w-[2.125rem] h-[2.125rem] rounded-full bg-surface-overlay border border-border-default flex items-center justify-center"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
-              />
-            </svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4 text-accent-amber"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18"
+                />
+              </svg>
+            </div>
           </div>
-          <h3 class="text-ui font-semibold text-text-primary mb-2">Agent reasons</h3>
-          <p class="text-sm text-text-secondary leading-relaxed">
-            ReAct loop searches HN, fetches stories, and reads comments to build a grounded answer.
-          </p>
-          <p class="text-mono text-xs text-text-muted mt-3">think &rarr; act &rarr; observe</p>
+          <div class="pt-1">
+            <h3 class="text-ui font-semibold text-text-primary mb-1.5">Agent reasons</h3>
+            <p class="text-sm text-text-secondary leading-relaxed mb-2">
+              ReAct loop searches HN, fetches stories, and reads comments to build a grounded
+              answer.
+            </p>
+            <p class="text-mono text-xs text-text-muted">think &rarr; act &rarr; observe</p>
+          </div>
         </div>
 
-        <!-- Trust verified -->
-        <div class="text-center">
-          <div
-            class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-surface-overlay mb-4"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-6 h-6 text-trust-verified"
-              aria-hidden="true"
+        <!-- Step 3: Trust verified -->
+        <div class="flex gap-5 sm:gap-6">
+          <div class="shrink-0 relative">
+            <div
+              class="w-[2.125rem] h-[2.125rem] rounded-full bg-surface-overlay border border-border-default flex items-center justify-center"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
-              />
-            </svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-4 h-4 text-trust-verified"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+                />
+              </svg>
+            </div>
           </div>
-          <h3 class="text-ui font-semibold text-text-primary mb-2">Trust verified</h3>
-          <p class="text-sm text-text-secondary leading-relaxed">
-            Every source verified with recency scoring, viewpoint diversity, and bias tracking.
-          </p>
-          <p class="text-mono text-xs text-text-muted mt-3">sources + recency + diversity</p>
+          <div class="pt-1">
+            <h3 class="text-ui font-semibold text-text-primary mb-1.5">Trust verified</h3>
+            <p class="text-sm text-text-secondary leading-relaxed mb-2">
+              Every source verified with recency scoring, viewpoint diversity, and bias tracking.
+            </p>
+            <p class="text-mono text-xs text-text-muted">sources + recency + diversity</p>
+          </div>
         </div>
       </div>
     </section>
@@ -214,42 +252,14 @@
         What an answer looks like
       </h2>
 
-      <div class="vp-card p-0 overflow-hidden">
-        <!-- Agent steps preview -->
-        <div class="vp-terminal rounded-none border-0 border-b border-border-subtle">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="vp-badge vp-badge--thought">thought</span>
-            <span class="text-text-secondary text-sm"
-              >Searching for Tailwind v4 discussions...</span
+      <!-- Answer card preview (matches actual answer tab) -->
+      <div class="vp-card overflow-hidden shadow-lg glow-amber">
+        <div class="p-4 sm:p-6 lg:p-8">
+          <!-- Copy button (matches actual) -->
+          <div class="flex justify-end mb-3">
+            <span
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-text-muted"
             >
-          </div>
-          <div class="flex items-center gap-2 mb-2">
-            <span class="vp-badge vp-badge--action">action</span>
-            <span class="text-text-secondary text-sm">search_hn("Tailwind v4")</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="vp-badge vp-badge--observation">observation</span>
-            <span class="text-text-secondary text-sm">5 results found</span>
-          </div>
-        </div>
-
-        <!-- Answer preview -->
-        <div class="p-5 sm:p-8">
-          <div class="vp-prose">
-            <p>
-              Based on HackerNews discussions,
-              <strong>Tailwind v4 has been broadly well-received</strong>, with particular praise
-              for the Oxide engine's 5x speed improvement and the new CSS-first configuration
-              approach. Some developers expressed concern about the migration path from v3, but the
-              consensus is positive.
-            </p>
-          </div>
-        </div>
-
-        <!-- Trust bar preview -->
-        <div class="px-5 sm:px-8 pb-4">
-          <div class="flex flex-wrap items-center gap-3">
-            <span class="vp-badge vp-badge--verified">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -257,45 +267,94 @@
                 stroke-width="1.5"
                 stroke="currentColor"
                 class="w-3.5 h-3.5"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+                />
+              </svg>
+              Copy
+            </span>
+          </div>
+          <div class="vp-prose">
+            <p>
+              Recent Show HN posts reveal
+              <strong>a wave of solo developers shipping full products with AI</strong>. Highlights
+              include a multi-app platform built by one person using AI as the developer, DevCompare
+              (live comparison of 18 AI coding tools updated daily), and Pluck &mdash; a tool that
+              copies any UI from any website and pastes it into AI coding tools.
+              <strong>The trend is clear: AI is collapsing the team size needed to ship.</strong>
+            </p>
+          </div>
+        </div>
+
+        <!-- Trust + Meta footer (matches actual answer card footer) -->
+        <div
+          class="border-t border-border-subtle px-4 sm:px-6 lg:px-8 py-3 bg-surface-raised/50 space-y-2"
+        >
+          <!-- Trust indicators (matches app-trust-bar) -->
+          <div class="flex flex-wrap gap-2 sm:gap-3">
+            <div class="vp-trust-indicator">
+              <svg
+                class="w-4 h-4 text-trust-verified"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
                 aria-hidden="true"
               >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
-                  d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
                 />
               </svg>
-              4/4 verified
-            </span>
-            <span class="vp-badge vp-badge--cached">75% recent</span>
-            <span class="vp-badge vp-badge--thought">balanced</span>
-          </div>
-        </div>
-
-        <!-- Source cards preview -->
-        <div class="px-5 sm:px-8 pb-4">
-          <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-3">Sources (2)</p>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div class="vp-source-card">
-              <p class="vp-source-card__title">Tailwind CSS v4: 5x Faster</p>
-              <p class="vp-source-card__meta">342 points &middot; 187 comments</p>
+              <span class="text-trust-verified">4/4 verified</span>
             </div>
-            <div class="vp-source-card">
-              <p class="vp-source-card__title">Why I Switched from Tailwind</p>
-              <p class="vp-source-card__meta">128 points &middot; 94 comments</p>
+            <div class="vp-trust-indicator">
+              <svg
+                class="w-4 h-4 text-trust-verified"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span class="text-trust-verified">75% recent</span>
+            </div>
+            <div class="vp-trust-indicator">
+              <svg
+                class="w-4 h-4 text-trust-verified"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"
+                />
+              </svg>
+              <span class="text-trust-verified">balanced</span>
             </div>
           </div>
-        </div>
-
-        <!-- Meta bar preview -->
-        <div
-          class="flex flex-wrap items-center gap-4 px-5 sm:px-8 py-3 border-t border-border-subtle text-mono text-xs text-text-muted"
-        >
-          <span>4 sources</span>
-          <span>&middot;</span>
-          <span>3 agent steps</span>
-          <span>&middot;</span>
-          <span>4.5s</span>
+          <!-- Meta bar (matches app-meta-bar) -->
+          <div class="flex flex-wrap items-center gap-1.5 text-mono text-xs text-text-secondary">
+            <span>mistral</span>
+            <span class="text-text-muted" aria-hidden="true">&middot;</span>
+            <span>12,480 tokens</span>
+            <span class="text-text-muted" aria-hidden="true">&middot;</span>
+            <span class="text-trust-verified">4,512ms</span>
+          </div>
         </div>
       </div>
     </section>
@@ -304,8 +363,32 @@
 
     <!-- SECTION 5: Footer -->
     <footer class="py-8 sm:py-16 text-center">
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 text-mono text-xs text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer mb-6"
+        (click)="scrollToTop()"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2"
+          stroke="currentColor"
+          class="w-3.5 h-3.5"
+          aria-hidden="true"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18"
+          />
+        </svg>
+        Try it now
+      </button>
       <p class="text-text-muted text-sm">Built with Claude, Qwen3 &amp; Mistral</p>
-      <p class="text-mono text-xs text-text-faint mt-2">VoxPopuli</p>
+      <p class="text-mono text-xs text-text-faint mt-2">
+        VoxPopuli <span class="text-border-emphasis">&middot;</span> v0.8
+      </p>
     </footer>
 
     }
@@ -315,13 +398,15 @@
          ═══════════════════════════════════════════════ -->
     @if (loading() || error() || response()) {
     <div
-      class="py-6 flex-1 flex flex-col"
+      class="py-6 flex-1 flex flex-col min-w-0"
       role="region"
       aria-live="polite"
       aria-label="Agent response"
     >
       <!-- Header -->
-      <header class="flex items-center justify-between mb-4">
+      <header
+        class="sticky top-0 z-40 bg-surface-base/90 backdrop-blur-sm flex items-center justify-between mb-4 py-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
+      >
         <div class="flex items-center gap-3">
           <button
             type="button"
@@ -356,6 +441,13 @@
         </div>
       </header>
 
+      <!-- Submitted query -->
+      @if (query()) {
+      <p class="text-editorial text-base sm:text-lg text-text-primary mb-4 leading-snug">
+        &ldquo;{{ query() }}&rdquo;
+      </p>
+      }
+
       <!-- Tab bar -->
       <nav
         class="flex border-b border-border-subtle mb-6"
@@ -365,10 +457,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'answer'"
           [class.border-b-2]="activeTab() === 'answer'"
           [class.border-accent-amber]="activeTab() === 'answer'"
+          [class.bg-surface-overlay]="activeTab() === 'answer'"
           [class.text-text-muted]="activeTab() !== 'answer'"
           [class.hover:text-text-secondary]="activeTab() !== 'answer'"
           [attr.aria-selected]="activeTab() === 'answer'"
@@ -379,10 +472,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'sources'"
           [class.border-b-2]="activeTab() === 'sources'"
           [class.border-accent-amber]="activeTab() === 'sources'"
+          [class.bg-surface-overlay]="activeTab() === 'sources'"
           [class.text-text-muted]="activeTab() !== 'sources'"
           [class.hover:text-text-secondary]="activeTab() !== 'sources'"
           [attr.aria-selected]="activeTab() === 'sources'"
@@ -393,10 +487,11 @@
         <button
           type="button"
           role="tab"
-          class="text-mono text-sm px-4 py-2.5 -mb-px transition-colors cursor-pointer"
+          class="text-mono text-sm px-4 py-2.5 -mb-px rounded-t-lg transition-colors cursor-pointer"
           [class.text-accent-amber]="activeTab() === 'steps'"
           [class.border-b-2]="activeTab() === 'steps'"
           [class.border-accent-amber]="activeTab() === 'steps'"
+          [class.bg-surface-overlay]="activeTab() === 'steps'"
           [class.text-text-muted]="activeTab() !== 'steps'"
           [class.hover:text-text-secondary]="activeTab() !== 'steps'"
           [attr.aria-selected]="activeTab() === 'steps'"
@@ -407,7 +502,7 @@
       </nav>
 
       <!-- ─── Answer Tab ─── -->
-      <div [hidden]="activeTab() !== 'answer'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'answer'">
         <!-- Pipeline status message while waiting for answer -->
         @if (isPipelineMode() && !response() && isStreaming()) {
         <div class="mt-4">
@@ -420,9 +515,19 @@
                 <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent-amber"></span>
               </span>
               <span class="text-ui text-sm text-text-secondary">{{ pipelineStatusMessage() }}</span>
-              <span class="ml-auto text-ui text-xs tabular-nums text-text-tertiary"
-                >{{ elapsedSeconds() }}s</span
-              >
+              <span class="ml-auto flex items-center gap-3">
+                <span class="text-ui text-xs tabular-nums text-text-tertiary"
+                  >{{ elapsedSeconds() }}s</span
+                >
+                <button
+                  type="button"
+                  class="text-mono text-xs text-text-muted hover:text-trust-danger transition-colors cursor-pointer"
+                  (click)="cancel()"
+                  aria-label="Cancel query"
+                >
+                  Cancel
+                </button>
+              </span>
             </div>
           </div>
         </div>
@@ -434,9 +539,19 @@
           <div class="vp-card p-5 sm:p-8">
             <div class="flex items-center justify-between mb-4">
               <span class="text-ui text-sm text-text-secondary">Searching Hacker News...</span>
-              <span class="text-ui text-xs tabular-nums text-text-tertiary"
-                >{{ elapsedSeconds() }}s</span
-              >
+              <span class="flex items-center gap-3">
+                <span class="text-ui text-xs tabular-nums text-text-tertiary"
+                  >{{ elapsedSeconds() }}s</span
+                >
+                <button
+                  type="button"
+                  class="text-mono text-xs text-text-muted hover:text-trust-danger transition-colors cursor-pointer"
+                  (click)="cancel()"
+                  aria-label="Cancel query"
+                >
+                  Cancel
+                </button>
+              </span>
             </div>
             <div class="space-y-3 animate-pulse">
               <div class="h-5 bg-surface-overlay rounded w-2/3"></div>
@@ -550,7 +665,7 @@
           }
 
           <!-- Answer prose + trust + meta in one card -->
-          <div class="vp-card overflow-hidden">
+          <div class="vp-card overflow-hidden min-w-0">
             <div class="p-4 sm:p-6 lg:p-8">
               <!-- Copy button -->
               <div class="flex justify-end mb-3">
@@ -610,7 +725,7 @@
       </div>
 
       <!-- ─── Sources Tab ─── -->
-      <div [hidden]="activeTab() !== 'sources'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'sources'">
         @if (response(); as res) { @if (res.sources.length > 0) {
         <div>
           <p class="text-mono text-xs text-text-muted uppercase tracking-wider mb-4">
@@ -630,7 +745,7 @@
       </div>
 
       <!-- ─── Steps Tab ─── -->
-      <div [hidden]="activeTab() !== 'steps'">
+      <div class="min-w-0" [hidden]="activeTab() !== 'steps'">
         @if (steps().length > 0 || isStreaming()) {
         <app-agent-steps
           [steps]="steps()"

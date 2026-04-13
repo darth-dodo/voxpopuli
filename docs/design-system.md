@@ -6,6 +6,8 @@
 
 VoxPopuli's design reflects its dual nature: an AI agent that processes raw Hacker News data (terminal, monospace, technical) and produces polished, sourced editorial content (serif typography, trust indicators, editorial prose). The dark OLED palette nods to the hacker audience while amber accents evoke the warmth of HN's own orange identity.
 
+The homepage applies a `vp-noise` film grain texture overlay on the body for a tactile, analog feel, paired with a radial amber gradient on the hero section that fades outward from center. This creates depth and draws the eye to the search bar.
+
 ## Typography
 
 Three-font strategy with clear role separation:
@@ -128,6 +130,8 @@ All components are defined as CSS classes in `apps/web/src/styles.css` via `@lay
 
 ### Trust Indicators
 
+Trust metadata in the answer view uses `vp-trust-indicator` boxes (bordered containers with icon + label), not the smaller `vp-badge` pills used for agent step types. Each indicator displays a single trust dimension (source verification count, recency ratio, viewpoint diversity, etc.) with the appropriate semantic color.
+
 ```html
 <div class="vp-trust-indicator">
   <svg><!-- icon --></svg>
@@ -181,6 +185,32 @@ All components are defined as CSS classes in `apps/web/src/styles.css` via `@lay
 <!-- Noise texture (applied to body) -->
 <body class="vp-noise"></body>
 ```
+
+## Page-Level Patterns
+
+### Homepage (Landing)
+
+The landing page is structured in four vertical sections:
+
+1. **Hero**: Radial amber gradient background, Newsreader headline, subtitle in Public Sans secondary, and a centered search bar. The search input applies a subtle `scale(1.005)` on focus for tactile feedback. The submit button has a `vp-ready-pulse` animation on hover (a gentle amber glow pulse indicating readiness).
+
+2. **Example Questions**: A "Try asking" divider separates the hero from a 3-column (2-row on desktop, stacked on mobile) grid of example cards. Each card is numbered 01 through 06 with a mono label and uses `vp-card--interactive` styling. The currently previewed card gains `shadow-lg` elevation with `glow-amber` to indicate selection, and displays a "Live preview" pulsing indicator.
+
+3. **How It Works**: An editorial timeline layout replaces the earlier 3-column grid. A left-aligned vertical spine (gradient from amber to transparent) connects three numbered steps. Each step sits to the right of the spine with a heading and description, creating a narrative flow rather than a feature grid.
+
+4. **Footer**: Contains a "Try it now" call-to-action that scrolls back to the search bar, plus a version badge in mono text.
+
+### Results Page
+
+The results view features a sticky header with `backdrop-blur` for content readability during scroll. Below the header, a tab bar switches between Answer, Sources, and Agent Steps views. The active tab uses a `bg-surface-overlay/40` fill rather than an underline indicator.
+
+## Light Theme
+
+Light mode is toggled via a `.light` class on `<html>`. Key overrides:
+
+- The terminal/agent-steps area retains its dark background even in light mode for contrast and readability.
+- The `vp-noise` texture opacity is increased in light mode to remain perceptible against lighter surfaces.
+- `surface-overlay` tokens are adjusted for stronger contrast against the light base.
 
 ## Animation & Motion
 

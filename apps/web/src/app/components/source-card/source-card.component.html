@@ -25,13 +25,21 @@
     }
   </p>
 
-  <!-- Metadata line -->
-  <div class="vp-source-card__meta flex items-center gap-3">
-    <span>{{ source().author }}</span>
-    <span aria-label="points">{{ source().points }} pts</span>
-    <span aria-label="comments">{{ source().commentCount }} comments</span>
-    @if (source().postedDate) {
-    <span class="text-text-faint" aria-label="posted date">{{ source().postedDate }}</span>
-    }
+  <!-- Metadata: 2-row stack on mobile, single-row on sm+ -->
+  <div class="vp-source-card__meta sm:flex sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
+    <!-- Mobile: top row (author + date) -->
+    <div class="flex items-center justify-between gap-x-3 sm:contents">
+      <span class="truncate max-w-[10rem]">{{ source().author }}</span>
+      @if (source().postedDate) {
+      <span class="text-text-faint shrink-0" aria-label="posted date">{{
+        source().postedDate
+      }}</span>
+      }
+    </div>
+    <!-- Mobile: bottom row (points + comments) -->
+    <div class="flex items-center gap-x-3 mt-1 sm:mt-0 sm:contents">
+      <span class="shrink-0" aria-label="points">{{ source().points }} pts</span>
+      <span class="shrink-0" aria-label="comments">{{ source().commentCount }} comments</span>
+    </div>
   </div>
 </a>

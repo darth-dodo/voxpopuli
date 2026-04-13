@@ -83,7 +83,14 @@ export class RagService {
    * @returns Observable of `StreamEvent` items.
    */
   /** Maximum number of SSE reconnection attempts before giving up. */
-  private static readonly MAX_SSE_RETRIES = 3;
+  private static readonly MAX_SSE_RETRIES = 2;
+
+  /**
+   * Stall detection threshold in milliseconds.
+   * If no SSE event arrives within this window the connection is considered dead.
+   * Mobile browsers often silently kill connections without firing onerror.
+   */
+  private static readonly STALL_TIMEOUT_MS = 120_000;
 
   stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
     this.loading.set(true);
@@ -104,6 +111,44 @@ export class RagService {
       let nullDataCount = 0;
       const NULL_DATA_THRESHOLD = 3;
 
+      /** Timestamp of the last received SSE event, used for stall detection. */
+      let lastEventTime = Date.now();
+      /** Handle for the stall-detection watchdog interval. */
+      let stallTimer: ReturnType<typeof setInterval> | null = null;
+
+      const clearStallTimer = (): void => {
+        if (stallTimer !== null) {
+          clearInterval(stallTimer);
+          stallTimer = null;
+        }
+      };
+
+      /** Close everything and surface a stall error to the subscriber. */
+      const handleStall = (): void => {
+        clearStallTimer();
+        if (activeEventSource) {
+          activeEventSource.close();
+          activeEventSource = null;
+        }
+        if (subscriber.closed) return;
+        const message = 'Connection stalled — the server stopped responding.';
+        this.error.set(message);
+        this.loading.set(false);
+        subscriber.error(new Error(message));
+      };
+
+      /** Start (or restart) the stall-detection watchdog. */
+      const startStallTimer = (): void => {
+        clearStallTimer();
+        stallTimer = setInterval(() => {
+          // Only fire if the page is visible — backgrounded tabs naturally
+          // stop receiving events and should not be treated as stalls.
+          if (!document.hidden && Date.now() - lastEventTime > RagService.STALL_TIMEOUT_MS) {
+            handleStall();
+          }
+        }, 5_000);
+      };
+
       const attachListeners = (es: EventSource): void => {
         const EVENT_TYPES = [
           'thought',
@@ -118,12 +163,16 @@ export class RagService {
         for (const eventType of EVENT_TYPES) {
           es.addEventListener(eventType, (event: MessageEvent) => {
             try {
+              // Bump the watchdog on every received event.
+              lastEventTime = Date.now();
+
               if (event.data === undefined || event.data === null) {
                 // After reconnect the first event may arrive with undefined data.
                 // Skip it unless we see repeated null payloads, which signals a
                 // real CORS / network issue.
                 nullDataCount++;
                 if (nullDataCount >= NULL_DATA_THRESHOLD) {
+                  clearStallTimer();
                   const message =
                     'Unable to connect to the API. This may be a CORS or network issue.';
                   this.error.set(message);
@@ -142,6 +191,7 @@ export class RagService {
               subscriber.next(streamEvent);
 
               if (eventType === 'answer' || eventType === 'error') {
+                clearStallTimer();
                 this.loading.set(false);
                 if (eventType === 'error') {
                   const msg = (streamEvent as { type: 'error'; message: string }).message;
@@ -152,6 +202,7 @@ export class RagService {
                 subscriber.complete();
               }
             } catch (parseError) {
+              clearStallTimer();
               const message =
                 parseError instanceof Error ? parseError.message : 'Failed to parse SSE event';
               this.error.set(message);
@@ -183,12 +234,14 @@ export class RagService {
             const backoffMs = retryCount * 1000;
             setTimeout(() => {
               if (subscriber.closed) return;
+              lastEventTime = Date.now(); // Reset watchdog for the new attempt.
               const newEs = new EventSource(url);
               activeEventSource = newEs;
               attachListeners(newEs);
             }, backoffMs);
           } else {
-            const message = 'SSE connection lost after multiple retries';
+            clearStallTimer();
+            const message = 'Connection lost — please check your network and retry.';
             this.error.set(message);
             this.loading.set(false);
             subscriber.error(new Error(message));
@@ -197,10 +250,12 @@ export class RagService {
       };
 
       activeEventSource = new EventSource(url);
+      startStallTimer();
       attachListeners(activeEventSource);
 
-      // Teardown: close EventSource when the subscriber unsubscribes.
+      // Teardown: close EventSource and watchdog when the subscriber unsubscribes.
       return () => {
+        clearStallTimer();
         if (activeEventSource) {
           activeEventSource.close();
           activeEventSource = null;

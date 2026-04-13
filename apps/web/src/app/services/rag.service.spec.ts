@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { AgentResponse } from '@voxpopuli/shared-types';
 import { RagService, StreamEvent } from './rag.service';
 
@@ -139,6 +140,19 @@ describe('RagService', () => {
       const req = httpMock.expectOne('/api/rag/query');
       req.flush(null, { status: 500, statusText: 'Internal Server Error' });
     });
+
+    it('should set error on status 0 (network error)', () => {
+      service.query('test').subscribe({
+        error: (err: Error) => {
+          expect(err.message).toContain('Unable to reach the server');
+          expect(service.error()).toContain('Unable to reach the server');
+          expect(service.loading()).toBe(false);
+        },
+      });
+
+      const req = httpMock.expectOne('/api/rag/query');
+      req.error(new ProgressEvent('error'), { status: 0, statusText: '' });
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -188,6 +202,14 @@ describe('RagService', () => {
         }
       }
 
+      /** Simulate an event with raw string data (for null/undefined testing). */
+      simulateRawEvent(type: string, data: string | null | undefined): void {
+        const listener = this.listeners.get(type);
+        if (listener) {
+          listener(new MessageEvent(type, { data: data as string }));
+        }
+      }
+
       /** Simulate a connection error with a specific readyState. */
       simulateError(readyState: number = MockEventSource.CLOSED): void {
         this.readyState = readyState;
@@ -210,6 +232,23 @@ describe('RagService', () => {
     it('should construct EventSource with encoded query', () => {
       service.stream('hello world').subscribe();
       expect(mockEventSource.url).toBe('/api/rag/stream?query=hello%20world');
+    });
+
+    it('should include provider parameter in URL when specified', () => {
+      service.stream('test', 'mistral').subscribe();
+      expect(mockEventSource.url).toBe('/api/rag/stream?query=test&provider=mistral');
+    });
+
+    it('should include useMultiAgent parameter in URL when true', () => {
+      service.stream('test', undefined, true).subscribe();
+      expect(mockEventSource.url).toBe('/api/rag/stream?query=test&useMultiAgent=true');
+    });
+
+    it('should include both provider and useMultiAgent in URL', () => {
+      service.stream('test', 'claude', true).subscribe();
+      expect(mockEventSource.url).toBe(
+        '/api/rag/stream?query=test&provider=claude&useMultiAgent=true',
+      );
     });
 
     it('should emit thought events', () => {
@@ -302,7 +341,7 @@ describe('RagService', () => {
         error: () => (errorThrown = true),
       });
 
-      // Retry 1 — CLOSED triggers manual reconnect with 1s backoff
+      // Retry 1 -- CLOSED triggers manual reconnect with 1s backoff
       mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(false); // still retrying
       vi.advanceTimersByTime(1000);
@@ -312,15 +351,10 @@ describe('RagService', () => {
       expect(errorThrown).toBe(false);
       vi.advanceTimersByTime(2000);
 
-      // Retry 3
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      expect(errorThrown).toBe(false);
-      vi.advanceTimersByTime(3000);
-
-      // Retry 4 — exhausted, should error
+      // Retry 3 -- exhausted (MAX_SSE_RETRIES = 2), should error
       mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(true);
-      expect(service.error()).toBe('SSE connection lost after multiple retries');
+      expect(service.error()).toBe('Connection lost — please check your network and retry.');
       expect(service.loading()).toBe(false);
 
       vi.useRealTimers();
@@ -333,7 +367,7 @@ describe('RagService', () => {
         error: () => (errorThrown = true),
       });
 
-      // CONNECTING state — browser is auto-reconnecting, should not error
+      // CONNECTING state -- browser is auto-reconnecting, should not error
       mockEventSource.simulateError(MockEventSource.CONNECTING);
 
       expect(errorThrown).toBe(false);
@@ -352,6 +386,180 @@ describe('RagService', () => {
     it('should set loading=true when stream starts', () => {
       service.stream('test').subscribe();
       expect(service.loading()).toBe(true);
+    });
+
+    // -------------------------------------------------------------------
+    // Pipeline event parsing
+    // -------------------------------------------------------------------
+
+    it('should emit pipeline events', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('pipeline', {
+        stage: 'retriever',
+        status: 'started',
+        detail: '',
+        elapsed: 0,
+      });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({
+        type: 'pipeline',
+        stage: 'retriever',
+        status: 'started',
+        detail: '',
+        elapsed: 0,
+      });
+    });
+
+    it('should emit pipeline done events with detail', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('pipeline', {
+        stage: 'retriever',
+        status: 'done',
+        detail: '3 themes from 5 sources',
+        elapsed: 5000,
+      });
+
+      expect(events[0]).toEqual({
+        type: 'pipeline',
+        stage: 'retriever',
+        status: 'done',
+        detail: '3 themes from 5 sources',
+        elapsed: 5000,
+      });
+    });
+
+    // -------------------------------------------------------------------
+    // Token event parsing
+    // -------------------------------------------------------------------
+
+    it('should emit token events', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('token', { content: 'Hello ' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ type: 'token', content: 'Hello ' });
+    });
+
+    it('should handle token event with missing content', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('token', {});
+
+      expect(events[0]).toEqual({ type: 'token', content: '' });
+    });
+
+    // -------------------------------------------------------------------
+    // Null/undefined data handling
+    // -------------------------------------------------------------------
+
+    it('should skip single null data event silently', () => {
+      const events: StreamEvent[] = [];
+      let errorThrown = false;
+      service.stream('test').subscribe({
+        next: (e) => events.push(e),
+        error: () => (errorThrown = true),
+      });
+
+      // Simulate an event with undefined data (MessageEvent data defaults)
+      const listener = mockEventSource.listeners.get('thought');
+      if (listener) {
+        // Create a MessageEvent where data will be undefined
+        const evt = new MessageEvent('thought', { data: undefined });
+        listener(evt);
+      }
+
+      expect(events).toHaveLength(0);
+      expect(errorThrown).toBe(false);
+    });
+
+    it('should error after reaching null data threshold', () => {
+      let errorThrown = false;
+      let errorMessage = '';
+      service.stream('test').subscribe({
+        error: (err: Error) => {
+          errorThrown = true;
+          errorMessage = err.message;
+        },
+      });
+
+      const listener = mockEventSource.listeners.get('thought');
+      if (listener) {
+        // Send 3 null-data events (NULL_DATA_THRESHOLD = 3)
+        for (let i = 0; i < 3; i++) {
+          listener(new MessageEvent('thought', { data: undefined }));
+        }
+      }
+
+      expect(errorThrown).toBe(true);
+      expect(errorMessage).toContain('CORS');
+      expect(service.loading()).toBe(false);
+    });
+
+    // -------------------------------------------------------------------
+    // parseStreamEvent — edge cases
+    // -------------------------------------------------------------------
+
+    it('should handle thought event with missing fields', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('thought', {});
+
+      expect(events[0].type).toBe('thought');
+      expect((events[0] as { type: 'thought'; content: string }).content).toBe('');
+    });
+
+    it('should handle action event with missing fields', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('action', {});
+
+      const ev = events[0] as {
+        type: 'action';
+        toolName: string;
+        toolInput: Record<string, unknown>;
+      };
+      expect(ev.type).toBe('action');
+      expect(ev.toolName).toBe('');
+      expect(ev.toolInput).toEqual({});
+    });
+
+    it('should handle error event with missing message', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe({
+        next: (e) => events.push(e),
+        complete: () => {
+          /* noop */
+        },
+      });
+
+      mockEventSource.simulateEvent('error', {});
+
+      expect(events[0]).toEqual({ type: 'error', message: 'Unknown error' });
+    });
+
+    it('should handle pipeline event with missing fields', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('pipeline', {});
+
+      expect(events[0]).toEqual({
+        type: 'pipeline',
+        stage: '',
+        status: '',
+        detail: '',
+        elapsed: 0,
+      });
     });
   });
 });

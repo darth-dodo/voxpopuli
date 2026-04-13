@@ -6,6 +6,9 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Added
 
+- **Homepage UX polish** — Hero gradient with noise texture, masthead rule, editorial timeline component, preview cards matching real answer format, footer CTA, search focus refinements, light theme fixes, and 3x2 numbered example card grid.
+- **Fallback agent transition in pipeline UI** — When the pipeline falls back to the legacy single-agent path, the frontend now surfaces the transition visibly instead of silently switching modes.
+- **Groq TPM rate-limit handling** — Retry logic for Groq token-per-minute rate limits with user-friendly error messages instead of raw 429 responses.
 - **M8: Multi-Agent Pipeline** — Three-stage Retriever-Synthesizer-Writer architecture replacing the single-agent ReAct loop. Structured inter-agent data contracts via Zod schemas (`EvidenceBundle`, `AnalysisResult`, `AgentResponseV2`). (#15)
 - **Per-stage failure recovery** in OrchestratorService — Retriever failure falls back to legacy agent, Synthesizer retries once then falls back, Writer retries once then uses `buildFallbackResponse`.
 - **Fallback response builder** — Converts AnalysisResult + EvidenceBundle into a minimal AgentResponse when the Writer stage fails after retry.
@@ -22,6 +25,7 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Changed
 
+- **Default LLM provider switched from Groq to Mistral** — Mistral Large 3 is now the out-of-the-box provider, offering a better balance of cost and synthesis quality for most queries.
 - **Writer input stripped to citation table** — Writer receives `{ analysis, sources }` via Zod-composed `WriterInputSchema` (AnalysisResultSchema + SourceMetadataSchema) instead of full EvidenceBundle, architecturally enforcing the "don't re-analyze" constraint.
 - **Synthesizer input formatted as structured text** — `formatBundleForSynthesizer()` converts raw JSON to token-efficient markdown-style text, stripping unused metadata (url, commentCount, tokenCount).
 - **Retriever compaction input filtered** — Only tool result and assistant messages passed to compactor; system prompts and initial query removed.
@@ -29,6 +33,8 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Fixed
 
+- **Horizontal scroll eliminated on results page** — Fixed five overflow root causes: source card text wrapping, markdown table overflow, `min-w-0` on flex children, trust indicator mobile sizing, and source card title word-break.
+- **Pipeline stage timers stop on stall and error** — Timer caps at 180s, resets on retry, and stall detection prevents indefinitely spinning counters on SSE errors or connection drops.
 - **Trust bar all zeros in pipeline mode** — Orchestrator passed empty steps array to `computeTrustMetadata`. Now captures retriever steps (with `toolOutput` for date/ID extraction) and forwards to trust computation. Also fixed recency: chunker now includes `postedDate` from Algolia `created_at` so `search_hn` results feed into recency scoring (previously only `get_story` provided dates). (AI-331)
 - **Theme toggle overlapping new-question button** — Extracted toggle into `ng-template`, fixed-position on landing page only, inline in results header. (AI-331)
 - **Step streaming broken in pipeline mode** — `dispatchCustomEvent` only works with `.streamEvents()`, not `.stream()` with `streamMode: "custom"`. Switched to `config.writer`. (AI-331)

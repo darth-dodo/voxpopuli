@@ -1,8 +1,8 @@
 # VoxPopuli — Product Specification
 
-**Version:** 3.0.0
+**Version:** 3.1.0
 **Status:** Final Draft
-**Last Updated:** April 8, 2026
+**Last Updated:** April 13, 2026
 **Author:** Abhishek Juneja
 
 > _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
@@ -11,13 +11,14 @@
 
 ## Revision Log
 
-| Version | Date       | Changes                                                                                                                                                                                                                                             |
-| ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout |
-| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                    |
-| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                           |
-| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                  |
-| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                       |
+| Version | Date       | Changes                                                                                                                                                                                                                                                                                                                                              |
+| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1.0   | 2026-04-13 | Pipeline promoted to default mode (frontend always sends useMultiAgent: true); LangGraph StateGraph replaces hand-rolled orchestrator; shared invokeWithRetry utility; default provider changed to mistral; frontend UX hardening (sticky header, cancel, stall detection, background-resilient timer); Data Noir Editorial design system documented |
+| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout                                                                                                  |
+| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                                                                                                                     |
+| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                                                                                                                            |
+| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                                                                                                                   |
+| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
@@ -168,9 +169,13 @@ By default, all three agents use the **globally selected provider** (the `LLM_PR
 
 Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (Groq/Claude/Mistral split), `speed` (all Groq), `cost` (all Mistral).
 
-**Feature flag:** `PipelineConfig.useMultiAgent` controls rollout. When `false`, falls back to the legacy single ReAct agent.
+**Default mode:** The pipeline is the default execution path. The frontend always passes `useMultiAgent: true`. The `PipelineConfig.useMultiAgent` flag remains available for per-request toggling, but normal usage always runs the pipeline.
 
-**Legacy compatibility:** The original ReAct agent (Section 3.3 in v2.0) remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path.
+**Orchestration:** The pipeline is coordinated by a LangGraph `StateGraph` (not a hand-rolled orchestrator). The graph declares a typed `PipelineAnnotation` that tracks query, evidence bundle, analysis result, response, steps, and cumulative token usage across nodes. Stage transitions emit SSE `PipelineEvent`s to the frontend.
+
+**Retry logic:** All three pipeline nodes share an `invokeWithRetry` utility that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. On JSON parse failure, the Synthesizer and Writer retry with a "respond with valid JSON only" instruction before falling back.
+
+**Legacy compatibility:** The original ReAct agent remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path.
 
 ### 3.4 Sourced Answers
 
@@ -186,10 +191,13 @@ No hallucination. If the agent can't find it, it says so.
 
 The frontend streams the agent's thinking process in real time via Server-Sent Events (SSE). Users see:
 
-- Each reasoning step as it happens
+- Each reasoning step as it happens (pipeline stages with per-stage elapsed counters)
 - Which tools are being called and why
 - Expandable raw results
 - The final answer with source cards
+- A cancel button to abort the active stream (preserving already-collected steps and events)
+
+**UX hardening:** The frontend includes a sticky header with query display during streaming, a background-resilient elapsed timer that uses wall-clock comparison (so it stays accurate even if the browser tab is backgrounded), and a 45-second stall detection watchdog in RagService that surfaces a user-friendly error when the server stops responding.
 
 This isn't just a UX feature. It's a trust mechanism.
 
@@ -359,7 +367,7 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 | ------------------------ | ---------------------------- | ------------------------------------------------------ |
 | **Monorepo**             | Nx                           | Shared types, unified builds, dependency graph         |
 | **Backend**              | NestJS (Node.js)             | Modular DI, first-class TypeScript, SSE support        |
-| **Frontend**             | Angular 17+                  | Standalone components, signals, SSE via EventSource    |
+| **Frontend**             | Angular 21                   | Standalone components, signals, SSE via EventSource    |
 | **LLM (production)**     | Claude (Anthropic API)       | Best synthesis quality, 200k context                   |
 | **LLM (cost-optimized)** | Mistral Large 3              | 262k context, $0.50/$1.50 per M tokens                 |
 | **LLM (speed/dev)**      | Groq (Llama 3.3 70B)         | 300+ t/s inference, free tier for dev                  |
@@ -368,7 +376,17 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 | **Shared Types**         | TypeScript library           | Single source of truth for API contracts               |
 | **Data Sources**         | HN Algolia + Firebase APIs   | Full-text search + structured item/comment data        |
 
-### 4.3 Module Dependency Graph
+### 4.3 Design System: "Data Noir Editorial"
+
+The frontend uses a custom design system built on Tailwind CSS v4 with CSS-first `@theme` configuration (no `tailwind.config.js`). The visual identity is defined by:
+
+- **Palette:** Deep navy (`#020617`) base, amber accent (`#F59E0B`) for interactive elements and highlights, verification green (`#22C55E`) for trust indicators. Warm amber glow shadows on focus/hover.
+- **Homepage:** Noise texture background, amber gradient hero section with the tagline and search input, editorial timeline showing sample queries, and a preview card that matches the real answer view. The landing state and results state share the same component (`ChatComponent`), with the hero collapsing into a sticky header when a query is active.
+- **Light/dark theme:** CSS custom property overrides via `.light` class on `<html>`. Dark is the default.
+- **Typography:** System font stack with monospace for metadata. Markdown rendered via `ngx-markdown`.
+- **Component tokens:** Utility classes (`vp-card`, `vp-prose`, `vp-badge`) provide consistent elevation, border radius, and spacing.
+
+### 4.4 Module Dependency Graph
 
 ```
 AppModule
@@ -508,7 +526,7 @@ Configured via `.env`:
 
 ```env
 # Options: claude, mistral, groq
-LLM_PROVIDER=groq
+LLM_PROVIDER=mistral
 
 # Provider-specific keys (only the active provider's key is required)
 ANTHROPIC_API_KEY=sk-ant-...
@@ -561,7 +579,7 @@ The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct pro
      answer: "HN is broadly positive on Tailwind v4, with...",
      steps: [ ...4 reasoning steps... ],
      sources: [ ...deduplicated story list... ],
-     meta: { provider: "groq", totalTokens: 24500, durationMs: 6200 }
+     meta: { provider: "mistral", totalTokens: 24500, durationMs: 6200 }
    }
                     |
 6. Angular renders:
@@ -573,29 +591,30 @@ The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct pro
 
 ### 6.1.1 Multi-Agent Pipeline Flow (v3.0)
 
-When `useMultiAgent: true` (default in v3.0):
+When `useMultiAgent: true` (default -- frontend always sends this):
 
 ```
 1. User types: "What does HN think about Tailwind v4?"
                     |
-2. Angular sends:   GET /api/rag/stream?query=...  (SSE)
+2. Angular sends:   GET /api/rag/stream?query=...&useMultiAgent=true  (SSE)
                     |
 3. RagController → OrchestratorService.run(query, config)
+   LangGraph StateGraph compiled and streamed through three nodes
                     |
-4. Stage 1: RETRIEVER (ReAct loop, Groq by default)
+4. Stage 1: RETRIEVER (ReAct loop, global provider -- mistral by default)
    |  +-- search_hn("Tailwind v4") → 10 hits
    |  +-- get_comments(39482731) → 30 comments
    |  +-- search_hn("Tailwind CSS criticisms") → 8 hits
    |  +-- RETRIEVAL_COMPLETE
-   |  +-- Compaction LLM call: 30+ raw items → 4 ThemeGroups (~600 tokens)
+   |  +-- Compaction LLM call via invokeWithRetry: 30+ raw items → 4 ThemeGroups (~600 tokens)
    |  → SSE: { stage: 'retriever', status: 'done', summary: '4 themes from 47 sources' }
                     |
-5. Stage 2: SYNTHESIZER (single-pass, Claude by default)
+5. Stage 2: SYNTHESIZER (single-pass via invokeWithRetry, global provider)
    |  +-- Receives EvidenceBundle (4 themes, ~600 tokens)
    |  +-- Extracts 3 insights, 1 contradiction, confidence: high
    |  → SSE: { stage: 'synthesizer', status: 'done', summary: '3 insights, confidence: high' }
                     |
-6. Stage 3: WRITER (single-pass, Mistral by default)
+6. Stage 3: WRITER (single-pass via invokeWithRetry, global provider)
    |  +-- Receives AnalysisResult + source metadata
    |  +-- Composes headline, context, 3 sections, bottom line
    |  → SSE: { stage: 'writer', status: 'done', summary: '3 sections' }
@@ -892,11 +911,11 @@ interface PipelineConfig {
     writer: number; // ~1000 output tokens
   };
   timeoutMs: number;
-  useMultiAgent: boolean; // Feature flag
+  useMultiAgent: boolean; // Default: true (pipeline is the default mode)
 }
 ```
 
-**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
 
 Per-stage provider splitting (e.g., Groq for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
 
@@ -920,13 +939,15 @@ voxpopuli/
 |   |   +-- src/
 |   |       +-- agent/
 |   |       |   +-- agent.module.ts
-|   |       |   +-- agent.service.ts      # Legacy ReAct loop (fallback)
-|   |       |   +-- retriever.agent.ts    # ReAct search + compaction
-|   |       |   +-- synthesizer.agent.ts  # Single-pass analysis
-|   |       |   +-- writer.agent.ts       # Single-pass prose composition
-|   |       |   +-- orchestrator.service.ts # Pipeline coordination
-|   |       |   +-- tools.ts              # Tool definitions
-|   |       |   +-- system-prompt.ts      # Legacy agent instructions
+|   |       |   +-- agent.service.ts        # Legacy ReAct loop (fallback)
+|   |       |   +-- orchestrator.service.ts # LangGraph pipeline coordination
+|   |       |   +-- pipeline-graph.ts       # LangGraph StateGraph definition + retry wrappers
+|   |       |   +-- nodes/
+|   |       |   |   +-- retriever.node.ts   # ReAct search + compaction
+|   |       |   |   +-- synthesizer.node.ts # Single-pass analysis
+|   |       |   |   +-- writer.node.ts      # Single-pass prose composition
+|   |       |   +-- tools.ts                # Tool definitions
+|   |       |   +-- system-prompt.ts        # Legacy agent instructions
 |   |       |   +-- prompts/
 |   |       |       +-- retriever.prompt.ts
 |   |       |       +-- compactor.prompt.ts
@@ -945,6 +966,7 @@ voxpopuli/
 |   |       |   +-- llm.module.ts
 |   |       |   +-- llm.service.ts        # Facade (delegates to provider)
 |   |       |   +-- llm-provider.interface.ts
+|   |       |   +-- invoke-with-retry.ts  # Shared retry utility (exponential backoff, TPM detection)
 |   |       |   +-- providers/
 |   |       |       +-- claude.provider.ts
 |   |       |       +-- mistral.provider.ts
@@ -1422,8 +1444,9 @@ export interface PipelineConfig {
   useMultiAgent: boolean;
 }
 
-// Default config: all stages use global LLM_PROVIDER. Additional presets
-// (optimized, speed, cost) deferred until eval data justifies per-stage splitting.
+// Default config: all stages use global LLM_PROVIDER (default: mistral).
+// Pipeline is the default mode — frontend always passes useMultiAgent: true.
+// Additional presets (optimized, speed, cost) deferred until eval data justifies per-stage splitting.
 
 export type PipelineStage = 'retriever' | 'synthesizer' | 'writer';
 export type StageStatus = 'started' | 'progress' | 'done' | 'error';
@@ -1514,7 +1537,7 @@ export interface Claim {
 | HN API downtime     | Retry with exponential backoff (3 attempts) |
 | LLM API errors      | Return partial results with error flag      |
 | LLM provider outage | Optional auto-fallback to next provider     |
-| Runaway agent loop  | Hard cap at 7 steps + 60s global timeout    |
+| Runaway agent loop  | Hard cap at 7 steps + 180s global timeout   |
 | Token overflow      | Per-provider budget in Chunker              |
 | Cost blowout        | Rate limiting + max 5 concurrent agent runs |
 
@@ -1583,18 +1606,20 @@ export interface Claim {
 - [ ] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
 - [ ] Voice: downloadable MP3 of narrated answer
 
-### v2.0 -- Multi-Agent Pipeline (Current Scope)
+### v2.0 -- Multi-Agent Pipeline (Complete)
 
-- [ ] Shared types: EvidenceBundle, AnalysisResult, AgentResponse v2, PipelineConfig
-- [ ] RetrieverAgent: ReAct loop + compaction
-- [ ] SynthesizerAgent: single-pass analysis
-- [ ] WriterAgent: single-pass prose composition
-- [ ] OrchestratorService: pipeline coordination + SSE events
-- [ ] PipelineConfig presets: default (global provider), optimized, speed, cost
-- [ ] Feature flag: `useMultiAgent` (OFF by default initially)
-- [ ] Fallback to legacy ReAct on pipeline error
-- [ ] Angular: PipelineEvent SSE integration in agent steps timeline
-- [ ] Integration tests: 60+ new tests
+- [x] Shared types: EvidenceBundle, AnalysisResult, AgentResponse v2, PipelineConfig
+- [x] RetrieverAgent: ReAct loop + compaction
+- [x] SynthesizerAgent: single-pass analysis
+- [x] WriterAgent: single-pass prose composition
+- [x] OrchestratorService: LangGraph StateGraph pipeline coordination + SSE events
+- [x] Shared `invokeWithRetry` utility across all pipeline nodes (exponential backoff, TPM detection)
+- [ ] PipelineConfig presets: optimized, speed, cost (default preset using global provider is live)
+- [x] Pipeline is default mode: frontend always passes `useMultiAgent: true`
+- [x] Fallback to legacy ReAct on pipeline error
+- [x] Angular: PipelineEvent SSE integration in agent steps timeline
+- [x] Frontend UX hardening: sticky header, cancel button, stall detection (45s), background-resilient timer
+- [x] Integration tests: 60+ new tests
 - [ ] Eval harness: multi-agent vs single-agent comparison
 
 ### v2.1 -- Intelligence Upgrade

@@ -1,6 +1,8 @@
 # VoxPopuli
 
 [![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
+[![API Coverage](https://img.shields.io/badge/API_coverage-92%25-brightgreen?style=flat-square)](apps/api/src)
+[![Web Coverage](https://img.shields.io/badge/Web_coverage-94%25-brightgreen?style=flat-square)](apps/web/src)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
@@ -51,7 +53,7 @@ The pipeline has three stages:
 2. **Synthesizer** -- extracts insights, contradictions, and sentiment from the evidence bundle
 3. **Writer** -- produces an editorial answer with citations and trust metadata
 
-The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). Both modes use the same three tools: `search_hn`, `get_story`, and `get_comments`.
+The multi-agent pipeline is the default mode. The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). Both modes use the same three tools: `search_hn`, `get_story`, and `get_comments`.
 
 ---
 
@@ -131,15 +133,15 @@ Every answer comes with verification metadata:
 
 Pick your tradeoff. Switch from the UI.
 
-| Provider             | Best for               | Speed         |
-| -------------------- | ---------------------- | ------------- |
-| **Qwen3** 32B (Groq) | Fast development       | ~300 tokens/s |
-| **Mistral** Large 3  | Cost-optimized         | ~80 tokens/s  |
-| **Claude** Haiku 4.5 | Best synthesis quality | ~100 tokens/s |
+| Provider             | Best for                          | Speed         |
+| -------------------- | --------------------------------- | ------------- |
+| **Mistral** Large 3  | Default — balanced cost & quality | ~80 tokens/s  |
+| **Qwen3** 32B (Groq) | Fast development                  | ~300 tokens/s |
+| **Claude** Haiku 4.5 | Best synthesis quality            | ~100 tokens/s |
 
 ### Multi-Agent Pipeline
 
-Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph StateGraph. Each stage has per-stage retry with fallback response construction, circuit breaker for dry-well detection, and real-time step streaming via `dispatchCustomEvent`.
+Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph StateGraph. Now the default query mode. Each stage has per-stage retry with fallback response construction, circuit breaker for dry-well detection, and real-time step streaming. The UI shows live pipeline stage progress with elapsed timers and stall detection.
 
 ### Eval Harness
 
@@ -169,7 +171,7 @@ cd voxpopuli
 pnpm install
 
 cp .env.example .env
-# Add at least one LLM API key, set LLM_PROVIDER=groq (Qwen3)
+# Add at least one LLM API key (default provider is Mistral)
 ```
 
 ### Run
@@ -238,8 +240,9 @@ See [architecture.md](architecture.md) for the full technical blueprint and [pro
 | M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration                        |
 | M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging                               |
 | M8: Multi-Agent Pipeline   | Done    | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
+| M8: Audit & Polish         | Done    | Mistral default, homepage UX, overflow fixes, Groq rate-limit handling |
 
-**Current stats:** ~173 tests passing across 13 API test suites.
+**Current stats:** 478 tests passing (263 API + 215 Web) across 26 test suites.
 
 ---
 

@@ -1,5 +1,7 @@
-import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import { AIMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import { invokeWithRetry } from '../../llm/invoke-with-retry';
 import {
   AnalysisResultSchema,
   type AnalysisResult,
@@ -62,13 +64,13 @@ export function createSynthesizerNode(model: BaseChatModel) {
     let inputTokens = 0;
     let outputTokens = 0;
 
-    const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
+    const messages: BaseMessage[] = [
       new SystemMessage(SYNTHESIZER_SYSTEM_PROMPT),
       new HumanMessage(formatBundleForSynthesizer(state.bundle)),
     ];
 
     // First attempt
-    const firstAttempt = await model.invoke(messages, {
+    const firstAttempt = await invokeWithRetry(model, messages, {
       metadata: { pipeline_stage: 'synthesizer', query: state.query },
       tags: ['multi-agent', 'synthesizer'],
     });
@@ -87,7 +89,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
       } else {
         // Retry with error details
         messages.push(
-          { role: 'assistant', content: firstContent },
+          new AIMessage(firstContent),
           new HumanMessage(
             `Validation errors:\n${JSON.stringify(
               result.error.issues,
@@ -96,7 +98,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
             )}\n\nRespond with valid JSON only.`,
           ),
         );
-        const retryAttempt = await model.invoke(messages, {
+        const retryAttempt = await invokeWithRetry(model, messages, {
           metadata: { pipeline_stage: 'synthesizer', query: state.query },
           tags: ['multi-agent', 'synthesizer'],
         });
@@ -109,12 +111,12 @@ export function createSynthesizerNode(model: BaseChatModel) {
     } catch {
       // JSON parse failed — retry
       messages.push(
-        { role: 'assistant', content: firstContent },
+        new AIMessage(firstContent),
         new HumanMessage(
           'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
         ),
       );
-      const retryAttempt = await model.invoke(messages, {
+      const retryAttempt = await invokeWithRetry(model, messages, {
         metadata: { pipeline_stage: 'synthesizer', query: state.query },
         tags: ['multi-agent', 'synthesizer'],
       });
