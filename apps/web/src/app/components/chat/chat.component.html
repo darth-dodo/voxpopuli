@@ -419,6 +419,7 @@
           <span class="text-text-faint text-sm hidden sm:inline">Voice of HackerNews</span>
         </div>
         <div class="flex items-center gap-2">
+          <app-audio-player [text]="enrichedAnswer()" [disabled]="!answerReady()" />
           <button
             type="button"
             class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
