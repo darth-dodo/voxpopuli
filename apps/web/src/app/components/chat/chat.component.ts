@@ -76,10 +76,10 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Example queries displayed on the landing page. */
   readonly exampleQueries = [
     'What are the top trends on HN this week?',
-    'How does HN feel about Tailwind v4?',
+    'What does HN think about FastAPI?',
     'What Show HN projects got the most traction?',
     'Best HN discussions about remote work?',
-    'What are devs saying about Rust adoption?',
+    'How is TypeScript shaping backend development?',
     'Most controversial HN discussions this month?',
   ];
 
@@ -445,6 +445,11 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Retry the current query. */
   retry(): void {
     this.submit();
+  }
+
+  /** Smooth-scroll back to the search bar at the top of the page. */
+  scrollToTop(): void {
+    document.getElementById('query-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   /** Reset to the landing page state. */

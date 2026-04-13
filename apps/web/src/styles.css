@@ -229,6 +229,23 @@
     background: #cbd5e1;
   }
 
+  /* Light theme: terminal should still feel like a terminal */
+  .light .vp-terminal {
+    background-color: #1e293b;
+    color: #e2e8f0;
+    border-color: #334155;
+  }
+
+  /* Light theme: noise texture needs higher opacity */
+  .light .vp-noise::before {
+    opacity: 0.03;
+  }
+
+  /* Light theme: surface-overlay icons need more contrast */
+  .light .bg-surface-overlay {
+    background-color: #e2e8f0;
+  }
+
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -373,6 +390,8 @@
   .vp-input:focus {
     border-color: var(--color-accent-amber);
     box-shadow: var(--shadow-glow-amber);
+    transform: scale(1.005);
+    transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease, transform var(--duration-normal) var(--ease-out-expo);
   }
 
   .vp-input::placeholder {
@@ -417,6 +436,15 @@
   .vp-btn-primary:focus-visible {
     outline: 2px solid var(--color-accent-amber-glow);
     outline-offset: 2px;
+  }
+
+  @keyframes vp-ready-pulse {
+    0%, 100% { box-shadow: var(--shadow-glow-amber); }
+    50% { box-shadow: 0 0 24px rgba(245, 158, 11, 0.25), 0 0 48px rgba(245, 158, 11, 0.08); }
+  }
+
+  .vp-btn-primary:not(:disabled):hover {
+    animation: vp-ready-pulse 2s ease-in-out infinite;
   }
 
   /* Ghost button */
