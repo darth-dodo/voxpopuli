@@ -391,7 +391,8 @@
     border-color: var(--color-accent-amber);
     box-shadow: var(--shadow-glow-amber);
     transform: scale(1.005);
-    transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease, transform var(--duration-normal) var(--ease-out-expo);
+    transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease,
+      transform var(--duration-normal) var(--ease-out-expo);
   }
 
   .vp-input::placeholder {
@@ -439,8 +440,13 @@
   }
 
   @keyframes vp-ready-pulse {
-    0%, 100% { box-shadow: var(--shadow-glow-amber); }
-    50% { box-shadow: 0 0 24px rgba(245, 158, 11, 0.25), 0 0 48px rgba(245, 158, 11, 0.08); }
+    0%,
+    100% {
+      box-shadow: var(--shadow-glow-amber);
+    }
+    50% {
+      box-shadow: 0 0 24px rgba(245, 158, 11, 0.25), 0 0 48px rgba(245, 158, 11, 0.08);
+    }
   }
 
   .vp-btn-primary:not(:disabled):hover {

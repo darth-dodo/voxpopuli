@@ -31,7 +31,9 @@
     <div class="flex items-center justify-between gap-x-3 sm:contents">
       <span class="truncate max-w-[10rem]">{{ source().author }}</span>
       @if (source().postedDate) {
-      <span class="text-text-faint shrink-0" aria-label="posted date">{{ source().postedDate }}</span>
+      <span class="text-text-faint shrink-0" aria-label="posted date">{{
+        source().postedDate
+      }}</span>
       }
     </div>
     <!-- Mobile: bottom row (points + comments) -->
