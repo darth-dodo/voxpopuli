@@ -1,5 +1,5 @@
 import { Controller, Post, Get, Body, Res, HttpException, HttpStatus } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { TtsService } from './tts.service';
 import { TtsRequest, VoiceConfig } from '@voxpopuli/shared-types';
 

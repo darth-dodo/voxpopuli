@@ -14,6 +14,7 @@ import { ChunkerModule } from '../chunker/chunker.module';
 import { LlmModule } from '../llm/llm.module';
 import { AgentModule } from '../agent/agent.module';
 import { RagModule } from '../rag/rag.module';
+import { TtsModule } from '../tts/tts.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { RagModule } from '../rag/rag.module';
     LlmModule,
     AgentModule,
     RagModule,
+    TtsModule,
   ],
   controllers: [AppController],
   providers: [
