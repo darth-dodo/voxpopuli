@@ -72,13 +72,21 @@ export class OrchestratorService {
           ? 'Rate limit reached — retrying with fallback agent...'
           : 'Pipeline error — retrying with fallback agent...';
 
+      // Mark all pipeline stages as failed so the UI shows the error
+      for (const stage of ['retriever', 'synthesizer', 'writer'] as const) {
+        yield {
+          kind: 'pipeline',
+          event: { stage, status: 'error' as const, detail, elapsed: 0 },
+        } as PipelineStreamEvent;
+      }
+
+      // Signal that the fallback agent is starting
       yield {
-        kind: 'pipeline',
-        event: {
-          stage: 'retriever' as const,
-          status: 'error' as const,
-          detail,
-          elapsed: 0,
+        kind: 'step',
+        step: {
+          type: 'thought' as const,
+          content: `Pipeline unavailable — switching to single-agent mode.`,
+          timestamp: Date.now(),
         },
       } as PipelineStreamEvent;
 
