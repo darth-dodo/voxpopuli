@@ -8,6 +8,7 @@ import { createAgentTools } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './system-prompt';
 import { computeTrustMetadata } from './trust';
 import { buildPartialResponse } from './partial-response';
+import { isTpmError } from '../llm/invoke-with-retry';
 
 // ---------------------------------------------------------------------------
 // Stream event types
@@ -111,7 +112,19 @@ export class AgentService {
         )}" provider=${providerName} maxSteps=${maxSteps} timeout=${TIMEOUT_MS}ms`,
       );
 
-      const model = this.llm.getModel(options?.provider);
+      const baseModel = this.llm.getModel(options?.provider);
+      // Wrap with retry for Groq TPM rate-limits — waits 15s and retries.
+      const model =
+        typeof baseModel.withRetry === 'function'
+          ? baseModel.withRetry({
+              stopAfterAttempt: 3,
+              onFailedAttempt: async (err: unknown) => {
+                if (!isTpmError(err)) throw err;
+                this.logger.warn('TPM rate-limit in agent loop — waiting 15s before retry');
+                await new Promise((r) => setTimeout(r, 15_000));
+              },
+            })
+          : baseModel;
       const tools = createAgentTools(this.hn, this.chunker);
 
       const currentDate = new Date().toISOString().split('T')[0];

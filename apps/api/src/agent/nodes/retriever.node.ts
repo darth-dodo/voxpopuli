@@ -1,12 +1,14 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import type { LangGraphRunnableConfig } from '@langchain/langgraph';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { EvidenceBundleSchema, type EvidenceBundle, type AgentStep } from '@voxpopuli/shared-types';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
+import { invokeWithRetry, isTpmError } from '../../llm/invoke-with-retry';
 
 const MAX_REACT_ITERATIONS = 8;
 
@@ -124,8 +126,20 @@ export type RetrieverResult = {
 };
 
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
+  // Wrap with retry for Groq TPM rate-limits — waits 15s then retries.
+  const retryModel =
+    typeof model.withRetry === 'function'
+      ? model.withRetry({
+          stopAfterAttempt: 3,
+          onFailedAttempt: async (err: unknown) => {
+            if (!isTpmError(err)) throw err;
+            await new Promise((r) => setTimeout(r, 15_000));
+          },
+        })
+      : model;
+
   const reactAgent = createReactAgent({
-    llm: model,
+    llm: retryModel,
     tools,
     prompt: RETRIEVER_SYSTEM_PROMPT.replace(
       '{{maxIterations}}',
@@ -194,6 +208,7 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
             };
             steps.push(step);
             // Stream summary only — toolOutput is kept for trust computation, not the UI
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { toolOutput: _raw, ...streamStep } = step;
             config?.writer?.({ type: 'retriever_step', data: streamStep });
           } else if (type === 'ai' && content) {
@@ -269,12 +284,12 @@ async function compactWithRetry(
   let inputTokens = 0;
   let outputTokens = 0;
 
-  const messages: Array<SystemMessage | HumanMessage | { role: string; content: string }> = [
+  const messages: BaseMessage[] = [
     new SystemMessage(COMPACTOR_SYSTEM_PROMPT),
     new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
   ];
 
-  const firstAttempt = await model.invoke(messages, {
+  const firstAttempt = await invokeWithRetry(model, messages, {
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
   });
@@ -290,7 +305,7 @@ async function compactWithRetry(
 
     // Retry with error details
     messages.push(
-      { role: 'assistant', content: firstContent },
+      new AIMessage(firstContent),
       new HumanMessage(
         `Your previous response had validation errors:\n${JSON.stringify(
           result.error.issues,
@@ -301,14 +316,14 @@ async function compactWithRetry(
     );
   } catch {
     messages.push(
-      { role: 'assistant', content: firstContent },
+      new AIMessage(firstContent),
       new HumanMessage(
         'Your previous response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
       ),
     );
   }
 
-  const retryAttempt = await model.invoke(messages, {
+  const retryAttempt = await invokeWithRetry(model, messages, {
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
   });
