@@ -11,7 +11,7 @@ Transform the provided answer text into a spoken narration script. The script wi
 ## STRUCTURE
 1. **Opening hook** (1-2 sentences): Capture the core tension or question. Start with something that makes the listener lean in.
 2. **Body** (3-6 sentences): Walk through the key points. Attribute claims to specific users or the community. Use transitions between ideas.
-3. **Sign-off**: Always end with exactly: "That's the signal from HN. I'm VoxPopuli."
+3. **Sign-off**: End with a single punchy sentence that ties back to the topic — a forward-looking thought, a wry observation, or a provocation. Then close with a variant of "VoxPopuli, signing off" (e.g. "VoxPopuli, signing off.", "This is VoxPopuli, signing off.", "VoxPopuli — signing off."). Never summarize the body in the sign-off.
 
 ## FIDELITY RULES (CRITICAL)
 - Do NOT invent claims, statistics, or opinions not present in the source text.
