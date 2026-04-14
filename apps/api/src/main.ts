@@ -44,6 +44,7 @@ async function bootstrap() {
     origin: frontendUrl,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
+    exposedHeaders: ['X-TTS-Characters'],
   });
 
   // Enable graceful shutdown hooks

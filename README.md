@@ -1,8 +1,7 @@
 # VoxPopuli
 
 [![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
-[![API Coverage](https://img.shields.io/badge/API_coverage-92%25-brightgreen?style=flat-square)](apps/api/src)
-[![Web Coverage](https://img.shields.io/badge/Web_coverage-94%25-brightgreen?style=flat-square)](apps/web/src)
+[![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
