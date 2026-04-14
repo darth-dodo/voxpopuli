@@ -6,6 +6,7 @@ import { RagController } from './rag.controller';
 import { AgentService } from '../agent/agent.service';
 import { OrchestratorService } from '../agent/orchestrator.service';
 import { CacheService } from '../cache/cache.service';
+import { QueryStore } from '../cache/query-store';
 
 // Mock LLM providers to avoid loading @langchain/* ESM packages
 jest.mock('../agent/../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
@@ -86,11 +87,29 @@ describe('RagController', () => {
   let agentService: { run: jest.Mock; runStream: jest.Mock };
   let orchestratorService: { runWithFallback: jest.Mock };
   let cacheService: { getOrSet: jest.Mock };
+  let queryStore: {
+    create: jest.Mock;
+    get: jest.Mock;
+    appendEvent: jest.Mock;
+    appendStep: jest.Mock;
+    complete: jest.Mock;
+    fail: jest.Mock;
+    findRunning: jest.Mock;
+  };
 
   beforeEach(async () => {
     agentService = { run: jest.fn(), runStream: jest.fn() };
     orchestratorService = { runWithFallback: jest.fn() };
     cacheService = { getOrSet: jest.fn() };
+    queryStore = {
+      create: jest.fn().mockReturnValue('test-query-id'),
+      get: jest.fn(),
+      appendEvent: jest.fn(),
+      appendStep: jest.fn(),
+      complete: jest.fn(),
+      fail: jest.fn(),
+      findRunning: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [RagController],
@@ -98,6 +117,7 @@ describe('RagController', () => {
         { provide: AgentService, useValue: agentService },
         { provide: OrchestratorService, useValue: orchestratorService },
         { provide: CacheService, useValue: cacheService },
+        { provide: QueryStore, useValue: queryStore },
       ],
     }).compile();
 
@@ -167,22 +187,26 @@ describe('RagController', () => {
     // Collect all emitted events
     const events = await lastValueFrom(observable.pipe(toArray()));
 
-    // 3 steps + 1 answer = 4 events
-    expect(events).toHaveLength(4);
+    // 1 init + 3 steps + 1 answer = 5 events
+    expect(events).toHaveLength(5);
+
+    // First event is init with queryId
+    expect(events[0].type).toBe('init');
+    expect(JSON.parse(events[0].data as string).queryId).toBe('test-query-id');
 
     // Verify step events
-    expect(events[0].type).toBe('thought');
-    expect(JSON.parse(events[0].data as string).content).toBe('Thinking about the query');
+    expect(events[1].type).toBe('thought');
+    expect(JSON.parse(events[1].data as string).content).toBe('Thinking about the query');
 
-    expect(events[1].type).toBe('action');
-    expect(JSON.parse(events[1].data as string).toolName).toBe('searchHn');
+    expect(events[2].type).toBe('action');
+    expect(JSON.parse(events[2].data as string).toolName).toBe('searchHn');
 
-    expect(events[2].type).toBe('observation');
-    expect(JSON.parse(events[2].data as string).content).toBe('Found 3 results');
+    expect(events[3].type).toBe('observation');
+    expect(JSON.parse(events[3].data as string).content).toBe('Found 3 results');
 
     // Verify final answer event
-    expect(events[3].type).toBe('answer');
-    const answerData = JSON.parse(events[3].data as string);
+    expect(events[4].type).toBe('answer');
+    const answerData = JSON.parse(events[4].data as string);
     expect(answerData.answer).toBe('Test answer');
     expect(answerData.sources).toHaveLength(1);
     expect(answerData.trust).toBeDefined();
@@ -204,9 +228,12 @@ describe('RagController', () => {
     const observable = controller.stream('failing query');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('error');
-    expect(JSON.parse(events[0].data as string).message).toBe('LLM provider timeout');
+    // 1 init + 1 error = 2 events
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('init');
+    expect(events[1].type).toBe('error');
+    expect(JSON.parse(events[1].data as string).message).toBe('LLM provider timeout');
+    expect(queryStore.fail).toHaveBeenCalledWith('test-query-id', 'LLM provider timeout');
   });
 
   // -------------------------------------------------------------------------
@@ -320,7 +347,7 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 10. GET /stream with useMultiAgent should emit pipeline events
   // -------------------------------------------------------------------------
-  it('GET /stream with useMultiAgent should emit pipeline/step/token/answer events', async () => {
+  it('GET /stream with useMultiAgent should emit init/pipeline/step/token/answer events', async () => {
     const response = fakeAgentResponse('Multi-agent answer');
     const step = fakeStep('thought', 'Pipeline thinking');
 
@@ -336,27 +363,38 @@ describe('RagController', () => {
     const observable = controller.stream('multi-agent query', undefined, 'true');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
-    expect(events).toHaveLength(4);
+    // 1 init + 4 events = 5
+    expect(events).toHaveLength(5);
+
+    // Init event
+    expect(events[0].type).toBe('init');
+    expect(JSON.parse(events[0].data as string).queryId).toBe('test-query-id');
 
     // Pipeline event
-    expect(events[0].type).toBe('pipeline');
-    expect(JSON.parse(events[0].data as string)).toEqual({
+    expect(events[1].type).toBe('pipeline');
+    expect(JSON.parse(events[1].data as string)).toEqual({
       stage: 'retriever',
       status: 'running',
     });
 
     // Step event
-    expect(events[1].type).toBe('thought');
-    expect(JSON.parse(events[1].data as string).content).toBe('Pipeline thinking');
+    expect(events[2].type).toBe('thought');
+    expect(JSON.parse(events[2].data as string).content).toBe('Pipeline thinking');
 
     // Token event
-    expect(events[2].type).toBe('token');
-    expect(JSON.parse(events[2].data as string).content).toBe('partial ');
+    expect(events[3].type).toBe('token');
+    expect(JSON.parse(events[3].data as string).content).toBe('partial ');
 
     // Answer event
-    expect(events[3].type).toBe('answer');
-    const answerData = JSON.parse(events[3].data as string);
+    expect(events[4].type).toBe('answer');
+    const answerData = JSON.parse(events[4].data as string);
     expect(answerData.answer).toBe('Multi-agent answer');
+
+    // Verify QueryStore interactions
+    expect(queryStore.create).toHaveBeenCalledWith('multi-agent query', 'default');
+    expect(queryStore.appendEvent).toHaveBeenCalled();
+    expect(queryStore.appendStep).toHaveBeenCalled();
+    expect(queryStore.complete).toHaveBeenCalledWith('test-query-id', response);
   });
 
   // -------------------------------------------------------------------------
@@ -373,9 +411,12 @@ describe('RagController', () => {
     const observable = controller.stream('failing pipeline', undefined, 'true');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('error');
-    expect(JSON.parse(events[0].data as string).message).toBe('Pipeline stage failed');
+    // 1 init + 1 error = 2 events
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('init');
+    expect(events[1].type).toBe('error');
+    expect(JSON.parse(events[1].data as string).message).toBe('Pipeline stage failed');
+    expect(queryStore.fail).toHaveBeenCalledWith('test-query-id', 'Pipeline stage failed');
   });
 
   // -------------------------------------------------------------------------
@@ -395,15 +436,17 @@ describe('RagController', () => {
     const observable = controller.stream('test query');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
+    // init=1, step=2, step=3, answer=4
     expect(events[0].id).toBe('1');
     expect(events[1].id).toBe('2');
     expect(events[2].id).toBe('3');
+    expect(events[3].id).toBe('4');
   });
 
   // -------------------------------------------------------------------------
   // 13. SSE first event should include retry directive
   // -------------------------------------------------------------------------
-  it('SSE first event should include retry directive', async () => {
+  it('SSE first event (init) should include retry directive', async () => {
     const response = fakeAgentResponse();
 
     agentService.runStream.mockReturnValue(
@@ -416,10 +459,12 @@ describe('RagController', () => {
     const observable = controller.stream('test query');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
-    // First event should have retry set to 5000ms
+    // Init event (first) should have retry set to 5000ms
+    expect(events[0].type).toBe('init');
     expect((events[0] as unknown as Record<string, unknown>).retry).toBe(5_000);
-    // Second event should NOT have retry
+    // Subsequent events should NOT have retry
     expect((events[1] as unknown as Record<string, unknown>).retry).toBeUndefined();
+    expect((events[2] as unknown as Record<string, unknown>).retry).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------
@@ -501,14 +546,16 @@ describe('RagController', () => {
     const observable = controller.stream('test', undefined, 'true');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
+    // init=1, pipeline=2, answer=3
     expect(events[0].id).toBe('1');
     expect(events[1].id).toBe('2');
+    expect(events[2].id).toBe('3');
   });
 
   // -------------------------------------------------------------------------
   // 17. Multi-agent SSE first event should include retry directive
   // -------------------------------------------------------------------------
-  it('multi-agent SSE first event should include retry directive', async () => {
+  it('multi-agent SSE first event (init) should include retry directive', async () => {
     const response = fakeAgentResponse();
 
     orchestratorService.runWithFallback.mockReturnValue(
@@ -521,7 +568,97 @@ describe('RagController', () => {
     const observable = controller.stream('test', undefined, 'true');
     const events = await lastValueFrom(observable.pipe(toArray()));
 
+    // Init event (first) should have retry
+    expect(events[0].type).toBe('init');
     expect((events[0] as unknown as Record<string, unknown>).retry).toBe(5_000);
+    // Subsequent events should NOT have retry
     expect((events[1] as unknown as Record<string, unknown>).retry).toBeUndefined();
+    expect((events[2] as unknown as Record<string, unknown>).retry).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // 18. GET /query/:id/result returns 200 for completed query
+  // -------------------------------------------------------------------------
+  it('GET /query/:id/result should return completed QueryResult', () => {
+    const result = {
+      queryId: 'abc-123',
+      status: 'complete' as const,
+      response: fakeAgentResponse(),
+      pipelineEvents: [],
+      steps: [],
+      error: null,
+      createdAt: Date.now(),
+      completedAt: Date.now(),
+    };
+    queryStore.get.mockReturnValue(result);
+
+    expect(controller.getResult('abc-123')).toEqual(result);
+    expect(queryStore.get).toHaveBeenCalledWith('abc-123');
+  });
+
+  // -------------------------------------------------------------------------
+  // 19. GET /query/:id/result returns 404 for missing query
+  // -------------------------------------------------------------------------
+  it('GET /query/:id/result should throw 404 for unknown queryId', () => {
+    queryStore.get.mockReturnValue(undefined);
+
+    try {
+      controller.getResult('nonexistent');
+      fail('Expected HttpException');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 20. GET /query/:id/result returns 202 for running query
+  // -------------------------------------------------------------------------
+  it('GET /query/:id/result should throw 202 for running query with partial data', () => {
+    const result = {
+      queryId: 'running-123',
+      status: 'running' as const,
+      response: null,
+      pipelineEvents: [{ stage: 'retriever', status: 'running' }],
+      steps: [fakeStep('thought', 'Thinking...')],
+      error: null,
+      createdAt: Date.now(),
+      completedAt: null,
+    };
+    queryStore.get.mockReturnValue(result);
+
+    try {
+      controller.getResult('running-123');
+      fail('Expected HttpException');
+    } catch (err) {
+      expect(err).toBeInstanceOf(HttpException);
+      expect((err as HttpException).getStatus()).toBe(HttpStatus.ACCEPTED);
+      const body = (err as HttpException).getResponse();
+      expect(body).toMatchObject({
+        status: 'running',
+        queryId: 'running-123',
+      });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 21. Legacy stream should buffer steps and complete into QueryStore
+  // -------------------------------------------------------------------------
+  it('legacy stream should buffer steps and complete into QueryStore', async () => {
+    const response = fakeAgentResponse();
+
+    agentService.runStream.mockReturnValue(
+      mockRunStream([
+        { kind: 'step', step: response.steps[0] },
+        { kind: 'complete', response },
+      ]),
+    );
+
+    const observable = controller.stream('buffer test');
+    await lastValueFrom(observable.pipe(toArray()));
+
+    expect(queryStore.create).toHaveBeenCalledWith('buffer test', 'default');
+    expect(queryStore.appendStep).toHaveBeenCalledTimes(1);
+    expect(queryStore.complete).toHaveBeenCalledWith('test-query-id', response);
   });
 });
