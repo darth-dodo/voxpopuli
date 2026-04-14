@@ -2,6 +2,7 @@ import {
   Component,
   type OnInit,
   type OnDestroy,
+  ViewChild,
   inject,
   signal,
   computed,
@@ -213,8 +214,16 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Currently active tab in the result view. */
   readonly activeTab = signal<'answer' | 'sources' | 'steps'>('steps');
 
+  /** Reference to the audio player for triggering from header button. */
+  @ViewChild(AudioPlayerComponent) audioPlayer?: AudioPlayerComponent;
+
   /** Whether the audio player should be enabled (answer fully loaded). */
   readonly answerReady = computed(() => !this.loading() && !!this.response()?.answer);
+
+  /** Trigger narration from the header Listen button. */
+  triggerListen(): void {
+    this.audioPlayer?.onListen();
+  }
 
   /** Maximum query length exposed to the template. */
   readonly maxLength = MAX_QUERY_LENGTH;

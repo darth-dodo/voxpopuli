@@ -23,6 +23,23 @@ const CHARS_PER_MINUTE = 750;
   standalone: true,
   templateUrl: './audio-player.component.html',
   styles: `
+    /* ── Player Card ── */
+    .vp-player {
+      border-radius: 12px;
+      border: 1px solid var(--color-border-subtle);
+      background: var(--color-surface-raised);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .vp-player--playing {
+      border-color: color-mix(in srgb, var(--color-accent-amber) 25%, transparent);
+      box-shadow: 0 0 20px -4px color-mix(in srgb, var(--color-accent-amber) 10%, transparent);
+    }
+
+    .vp-player--error {
+      border-color: color-mix(in srgb, var(--color-trust-danger) 25%, transparent);
+    }
+
     /* ── Waveform Bars ── */
     .vp-waveform {
       display: flex;
@@ -32,8 +49,8 @@ const CHARS_PER_MINUTE = 750;
     }
 
     .vp-waveform-bar {
-      width: 2px;
-      border-radius: 1px;
+      width: 2.5px;
+      border-radius: 1.5px;
       background-color: var(--color-accent-amber);
       transform-origin: center;
       transition: height 0.15s ease;
@@ -96,20 +113,20 @@ const CHARS_PER_MINUTE = 750;
     .vp-seek-track::after {
       content: '';
       position: absolute;
-      inset: -6px 0;
+      inset: -8px 0;
     }
 
     .vp-seek-thumb {
       position: absolute;
-      right: -4px;
+      right: -5px;
       top: 50%;
       transform: translateY(-50%) scale(0);
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
       background-color: var(--color-accent-amber);
-      box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
-      transition: transform 0.15s var(--ease-out-expo);
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+      transition: transform 0.15s ease-out;
     }
 
     .vp-seek-track:hover .vp-seek-thumb {
