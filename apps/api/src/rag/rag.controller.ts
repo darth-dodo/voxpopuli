@@ -188,6 +188,12 @@ export class RagController {
    * stall detection.
    */
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
+    // Check for duplicate in-flight query
+    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
+    if (existingId) {
+      return this.pollExistingQuery(existingId);
+    }
+
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;
@@ -297,6 +303,12 @@ export class RagController {
    * stall detection.
    */
   private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
+    // Check for duplicate in-flight query
+    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
+    if (existingId) {
+      return this.pollExistingQuery(existingId);
+    }
+
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;
@@ -416,6 +428,87 @@ export class RagController {
       return () => {
         cancelled = true;
         clearInterval(heartbeatInterval);
+      };
+    });
+  }
+
+  /**
+   * Poll an existing in-flight query instead of starting a duplicate agent run.
+   *
+   * Returns an Observable that emits SSE events by polling the QueryStore
+   * every 2 seconds for new pipeline events, steps, and completion status.
+   *
+   * @param queryId - The existing query's ID from QueryStore.findRunning()
+   * @returns Observable of SSE {@link MessageEvent}s
+   */
+  private pollExistingQuery(queryId: string): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((subscriber) => {
+      let eventId = 0;
+      let lastEventCount = 0;
+      let lastStepCount = 0;
+
+      const emit = (event: Partial<MessageEvent>): void => {
+        subscriber.next({ ...event, id: String(++eventId) } as MessageEvent);
+      };
+
+      // Emit init with queryId
+      emit({ type: 'init', data: JSON.stringify({ queryId }) });
+
+      const interval = setInterval(() => {
+        const result = this.queryStore.get(queryId);
+        if (!result) {
+          emit({ type: 'error', data: JSON.stringify({ message: 'Query expired' }) });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+          return;
+        }
+
+        // Emit any new pipeline events
+        while (lastEventCount < result.pipelineEvents.length) {
+          emit({
+            type: 'pipeline',
+            data: JSON.stringify(result.pipelineEvents[lastEventCount]),
+          });
+          lastEventCount++;
+        }
+
+        // Emit any new steps
+        while (lastStepCount < result.steps.length) {
+          const step = result.steps[lastStepCount];
+          emit({ type: step.type, data: JSON.stringify(step) });
+          lastStepCount++;
+        }
+
+        if (result.status === 'complete' && result.response) {
+          emit({
+            type: 'answer',
+            data: JSON.stringify({
+              answer: result.response.answer,
+              sources: result.response.sources,
+              trust: result.response.trust,
+              meta: result.response.meta,
+            }),
+          });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+        } else if (result.status === 'error') {
+          emit({ type: 'error', data: JSON.stringify({ message: result.error }) });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+        }
+      }, 2000);
+
+      // Heartbeat
+      const heartbeat = setInterval(() => {
+        emit({ type: 'ping', data: '' });
+      }, HEARTBEAT_INTERVAL_MS);
+
+      return () => {
+        clearInterval(interval);
+        clearInterval(heartbeat);
       };
     });
   }

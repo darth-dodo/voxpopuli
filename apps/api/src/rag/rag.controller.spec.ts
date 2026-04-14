@@ -642,7 +642,97 @@ describe('RagController', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 21. Legacy stream should buffer steps and complete into QueryStore
+  // 21. Duplicate in-flight query should poll existing result (legacy)
+  // -------------------------------------------------------------------------
+  it('legacy stream should return existing query result when duplicate is in-flight', async () => {
+    const response = fakeAgentResponse('Deduped answer');
+    const existingQueryId = 'existing-query-id';
+
+    // findRunning returns existing queryId for this query+provider
+    queryStore.findRunning.mockReturnValue(existingQueryId);
+
+    // First call returns running, second returns complete
+    queryStore.get.mockReturnValueOnce({
+      queryId: existingQueryId,
+      status: 'complete',
+      response,
+      pipelineEvents: [],
+      steps: [fakeStep('thought', 'Already thinking')],
+      error: null,
+      createdAt: Date.now(),
+      completedAt: Date.now(),
+    });
+
+    const observable = controller.stream('What is Rust?');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    // Should NOT create a new query
+    expect(queryStore.create).not.toHaveBeenCalled();
+    // Should NOT start a new agent run
+    expect(agentService.runStream).not.toHaveBeenCalled();
+
+    // Should emit init + step + answer = 3 events (from polling)
+    expect(events.length).toBeGreaterThanOrEqual(2);
+    expect(events[0].type).toBe('init');
+    expect(JSON.parse(events[0].data as string).queryId).toBe(existingQueryId);
+
+    // Last event should be the answer
+    const lastEvent = events[events.length - 1];
+    expect(lastEvent.type).toBe('answer');
+    expect(JSON.parse(lastEvent.data as string).answer).toBe('Deduped answer');
+  });
+
+  // -------------------------------------------------------------------------
+  // 22. Duplicate in-flight query should poll existing result (multi-agent)
+  // -------------------------------------------------------------------------
+  it('multi-agent stream should return existing query result when duplicate is in-flight', async () => {
+    const response = fakeAgentResponse('Deduped pipeline answer');
+    const existingQueryId = 'existing-pipeline-id';
+
+    queryStore.findRunning.mockReturnValue(existingQueryId);
+
+    queryStore.get.mockReturnValueOnce({
+      queryId: existingQueryId,
+      status: 'complete',
+      response,
+      pipelineEvents: [{ stage: 'retriever', status: 'done' }],
+      steps: [],
+      error: null,
+      createdAt: Date.now(),
+      completedAt: Date.now(),
+    });
+
+    const observable = controller.stream('What is Rust?', undefined, 'true');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(queryStore.create).not.toHaveBeenCalled();
+    expect(orchestratorService.runWithFallback).not.toHaveBeenCalled();
+
+    expect(events[0].type).toBe('init');
+    expect(JSON.parse(events[0].data as string).queryId).toBe(existingQueryId);
+
+    const lastEvent = events[events.length - 1];
+    expect(lastEvent.type).toBe('answer');
+    expect(JSON.parse(lastEvent.data as string).answer).toBe('Deduped pipeline answer');
+  });
+
+  // -------------------------------------------------------------------------
+  // 23. Poll should emit error when query expires
+  // -------------------------------------------------------------------------
+  it('poll should emit error when existing query expires from store', async () => {
+    queryStore.findRunning.mockReturnValue('expired-query-id');
+    queryStore.get.mockReturnValue(undefined);
+
+    const observable = controller.stream('expiring query');
+    const events = await lastValueFrom(observable.pipe(toArray()));
+
+    expect(events[0].type).toBe('init');
+    expect(events[1].type).toBe('error');
+    expect(JSON.parse(events[1].data as string).message).toBe('Query expired');
+  });
+
+  // -------------------------------------------------------------------------
+  // 24. Legacy stream should buffer steps and complete into QueryStore
   // -------------------------------------------------------------------------
   it('legacy stream should buffer steps and complete into QueryStore', async () => {
     const response = fakeAgentResponse();
