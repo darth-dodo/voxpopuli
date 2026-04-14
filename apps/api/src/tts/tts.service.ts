@@ -67,9 +67,12 @@ export class TtsService {
 
   /**
    * Stream audio from ElevenLabs TTS API.
+   *
+   * The ElevenLabs SDK returns a Web ReadableStream (not a Node.js Readable),
+   * so we convert it via Readable.fromWeb() for NestJS response piping.
    */
   async streamAudio(script: string, voiceId?: string): Promise<Readable> {
-    const stream = await this.client.textToSpeech.convertAsStream(voiceId ?? this.voiceId, {
+    const webStream = await this.client.textToSpeech.convertAsStream(voiceId ?? this.voiceId, {
       text: script,
       model_id: this.model,
       voice_settings: {
@@ -80,6 +83,11 @@ export class TtsService {
       },
     });
 
-    return stream;
+    // SDK returns Web ReadableStream at runtime despite Node.js Readable type signature;
+    // convert to Node.js Readable for .pipe() compatibility with NestJS response streaming.
+    if (webStream instanceof Readable) {
+      return webStream;
+    }
+    return Readable.fromWeb(webStream as unknown as import('node:stream/web').ReadableStream);
   }
 }
