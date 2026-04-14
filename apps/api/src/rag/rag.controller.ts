@@ -5,6 +5,7 @@ import {
   Body,
   Query,
   Param,
+  Res,
   Sse,
   Header,
   Logger,
@@ -14,6 +15,7 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Observable } from 'rxjs';
 import type {
   AgentResponse,
@@ -125,23 +127,21 @@ export class RagController {
    * @param queryId - The UUID returned by the SSE `init` event
    */
   @Get('query/:id/result')
-  getResult(@Param('id') queryId: string): QueryResult {
+  getResult(@Param('id') queryId: string, @Res() res: Response): void {
     const result = this.queryStore.get(queryId);
     if (!result) {
       throw new HttpException('Query not found or expired', HttpStatus.NOT_FOUND);
     }
     if (result.status === 'running') {
-      throw new HttpException(
-        {
-          status: 'running',
-          queryId: result.queryId,
-          pipelineEvents: result.pipelineEvents,
-          steps: result.steps,
-        },
-        HttpStatus.ACCEPTED,
-      );
+      res.status(HttpStatus.ACCEPTED).json({
+        status: 'running',
+        queryId: result.queryId,
+        pipelineEvents: result.pipelineEvents,
+        steps: result.steps,
+      });
+      return;
     }
-    return result;
+    res.status(HttpStatus.OK).json(result);
   }
 
   /**

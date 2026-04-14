@@ -592,8 +592,14 @@ describe('RagController', () => {
     };
     queryStore.get.mockReturnValue(result);
 
-    expect(controller.getResult('abc-123')).toEqual(result);
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as import('express').Response;
+    controller.getResult('abc-123', res);
     expect(queryStore.get).toHaveBeenCalledWith('abc-123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(result);
   });
 
   // -------------------------------------------------------------------------
@@ -601,9 +607,13 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   it('GET /query/:id/result should throw 404 for unknown queryId', () => {
     queryStore.get.mockReturnValue(undefined);
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as import('express').Response;
 
     try {
-      controller.getResult('nonexistent');
+      controller.getResult('nonexistent', res);
       fail('Expected HttpException');
     } catch (err) {
       expect(err).toBeInstanceOf(HttpException);
@@ -614,7 +624,7 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 20. GET /query/:id/result returns 202 for running query
   // -------------------------------------------------------------------------
-  it('GET /query/:id/result should throw 202 for running query with partial data', () => {
+  it('GET /query/:id/result should return 202 for running query with partial data', () => {
     const result = {
       queryId: 'running-123',
       status: 'running' as const,
@@ -627,18 +637,18 @@ describe('RagController', () => {
     };
     queryStore.get.mockReturnValue(result);
 
-    try {
-      controller.getResult('running-123');
-      fail('Expected HttpException');
-    } catch (err) {
-      expect(err).toBeInstanceOf(HttpException);
-      expect((err as HttpException).getStatus()).toBe(HttpStatus.ACCEPTED);
-      const body = (err as HttpException).getResponse();
-      expect(body).toMatchObject({
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    } as unknown as import('express').Response;
+    controller.getResult('running-123', res);
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
         status: 'running',
         queryId: 'running-123',
-      });
-    }
+      }),
+    );
   });
 
   // -------------------------------------------------------------------------
