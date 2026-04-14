@@ -64,6 +64,7 @@ describe('ChatComponent', () => {
   let ragServiceStub: {
     stream: ReturnType<typeof vi.fn>;
     query: ReturnType<typeof vi.fn>;
+    fetchResult: ReturnType<typeof vi.fn>;
     connectionState: ReturnType<typeof signal<ConnectionState>>;
   };
 
@@ -71,7 +72,8 @@ describe('ChatComponent', () => {
     ragServiceStub = {
       stream: vi.fn().mockReturnValue(mockAnswerStream()),
       query: vi.fn().mockReturnValue(of(mockAgentResponse())),
-      connectionState: signal<ConnectionState>('idle'),
+      fetchResult: vi.fn().mockReturnValue(NEVER),
+      connectionState: signal<ConnectionState>('streaming'),
     };
 
     await TestBed.configureTestingModule({
@@ -226,6 +228,27 @@ describe('ChatComponent', () => {
     expect(component.selectedProvider()).toBe('mistral');
   });
 
+  it('should reset queryId on submit', () => {
+    component.queryId.set('old-id');
+    ragServiceStub.stream.mockReturnValue(NEVER);
+    component.query.set('test');
+    component.submit();
+    expect(component.queryId()).toBeNull();
+  });
+
+  it('should set queryId on init event', () => {
+    const events: StreamEvent[] = [
+      { type: 'init', queryId: 'new-query-id' },
+      { type: 'answer', response: mockAgentResponse() },
+    ];
+    ragServiceStub.stream.mockReturnValue(of(...events));
+
+    component.query.set('test');
+    component.submit();
+
+    expect(component.queryId()).toBe('new-query-id');
+  });
+
   // ---------------------------------------------------------------------------
   // toggleTheme
   // ---------------------------------------------------------------------------
@@ -281,7 +304,7 @@ describe('ChatComponent', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // handleVisibilityChange
+  // handleVisibilityChange — fetch-on-return
   // ---------------------------------------------------------------------------
 
   describe('handleVisibilityChange()', () => {
@@ -306,36 +329,126 @@ describe('ChatComponent', () => {
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
     });
 
-    it('should show friendly message when returning from background with error', () => {
-      component.query.set('test query for retry');
-      component.wasBackgrounded.set(true);
-      component.error.set('Connection lost');
-      component.isStreaming.set(false);
-      // Simulate RagService reporting a failed connection
-      ragServiceStub.connectionState.set('failed');
+    it('should fetch result on return from background when queryId is set', () => {
+      const completeResult = {
+        queryId: 'q1',
+        status: 'complete' as const,
+        response: mockAgentResponse(),
+        pipelineEvents: [{ stage: 'retriever', status: 'done', detail: 'test', elapsed: 5000 }],
+        steps: [{ type: 'thought', content: 'thinking', timestamp: 1 }],
+        error: null,
+        createdAt: Date.now(),
+        completedAt: Date.now(),
+      };
+      ragServiceStub.fetchResult.mockReturnValue(of(completeResult));
 
+      // Set up streaming state
+      component.wasBackgrounded.set(true);
+      component.queryId.set('q1');
+      component.isStreaming.set(true);
+
+      // Return from background
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
-      // Should show a user-friendly message but NOT auto-retry (preserves collected state)
-      expect(component.error()).toBe(
-        'Connection lost while in the background. Tap retry to try again.',
-      );
-      expect(component.wasBackgrounded()).toBe(false);
-      expect(ragServiceStub.stream).not.toHaveBeenCalled();
+      expect(ragServiceStub.fetchResult).toHaveBeenCalledWith('q1');
+      expect(component.response()).toBeTruthy();
+      expect(component.isStreaming()).toBe(false);
+      expect(component.activeTab()).toBe('answer');
     });
 
-    it('should not retry when returning from background without error', () => {
+    it('should handle running status on fetch-on-return', () => {
+      const runningResult = {
+        queryId: 'q1',
+        status: 'running' as const,
+        response: null,
+        pipelineEvents: [{ stage: 'retriever', status: 'started', detail: '', elapsed: 0 }],
+        steps: [],
+        error: null,
+        createdAt: Date.now(),
+        completedAt: null,
+      };
+      ragServiceStub.fetchResult.mockReturnValue(of(runningResult));
+
       component.wasBackgrounded.set(true);
-      component.isStreaming.set(false);
-      component.error.set(null);
-      // Connection is still open — no error state
-      ragServiceStub.connectionState.set('open');
+      component.queryId.set('q1');
+      component.isStreaming.set(true);
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
-      expect(component.wasBackgrounded()).toBe(false);
+      // Still running — streaming state should be preserved
+      expect(component.isStreaming()).toBe(true);
+      expect(component.pipelineEvents().length).toBe(1);
+    });
+
+    it('should handle error status on fetch-on-return', () => {
+      const errorResult = {
+        queryId: 'q1',
+        status: 'error' as const,
+        response: null,
+        pipelineEvents: [],
+        steps: [],
+        error: 'Agent failed',
+        createdAt: Date.now(),
+        completedAt: Date.now(),
+      };
+      ragServiceStub.fetchResult.mockReturnValue(of(errorResult));
+
+      component.wasBackgrounded.set(true);
+      component.queryId.set('q1');
+      component.isStreaming.set(true);
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(component.error()).toBe('Agent failed');
+      expect(component.isStreaming()).toBe(false);
+    });
+
+    it('should handle fetch error on return (expired result)', () => {
+      ragServiceStub.fetchResult.mockReturnValue(throwError(() => new Error('Not found')));
+
+      component.wasBackgrounded.set(true);
+      component.queryId.set('q1');
+      component.isStreaming.set(true);
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(component.error()).toBe('Query result expired. Tap retry to start a new query.');
+      expect(component.isStreaming()).toBe(false);
+    });
+
+    it('should not fetch when returning without queryId', () => {
+      component.wasBackgrounded.set(true);
+      component.queryId.set(null);
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(ragServiceStub.fetchResult).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // connectionStatus computed
+  // ---------------------------------------------------------------------------
+
+  describe('connectionStatus', () => {
+    it('should return null when streaming', () => {
+      ragServiceStub.connectionState.set('streaming');
+      expect(component.connectionStatus()).toBeNull();
+    });
+
+    it('should return null when done', () => {
+      ragServiceStub.connectionState.set('done');
+      expect(component.connectionStatus()).toBeNull();
+    });
+
+    it('should return "Connection lost" when error', () => {
+      ragServiceStub.connectionState.set('error');
+      expect(component.connectionStatus()).toBe('Connection lost');
     });
   });
 
@@ -559,6 +672,7 @@ describe('ChatComponent', () => {
       component.tokenContent.set('some content');
       component.loading.set(true);
       component.isStreaming.set(true);
+      component.queryId.set('some-id');
 
       component.goHome();
 
@@ -571,6 +685,7 @@ describe('ChatComponent', () => {
       expect(component.tokenContent()).toBe('');
       expect(component.loading()).toBe(false);
       expect(component.isStreaming()).toBe(false);
+      expect(component.queryId()).toBeNull();
       expect(component.activeTab()).toBe('steps');
     });
   });

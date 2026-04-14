@@ -69,8 +69,8 @@ describe('RagService', () => {
     expect(service.error()).toBeNull();
   });
 
-  it('should initialise with connectionState=idle', () => {
-    expect(service.connectionState()).toBe('idle');
+  it('should initialise with connectionState=streaming', () => {
+    expect(service.connectionState()).toBe('streaming');
   });
 
   // -----------------------------------------------------------------------
@@ -160,6 +160,64 @@ describe('RagService', () => {
   });
 
   // -----------------------------------------------------------------------
+  // fetchResult()
+  // -----------------------------------------------------------------------
+
+  describe('fetchResult()', () => {
+    it('should GET /api/rag/query/:id/result and return QueryResult on 200', () => {
+      const mockResult = {
+        queryId: 'q1',
+        status: 'complete' as const,
+        response: stubAgentResponse(),
+        pipelineEvents: [],
+        steps: [],
+        error: null,
+        createdAt: Date.now(),
+        completedAt: Date.now(),
+      };
+
+      service.fetchResult('q1').subscribe((res) => {
+        expect(res).toEqual(mockResult);
+      });
+
+      const req = httpMock.expectOne('/api/rag/query/q1/result');
+      expect(req.request.method).toBe('GET');
+      req.flush(mockResult);
+    });
+
+    it('should return partial data on 202 response', () => {
+      const partialResult = {
+        queryId: 'q1',
+        status: 'running' as const,
+        response: null,
+        pipelineEvents: [{ stage: 'retriever', status: 'started', detail: '', elapsed: 0 }],
+        steps: [],
+        error: null,
+        createdAt: Date.now(),
+        completedAt: null,
+      };
+
+      service.fetchResult('q1').subscribe((res) => {
+        expect(res.status).toBe('running');
+      });
+
+      const req = httpMock.expectOne('/api/rag/query/q1/result');
+      req.flush(partialResult, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('should error on 404 response', () => {
+      service.fetchResult('nonexistent').subscribe({
+        error: (err: Error) => {
+          expect(err.message).toContain('Server error');
+        },
+      });
+
+      const req = httpMock.expectOne('/api/rag/query/nonexistent/result');
+      req.flush({ message: 'Not found' }, { status: 404, statusText: 'Not Found' });
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // stream() -- EventSource tests
   // -----------------------------------------------------------------------
 
@@ -225,8 +283,6 @@ describe('RagService', () => {
 
     /** Stub for document.hidden to simulate visibility changes. */
     let documentHidden = false;
-    /** Captured visibilitychange listeners on document. */
-    let visibilityListeners: Array<() => void> = [];
 
     beforeEach(() => {
       originalEventSource = globalThis.EventSource;
@@ -239,41 +295,12 @@ describe('RagService', () => {
         get: () => documentHidden,
         configurable: true,
       });
-
-      // Capture visibilitychange event listeners
-      visibilityListeners = [];
-      const originalAddEventListener = document.addEventListener.bind(document);
-      const originalRemoveEventListener = document.removeEventListener.bind(document);
-      vi.spyOn(document, 'addEventListener').mockImplementation(
-        (type: string, listener: EventListenerOrEventListenerObject) => {
-          if (type === 'visibilitychange') {
-            visibilityListeners.push(listener as () => void);
-          }
-          originalAddEventListener(type, listener);
-        },
-      );
-      vi.spyOn(document, 'removeEventListener').mockImplementation(
-        (type: string, listener: EventListenerOrEventListenerObject) => {
-          if (type === 'visibilitychange') {
-            visibilityListeners = visibilityListeners.filter((l) => l !== listener);
-          }
-          originalRemoveEventListener(type, listener);
-        },
-      );
     });
 
     afterEach(() => {
       globalThis.EventSource = originalEventSource;
       vi.restoreAllMocks();
     });
-
-    /** Simulate a visibility change to hidden or visible. */
-    function simulateVisibilityChange(hidden: boolean): void {
-      documentHidden = hidden;
-      for (const listener of visibilityListeners) {
-        listener();
-      }
-    }
 
     it('should construct EventSource with encoded query', () => {
       service.stream('hello world').subscribe();
@@ -379,46 +406,19 @@ describe('RagService', () => {
       expect(mockEventSource.closed).toBe(true);
     });
 
-    it('should retry on connection error and fail after max retries', () => {
-      vi.useFakeTimers();
+    it('should error immediately on connection error with no retry', () => {
       let errorThrown = false;
 
       service.stream('test').subscribe({
         error: () => (errorThrown = true),
       });
 
-      // Retry 1 -- CLOSED triggers manual reconnect with exponential backoff
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      expect(errorThrown).toBe(false); // still retrying
-      vi.advanceTimersByTime(2000); // 1s base + up to 500ms jitter
-
-      // Retry 2
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      expect(errorThrown).toBe(false);
-      vi.advanceTimersByTime(3000); // 2s base + up to 500ms jitter
-
-      // Retry 3 -- exhausted (MAX_SSE_RETRIES = 2), should error
+      // Connection error — should error immediately, no retries
       mockEventSource.simulateError(MockEventSource.CLOSED);
       expect(errorThrown).toBe(true);
       expect(service.error()).toBe('Connection lost — please check your network and retry.');
       expect(service.loading()).toBe(false);
-
-      vi.useRealTimers();
-    });
-
-    it('should allow browser auto-reconnect when readyState is CONNECTING', () => {
-      let errorThrown = false;
-
-      service.stream('test').subscribe({
-        error: () => (errorThrown = true),
-      });
-
-      // CONNECTING state -- browser is auto-reconnecting, should not error
-      mockEventSource.simulateError(MockEventSource.CONNECTING);
-
-      expect(errorThrown).toBe(false);
-      expect(service.loading()).toBe(true); // still loading
-      expect(mockEventSource.closed).toBe(false); // not closed
+      expect(service.connectionState()).toBe('error');
     });
 
     it('should close EventSource on unsubscribe', () => {
@@ -506,7 +506,7 @@ describe('RagService', () => {
     // Null/undefined data handling
     // -------------------------------------------------------------------
 
-    it('should skip single null data event silently', () => {
+    it('should skip null data events silently', () => {
       const events: StreamEvent[] = [];
       let errorThrown = false;
       service.stream('test').subscribe({
@@ -514,39 +514,16 @@ describe('RagService', () => {
         error: () => (errorThrown = true),
       });
 
-      // Simulate an event with undefined data (MessageEvent data defaults)
+      // Simulate events with undefined data — all should be silently skipped
       const listener = mockEventSource.listeners.get('thought');
       if (listener) {
-        // Create a MessageEvent where data will be undefined
-        const evt = new MessageEvent('thought', { data: undefined });
-        listener(evt);
-      }
-
-      expect(events).toHaveLength(0);
-      expect(errorThrown).toBe(false);
-    });
-
-    it('should error after reaching null data threshold', () => {
-      let errorThrown = false;
-      let errorMessage = '';
-      service.stream('test').subscribe({
-        error: (err: Error) => {
-          errorThrown = true;
-          errorMessage = err.message;
-        },
-      });
-
-      const listener = mockEventSource.listeners.get('thought');
-      if (listener) {
-        // Send 3 null-data events (NULL_DATA_THRESHOLD = 3)
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
           listener(new MessageEvent('thought', { data: undefined }));
         }
       }
 
-      expect(errorThrown).toBe(true);
-      expect(errorMessage).toContain('CORS');
-      expect(service.loading()).toBe(false);
+      expect(events).toHaveLength(0);
+      expect(errorThrown).toBe(false);
     });
 
     // -------------------------------------------------------------------
@@ -609,6 +586,20 @@ describe('RagService', () => {
     });
 
     // -------------------------------------------------------------------
+    // Init event parsing
+    // -------------------------------------------------------------------
+
+    it('should emit init events with queryId', () => {
+      const events: StreamEvent[] = [];
+      service.stream('test').subscribe((e) => events.push(e));
+
+      mockEventSource.simulateEvent('init', { queryId: 'abc-123' });
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toEqual({ type: 'init', queryId: 'abc-123' });
+    });
+
+    // -------------------------------------------------------------------
     // Ping event handling
     // -------------------------------------------------------------------
 
@@ -632,9 +623,6 @@ describe('RagService', () => {
     // -------------------------------------------------------------------
 
     it('should set connectionState through lifecycle', () => {
-      // Before stream: idle
-      expect(service.connectionState()).toBe('idle');
-
       const events: StreamEvent[] = [];
       let completed = false;
       const sub = service.stream('test').subscribe({
@@ -642,108 +630,48 @@ describe('RagService', () => {
         complete: () => (completed = true),
       });
 
-      // After stream() called: connecting
-      expect(service.connectionState()).toBe('connecting');
+      // After stream() called: streaming
+      expect(service.connectionState()).toBe('streaming');
 
-      // After first event: open
+      // After first event: still streaming (no transition)
       mockEventSource.simulateEvent('thought', { content: 'Thinking', timestamp: 1000 });
-      expect(service.connectionState()).toBe('open');
+      expect(service.connectionState()).toBe('streaming');
 
-      // After answer: closed
+      // After answer: done
       mockEventSource.simulateEvent('answer', stubAgentResponse());
-      expect(service.connectionState()).toBe('closed');
+      expect(service.connectionState()).toBe('done');
       expect(completed).toBe(true);
 
       // Terminal states are preserved after teardown (unsubscribe doesn't reset)
       sub.unsubscribe();
-      expect(service.connectionState()).toBe('closed');
+      expect(service.connectionState()).toBe('done');
     });
 
-    it('should set connectionState to reconnecting on retry', () => {
-      vi.useFakeTimers();
-
+    it('should set connectionState to error on connection error', () => {
       service.stream('test').subscribe({
         error: () => {
           /* noop */
         },
       });
 
-      // First event to get to 'open'
-      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
-      expect(service.connectionState()).toBe('open');
-
-      // Connection error -> reconnecting
       mockEventSource.simulateError(MockEventSource.CLOSED);
-      expect(service.connectionState()).toBe('reconnecting');
-
-      vi.useRealTimers();
+      expect(service.connectionState()).toBe('error');
     });
 
-    it('should set connectionState to failed after max retries', () => {
-      vi.useFakeTimers();
+    it('should set connectionState to streaming on unsubscribe before terminal', () => {
+      const sub = service.stream('test').subscribe();
+      expect(service.connectionState()).toBe('streaming');
 
-      service.stream('test').subscribe({
-        error: () => {
-          /* noop */
-        },
-      });
-
-      // Exhaust retries
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      vi.advanceTimersByTime(2000);
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      vi.advanceTimersByTime(3000);
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-
-      expect(service.connectionState()).toBe('failed');
-
-      vi.useRealTimers();
+      sub.unsubscribe();
+      // Non-terminal state resets to streaming
+      expect(service.connectionState()).toBe('streaming');
     });
 
     // -------------------------------------------------------------------
-    // Exponential backoff with jitter
+    // Stall detection
     // -------------------------------------------------------------------
 
-    it('should use exponential backoff with jitter on retry', () => {
-      vi.useFakeTimers();
-      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 250ms
-
-      service.stream('test').subscribe({
-        error: () => {
-          /* noop */
-        },
-      });
-
-      // First retry: base = min(1000 * 2^0, 10000) = 1000, jitter = 250 → 1250ms
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      expect(service.connectionState()).toBe('reconnecting');
-
-      // Should NOT reconnect yet at 1249ms
-      vi.advanceTimersByTime(1249);
-      expect(mockEventSource.closed).toBe(true); // still the old closed one
-
-      // At 1250ms it should reconnect (new EventSource created)
-      vi.advanceTimersByTime(1);
-      // The new MockEventSource is assigned to mockEventSource
-      expect(mockEventSource.closed).toBe(false); // new EventSource is open
-
-      // Second retry: base = min(1000 * 2^1, 10000) = 2000, jitter = 250 → 2250ms
-      mockEventSource.simulateError(MockEventSource.CLOSED);
-      vi.advanceTimersByTime(2249);
-      expect(mockEventSource.closed).toBe(true); // still closed
-
-      vi.advanceTimersByTime(1);
-      expect(mockEventSource.closed).toBe(false); // reconnected
-
-      randomSpy.mockRestore();
-      vi.useRealTimers();
-    });
-
-    // -------------------------------------------------------------------
-    // Stall timeout reduction
-    // -------------------------------------------------------------------
-
-    it('should use 200s stall timeout', () => {
+    it('should detect stall after timeout', () => {
       vi.useFakeTimers();
       let errorThrown = false;
       let errorMessage = '';
@@ -758,111 +686,17 @@ describe('RagService', () => {
         },
       });
 
-      // Should NOT stall at 120s (old timeout)
+      // Should NOT stall at 120s
       vi.advanceTimersByTime(120_000);
       expect(errorThrown).toBe(false);
 
-      // Should stall after 200s
-      vi.advanceTimersByTime(85_000); // total 205s
+      // Should stall after 300s
+      vi.advanceTimersByTime(185_000); // total 305s
       expect(errorThrown).toBe(true);
       expect(errorMessage).toContain('stalled');
+      expect(service.connectionState()).toBe('error');
 
       vi.useRealTimers();
-    });
-
-    // -------------------------------------------------------------------
-    // Visibility-aware lifecycle
-    // -------------------------------------------------------------------
-
-    it('should set backgrounded state when page is hidden during open connection', () => {
-      service.stream('test').subscribe({
-        error: () => {
-          /* noop */
-        },
-      });
-
-      // Get to open state
-      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
-      expect(service.connectionState()).toBe('open');
-
-      // Background the page
-      simulateVisibilityChange(true);
-
-      expect(service.connectionState()).toBe('backgrounded');
-      expect(mockEventSource.closed).toBe(true);
-    });
-
-    it('should reconnect when foregrounded after short background', () => {
-      service.stream('test').subscribe({
-        error: () => {
-          /* noop */
-        },
-      });
-
-      // Get to open state
-      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
-      expect(service.connectionState()).toBe('open');
-
-      const firstEs = mockEventSource;
-
-      // Background the page
-      simulateVisibilityChange(true);
-      expect(service.connectionState()).toBe('backgrounded');
-
-      // Foreground quickly (within stall timeout)
-      simulateVisibilityChange(false);
-      expect(service.connectionState()).toBe('reconnecting');
-
-      // A new EventSource should have been created
-      expect(mockEventSource).not.toBe(firstEs);
-      expect(mockEventSource.closed).toBe(false);
-    });
-
-    it('should handle stall on foreground after long background', () => {
-      vi.useFakeTimers();
-      let errorThrown = false;
-
-      service.stream('test').subscribe({ error: () => (errorThrown = true) });
-
-      // Get to open state
-      mockEventSource.simulateEvent('thought', { content: 'test', timestamp: 1 });
-      expect(service.connectionState()).toBe('open');
-
-      // Background the page
-      simulateVisibilityChange(true);
-      expect(service.connectionState()).toBe('backgrounded');
-
-      // Wait longer than stall timeout (200s)
-      vi.advanceTimersByTime(205_000);
-
-      // Foreground — should detect stall immediately
-      simulateVisibilityChange(false);
-
-      expect(service.connectionState()).toBe('stalled');
-      expect(errorThrown).toBe(true);
-
-      vi.useRealTimers();
-    });
-
-    it('should remove visibility listener on unsubscribe', () => {
-      const removeSpy = vi.spyOn(document, 'removeEventListener');
-
-      const sub = service.stream('test').subscribe({
-        error: () => {
-          /* noop */
-        },
-      });
-      sub.unsubscribe();
-
-      expect(removeSpy).toHaveBeenCalledWith('visibilitychange', expect.any(Function));
-    });
-
-    it('should set connectionState to idle on unsubscribe', () => {
-      const sub = service.stream('test').subscribe();
-      expect(service.connectionState()).toBe('connecting');
-
-      sub.unsubscribe();
-      expect(service.connectionState()).toBe('idle');
     });
   });
 });

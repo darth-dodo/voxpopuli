@@ -2,7 +2,7 @@ import { inject, Injectable, signal } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError } from 'rxjs/operators';
-import type { AgentResponse } from '@voxpopuli/shared-types';
+import type { AgentResponse, QueryResult } from '@voxpopuli/shared-types';
 import { environment } from '../../environments/environment';
 
 // ---------------------------------------------------------------------------
@@ -22,15 +22,7 @@ export type StreamEvent =
   | { type: 'ping' };
 
 /** SSE connection lifecycle states for UI consumption. */
-export type ConnectionState =
-  | 'idle'
-  | 'connecting'
-  | 'open'
-  | 'backgrounded'
-  | 'reconnecting'
-  | 'stalled'
-  | 'failed'
-  | 'closed';
+export type ConnectionState = 'streaming' | 'done' | 'error';
 
 // ---------------------------------------------------------------------------
 // Service
@@ -54,12 +46,9 @@ export class RagService {
   readonly error = signal<string | null>(null);
 
   /** Current SSE connection state for UI consumption. */
-  readonly connectionState = signal<ConnectionState>('idle');
+  readonly connectionState = signal<ConnectionState>('streaming');
 
   private readonly http = inject(HttpClient);
-
-  /** Visibility change handler — registered per stream, removed on teardown. */
-  private visibilityHandler: (() => void) | null = null;
 
   // -------------------------------------------------------------------------
   // Blocking query
@@ -87,6 +76,30 @@ export class RagService {
   }
 
   // -------------------------------------------------------------------------
+  // Fetch stored result
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetch a stored query result by ID.
+   * Returns the QueryResult on 200, throws on 404.
+   * For 202 (still running), the response body is returned via error handling.
+   */
+  fetchResult(queryId: string): Observable<QueryResult> {
+    return this.http.get<QueryResult>(`${this.baseUrl}/query/${queryId}/result`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err.status === 202) {
+          // Still running — return the partial data from the error response
+          return new Observable<QueryResult>((sub) => {
+            sub.next(err.error as QueryResult);
+            sub.complete();
+          });
+        }
+        return this.handleHttpError(err);
+      }),
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // SSE streaming
   // -------------------------------------------------------------------------
 
@@ -101,8 +114,6 @@ export class RagService {
    * @param provider - Optional LLM provider override (groq / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
-  /** Maximum number of SSE reconnection attempts before giving up. */
-  private static readonly MAX_SSE_RETRIES = 2;
 
   /**
    * Stall detection threshold in milliseconds.
@@ -114,7 +125,7 @@ export class RagService {
   stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
-    this.connectionState.set('connecting');
+    this.connectionState.set('streaming');
 
     let url = `${this.baseUrl}/stream?query=${encodeURIComponent(query)}`;
     if (provider) {
@@ -125,11 +136,7 @@ export class RagService {
     }
 
     return new Observable<StreamEvent>((subscriber) => {
-      let retryCount = 0;
       let activeEventSource: EventSource | null = null;
-      /** Tracks consecutive null-data events to avoid false positives on reconnect. */
-      let nullDataCount = 0;
-      const NULL_DATA_THRESHOLD = 3;
 
       /** Timestamp of the last received SSE event, used for stall detection. */
       let lastEventTime = Date.now();
@@ -150,7 +157,7 @@ export class RagService {
           activeEventSource.close();
           activeEventSource = null;
         }
-        this.connectionState.set('stalled');
+        this.connectionState.set('error');
         if (subscriber.closed) return;
         const message = 'Connection stalled — the server stopped responding.';
         this.error.set(message);
@@ -189,38 +196,14 @@ export class RagService {
               // Bump the watchdog on every received event.
               lastEventTime = Date.now();
 
-              // Transition to 'open' on the first event received.
-              const currentState = this.connectionState();
-              if (currentState === 'connecting' || currentState === 'reconnecting') {
-                this.connectionState.set('open');
-              }
-
               // Heartbeat — just reset the stall watchdog, don't forward to subscribers.
               if (eventType === 'ping') {
                 return;
               }
 
               if (event.data === undefined || event.data === null) {
-                // After reconnect the first event may arrive with undefined data.
-                // Skip it unless we see repeated null payloads, which signals a
-                // real CORS / network issue.
-                nullDataCount++;
-                if (nullDataCount >= NULL_DATA_THRESHOLD) {
-                  clearStallTimer();
-                  const message =
-                    'Unable to connect to the API. This may be a CORS or network issue.';
-                  this.error.set(message);
-                  this.loading.set(false);
-                  this.connectionState.set('failed');
-                  subscriber.error(new Error(message));
-                  es.close();
-                }
                 return;
               }
-
-              // Reset counters on any valid payload
-              nullDataCount = 0;
-              retryCount = 0;
 
               const data: unknown = JSON.parse(event.data);
               const streamEvent = this.parseStreamEvent(eventType, data);
@@ -229,7 +212,7 @@ export class RagService {
               if (eventType === 'answer' || eventType === 'error') {
                 clearStallTimer();
                 this.loading.set(false);
-                this.connectionState.set('closed');
+                this.connectionState.set(eventType === 'answer' ? 'done' : 'error');
                 if (eventType === 'error') {
                   const msg = (streamEvent as { type: 'error'; message: string }).message;
                   this.error.set(msg);
@@ -244,7 +227,7 @@ export class RagService {
                 parseError instanceof Error ? parseError.message : 'Failed to parse SSE event';
               this.error.set(message);
               this.loading.set(false);
-              this.connectionState.set('failed');
+              this.connectionState.set('error');
               subscriber.error(new Error(message));
               es.close();
               activeEventSource = null;
@@ -253,99 +236,38 @@ export class RagService {
         }
 
         es.onerror = () => {
-          if (es.readyState === EventSource.CONNECTING) {
-            // Browser is auto-reconnecting — let it proceed without surfacing
-            // an error to the UI. This commonly happens when a mobile browser
-            // resumes after being backgrounded.
-            return;
-          }
-
-          // Connection is fully closed (readyState === CLOSED).
-          // Attempt a manual reconnect if we haven't exhausted retries.
+          // Connection error — set to error state, no retry.
           es.close();
           activeEventSource = null;
-
-          if (retryCount < RagService.MAX_SSE_RETRIES) {
-            retryCount++;
-            this.connectionState.set('reconnecting');
-            // Re-create the EventSource after exponential backoff with jitter.
-            // Do NOT update loading/error signals — keep the streaming UI visible.
-            const baseDelay = Math.min(1000 * Math.pow(2, retryCount - 1), 10_000);
-            const jitter = Math.random() * 500;
-            const backoffMs = baseDelay + jitter;
-            setTimeout(() => {
-              if (subscriber.closed) return;
-              lastEventTime = Date.now(); // Reset watchdog for the new attempt.
-              const newEs = new EventSource(url);
-              activeEventSource = newEs;
-              attachListeners(newEs);
-              startStallTimer();
-            }, backoffMs);
-          } else {
-            clearStallTimer();
-            this.connectionState.set('failed');
-            const message = 'Connection lost — please check your network and retry.';
-            this.error.set(message);
-            this.loading.set(false);
+          clearStallTimer();
+          this.connectionState.set('error');
+          const message = 'Connection lost — please check your network and retry.';
+          this.error.set(message);
+          this.loading.set(false);
+          if (!subscriber.closed) {
             subscriber.error(new Error(message));
           }
         };
       };
 
-      // --- Visibility-aware connection lifecycle ---
-      this.visibilityHandler = () => {
-        if (document.hidden) {
-          // Page backgrounded — close the connection to save resources.
-          if (activeEventSource && this.connectionState() === 'open') {
-            this.connectionState.set('backgrounded');
-            activeEventSource.close();
-            activeEventSource = null;
-            clearStallTimer();
-          }
-        } else {
-          // Page foregrounded — reconnect if we were backgrounded.
-          if (this.connectionState() === 'backgrounded' && !subscriber.closed) {
-            const elapsed = Date.now() - lastEventTime;
-            if (elapsed > RagService.STALL_TIMEOUT_MS) {
-              // Stalled while away — surface error immediately.
-              this.connectionState.set('stalled');
-              handleStall();
-            } else {
-              // Reconnect.
-              this.connectionState.set('reconnecting');
-              lastEventTime = Date.now();
-              const newEs = new EventSource(url);
-              activeEventSource = newEs;
-              attachListeners(newEs);
-              startStallTimer();
-            }
-          }
-        }
-      };
-      document.addEventListener('visibilitychange', this.visibilityHandler);
-
       activeEventSource = new EventSource(url);
       startStallTimer();
       attachListeners(activeEventSource);
 
-      // Teardown: close EventSource, watchdog, and visibility listener.
+      // Teardown: close EventSource and watchdog.
       return () => {
         clearStallTimer();
         if (activeEventSource) {
           activeEventSource.close();
           activeEventSource = null;
         }
-        if (this.visibilityHandler) {
-          document.removeEventListener('visibilitychange', this.visibilityHandler);
-          this.visibilityHandler = null;
-        }
         this.loading.set(false);
-        // Only reset to idle if the connection hasn't already reached a
-        // terminal state (closed, failed, stalled). Those states should be
-        // preserved so the UI can read them after stream completion.
+        // Only reset to 'streaming' if the connection hasn't already reached a
+        // terminal state (done, error). Those states should be preserved so the
+        // UI can read them after stream completion.
         const state = this.connectionState();
-        if (state !== 'closed' && state !== 'failed' && state !== 'stalled') {
-          this.connectionState.set('idle');
+        if (state !== 'done' && state !== 'error') {
+          this.connectionState.set('streaming');
         }
       };
     });
