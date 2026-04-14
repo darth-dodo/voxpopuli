@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { TtsService } from './tts.service';
 import { LlmService } from '../llm/llm.service';
+import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
 import { Readable } from 'node:stream';
 
 // Mock LLM provider modules to avoid ESM resolution issues
@@ -28,8 +29,8 @@ describe('TtsService', () => {
     get: jest.fn((key: string, defaultValue?: string) => {
       const config: Record<string, string> = {
         ELEVENLABS_API_KEY: 'test-api-key',
-        ELEVENLABS_VOICE_ID: 'nPczCjzI2devNBz1zQrb',
-        ELEVENLABS_MODEL: 'eleven_flash_v2_5',
+        ELEVENLABS_VOICE_ID: ELEVENLABS_DEFAULT_VOICE_ID,
+        ELEVENLABS_MODEL: ELEVENLABS_MODEL_ID,
       };
       return config[key] ?? defaultValue;
     }),

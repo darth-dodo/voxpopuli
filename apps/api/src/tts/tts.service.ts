@@ -5,6 +5,7 @@ import { ElevenLabsClient } from 'elevenlabs';
 import { LlmService } from '../llm/llm.service';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { NARRATOR_SYSTEM_PROMPT, MAX_NARRATION_CHARS } from './prompts/narrator.prompt';
+import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
 
 @Injectable()
 export class TtsService {
@@ -20,8 +21,11 @@ export class TtsService {
     this.client = new ElevenLabsClient({
       apiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
     });
-    this.voiceId = this.configService.get<string>('ELEVENLABS_VOICE_ID', 'nPczCjzI2devNBz1zQrb');
-    this.model = this.configService.get<string>('ELEVENLABS_MODEL', 'eleven_flash_v2_5');
+    this.voiceId = this.configService.get<string>(
+      'ELEVENLABS_VOICE_ID',
+      ELEVENLABS_DEFAULT_VOICE_ID,
+    );
+    this.model = this.configService.get<string>('ELEVENLABS_MODEL', ELEVENLABS_MODEL_ID);
   }
 
   /**

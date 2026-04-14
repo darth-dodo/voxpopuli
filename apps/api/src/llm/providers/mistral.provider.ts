@@ -3,9 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ChatMistralAI } from '@langchain/mistralai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { LlmProviderInterface } from '../llm-provider.interface';
-
-/** Mistral model identifier. */
-const MODEL_ID = 'mistral-small-latest';
+import { MISTRAL_MODEL_ID } from '../model-ids';
 
 /** Mistral context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 262_000;
@@ -37,7 +35,7 @@ export class MistralProvider implements LlmProviderInterface {
     if (!this.model) {
       this.model = new ChatMistralAI({
         apiKey: this.apiKey,
-        model: MODEL_ID,
+        model: MISTRAL_MODEL_ID,
       });
     }
     return this.model;

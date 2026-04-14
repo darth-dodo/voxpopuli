@@ -3,9 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ChatAnthropic } from '@langchain/anthropic';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { LlmProviderInterface } from '../llm-provider.interface';
-
-/** Claude model identifier. */
-const MODEL_ID = 'claude-haiku-4-5-20251001';
+import { CLAUDE_MODEL_ID } from '../model-ids';
 
 /** Claude context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 200_000;
@@ -37,7 +35,7 @@ export class ClaudeProvider implements LlmProviderInterface {
     if (!this.model) {
       this.model = new ChatAnthropic({
         apiKey: this.apiKey,
-        model: MODEL_ID,
+        model: CLAUDE_MODEL_ID,
       });
     }
     return this.model;

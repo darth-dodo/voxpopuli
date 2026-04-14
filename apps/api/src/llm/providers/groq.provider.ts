@@ -3,9 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ChatGroq } from '@langchain/groq';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { LlmProviderInterface } from '../llm-provider.interface';
-
-/** Groq model identifier. */
-const MODEL_ID = 'qwen/qwen3-32b';
+import { GROQ_MODEL_ID } from '../model-ids';
 
 /** Groq context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 131_000;
@@ -37,7 +35,7 @@ export class GroqProvider implements LlmProviderInterface {
     if (!this.model) {
       this.model = new ChatGroq({
         apiKey: this.apiKey,
-        model: MODEL_ID,
+        model: GROQ_MODEL_ID,
       });
     }
     return this.model;

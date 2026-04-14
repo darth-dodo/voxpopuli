@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Res, HttpException, HttpStatus } from '@ne
 import type { Response } from 'express';
 import { TtsService } from './tts.service';
 import { TtsRequest, VoiceConfig } from '@voxpopuli/shared-types';
+import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
@@ -79,9 +80,9 @@ export class TtsController {
   @Get('voices')
   voices(): VoiceConfig {
     return {
-      id: 'nPczCjzI2devNBz1zQrb',
+      id: ELEVENLABS_DEFAULT_VOICE_ID,
       name: 'Brian',
-      model: 'eleven_flash_v2_5',
+      model: ELEVENLABS_MODEL_ID,
       settings: {
         stability: 0.65,
         similarityBoost: 0.75,
