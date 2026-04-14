@@ -24,10 +24,10 @@
 </button>
 }
 
-<!-- Loading: Spinner pill -->
+<!-- Loading: Phase text + elapsed + cancel -->
 @if (state() === 'loading') {
 <div
-  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent-amber/40 bg-accent-amber/10 text-accent-amber text-xs font-medium"
+  class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent-amber/40 bg-accent-amber/10 text-accent-amber text-xs font-medium"
 >
   <svg
     class="w-3.5 h-3.5 animate-spin"
@@ -39,7 +39,18 @@
     <circle cx="12" cy="12" r="10" stroke-opacity="0.3" />
     <path d="M12 2a10 10 0 0 1 10 10" />
   </svg>
-  Preparing...
+  <span>{{ loadingPhase() }}</span>
+  <span class="tabular-nums text-accent-amber/60">{{ loadingElapsed() }}s</span>
+  <button
+    type="button"
+    class="ml-0.5 text-accent-amber/50 hover:text-accent-amber transition-colors cursor-pointer"
+    (click)="cancelLoading()"
+    aria-label="Cancel narration"
+  >
+    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  </button>
 </div>
 }
 
@@ -59,93 +70,111 @@
 
 <!-- Expanded Player: Playing / Paused / Complete -->
 @if (isExpanded()) {
-<div class="flex items-center gap-2.5 min-w-0">
-  <!-- Play/Pause/Replay button -->
-  <button
-    type="button"
-    class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors"
-    [class]="state() === 'complete'
-        ? 'border-2 border-text-muted text-text-muted hover:border-accent-amber hover:text-accent-amber'
-        : state() === 'playing'
-          ? 'bg-accent-amber text-surface-base'
-          : 'border-2 border-accent-amber text-accent-amber hover:bg-accent-amber/10'"
-    (click)="togglePlayPause()"
-    [attr.aria-label]="state() === 'playing' ? 'Pause' : state() === 'complete' ? 'Replay' : 'Play'"
-  >
-    @if (state() === 'playing') {
-    <!-- Pause icon -->
-    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="6" y="4" width="4" height="16" rx="1" />
-      <rect x="14" y="4" width="4" height="16" rx="1" />
-    </svg>
-    } @else if (state() === 'complete') {
-    <!-- Replay icon -->
-    <svg
-      class="w-4 h-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+<div class="vp-card p-3 sm:p-4 mt-4">
+  <div class="flex items-center gap-3">
+    <!-- Play/Pause/Replay button -->
+    <button
+      type="button"
+      class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors"
+      [class]="state() === 'complete'
+          ? 'border-2 border-text-muted text-text-muted hover:border-accent-amber hover:text-accent-amber'
+          : state() === 'playing'
+            ? 'bg-accent-amber text-surface-base'
+            : 'border-2 border-accent-amber text-accent-amber hover:bg-accent-amber/10'"
+      (click)="togglePlayPause()"
+      [attr.aria-label]="state() === 'playing' ? 'Pause' : state() === 'complete' ? 'Replay' : 'Play'"
     >
-      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-    </svg>
-    } @else {
-    <!-- Play icon -->
-    <svg class="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-      <polygon points="5,3 19,12 5,21" />
-    </svg>
-    }
-  </button>
+      @if (state() === 'playing') {
+      <!-- Pause icon -->
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+        <rect x="6" y="4" width="4" height="16" rx="1" />
+        <rect x="14" y="4" width="4" height="16" rx="1" />
+      </svg>
+      } @else if (state() === 'complete') {
+      <!-- Replay icon -->
+      <svg
+        class="w-4 h-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+        <path d="M21 3v5h-5" />
+      </svg>
+      } @else {
+      <!-- Play icon -->
+      <svg class="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+        <polygon points="5,3 19,12 5,21" />
+      </svg>
+      }
+    </button>
 
-  <!-- Progress bar -->
-  <div class="flex-1 min-w-0">
-    <div class="h-1 rounded-full bg-accent-amber/20">
+    <!-- Center: progress + time -->
+    <div class="flex-1 min-w-0 space-y-1">
+      <!-- Seekable progress bar -->
       <div
-        class="h-full rounded-full transition-all"
-        [class]="state() === 'complete' ? 'bg-accent-amber/40' : 'bg-accent-amber'"
-        [style.width.%]="progress()"
-      ></div>
+        #progressBar
+        class="h-1.5 rounded-full bg-accent-amber/20 cursor-pointer group"
+        (click)="seekTo($event)"
+        role="slider"
+        [attr.aria-valuenow]="Math.floor(currentTime())"
+        [attr.aria-valuemax]="Math.floor(duration())"
+        aria-label="Audio progress"
+      >
+        <div
+          class="h-full rounded-full transition-all relative"
+          [class]="state() === 'complete' ? 'bg-accent-amber/40' : 'bg-accent-amber'"
+          [style.width.%]="progress()"
+        >
+          <!-- Seek thumb (visible on hover) -->
+          <div
+            class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-accent-amber opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Time display -->
+      <div class="flex items-center justify-between">
+        <span class="text-text-muted text-[10px] tabular-nums">{{ formattedTime() }}</span>
+        <span class="text-text-muted text-[10px] tabular-nums">{{ formattedDuration() }}</span>
+      </div>
+    </div>
+
+    <!-- Controls: speed + download -->
+    <div class="flex items-center gap-1.5">
+      <button
+        type="button"
+        class="flex-shrink-0 px-1.5 py-0.5 rounded-lg bg-accent-amber/10 text-accent-amber text-[10px] font-medium cursor-pointer hover:bg-accent-amber/20 transition-colors"
+        (click)="cycleSpeed()"
+        aria-label="Change playback speed"
+      >
+        {{ playbackSpeed() }}x
+      </button>
+
+      <button
+        type="button"
+        class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent-amber cursor-pointer transition-colors"
+        (click)="download()"
+        aria-label="Download narration"
+      >
+        <svg
+          class="w-4 h-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7,10 12,15 17,10" />
+          <line x1="12" x2="12" y1="15" y2="3" />
+        </svg>
+      </button>
     </div>
   </div>
-
-  <!-- Time -->
-  <span class="text-text-muted text-[10px] tabular-nums whitespace-nowrap">
-    @if (state() === 'complete') { {{ formattedDuration() }} } @else { {{ formattedTime() }} }
-  </span>
-
-  <!-- Speed selector -->
-  <button
-    type="button"
-    class="flex-shrink-0 px-1.5 py-0.5 rounded-lg bg-accent-amber/10 text-accent-amber text-[10px] font-medium cursor-pointer hover:bg-accent-amber/20 transition-colors"
-    (click)="cycleSpeed()"
-    aria-label="Change playback speed"
-  >
-    {{ playbackSpeed() }}x
-  </button>
-
-  <!-- Download button -->
-  <button
-    type="button"
-    class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent-amber cursor-pointer transition-colors"
-    (click)="download()"
-    aria-label="Download narration"
-  >
-    <svg
-      class="w-4 h-4"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7,10 12,15 17,10" />
-      <line x1="12" x2="12" y1="15" y2="3" />
-    </svg>
-  </button>
 </div>
 }

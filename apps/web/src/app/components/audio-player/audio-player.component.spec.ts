@@ -73,6 +73,18 @@ describe('AudioPlayerComponent', () => {
     expect(component.state()).toBe('loading');
   });
 
+  it('should cancel loading and return to idle', () => {
+    component.onListen();
+    expect(component.state()).toBe('loading');
+    component.cancelLoading();
+    expect(component.state()).toBe('idle');
+  });
+
+  it('should show loading elapsed and phase text', () => {
+    expect(component.loadingElapsed()).toBe(0);
+    expect(component.loadingPhase()).toBe('Rewriting for speech...');
+  });
+
   it('should cycle speed on speed button click', () => {
     expect(component.playbackSpeed()).toBe(1);
     component.cycleSpeed();

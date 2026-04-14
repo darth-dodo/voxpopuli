@@ -1,4 +1,13 @@
-import { Component, OnDestroy, computed, inject, input, signal } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  ViewChild,
+  computed,
+  inject,
+  input,
+  signal,
+} from '@angular/core';
 import { Subscription } from 'rxjs';
 import { TtsService } from '../../services/tts.service';
 
@@ -17,6 +26,13 @@ export class AudioPlayerComponent implements OnDestroy {
   private audioElement: HTMLAudioElement | null = null;
   private objectUrl: string | null = null;
   private audioBlob: Blob | null = null;
+  private loadingStartTime = 0;
+  private loadingTimer: ReturnType<typeof setInterval> | null = null;
+
+  @ViewChild('progressBar') progressBarRef!: ElementRef<HTMLDivElement>;
+
+  /** Exposed for template use in aria attributes. */
+  readonly Math = Math;
 
   readonly text = input.required<string>();
   readonly disabled = input(false);
@@ -26,6 +42,7 @@ export class AudioPlayerComponent implements OnDestroy {
   readonly playbackSpeed = signal(1);
   readonly currentTime = signal(0);
   readonly duration = signal(0);
+  readonly loadingElapsed = signal(0);
   readonly progress = computed(() => {
     const d = this.duration();
     return d > 0 ? (this.currentTime() / d) * 100 : 0;
@@ -33,6 +50,14 @@ export class AudioPlayerComponent implements OnDestroy {
 
   readonly formattedTime = computed(() => this.formatTime(this.currentTime()));
   readonly formattedDuration = computed(() => this.formatTime(this.duration()));
+
+  /** Loading phase text cycles through preparation stages. */
+  readonly loadingPhase = computed(() => {
+    const elapsed = this.loadingElapsed();
+    if (elapsed < 3) return 'Rewriting for speech...';
+    if (elapsed < 8) return 'Generating audio...';
+    return 'Almost ready...';
+  });
 
   readonly isExpanded = computed(() => {
     const s = this.state();
@@ -50,6 +75,12 @@ export class AudioPlayerComponent implements OnDestroy {
     this.startNarration();
   }
 
+  /** Cancel loading — abort the TTS fetch. */
+  cancelLoading(): void {
+    this.cleanup();
+    this.state.set('idle');
+  }
+
   /** Toggle between playing and paused states. */
   togglePlayPause(): void {
     if (!this.audioElement) return;
@@ -64,6 +95,15 @@ export class AudioPlayerComponent implements OnDestroy {
       this.audioElement.play();
       this.state.set('playing');
     }
+  }
+
+  /** Seek to position on progress bar click. */
+  seekTo(event: MouseEvent): void {
+    if (!this.audioElement || !this.progressBarRef) return;
+    const bar = this.progressBarRef.nativeElement;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    this.audioElement.currentTime = ratio * this.audioElement.duration;
   }
 
   /** Cycle through playback speed options: 1x -> 1.25x -> 1.5x -> 0.75x -> 1x. */
@@ -97,14 +137,17 @@ export class AudioPlayerComponent implements OnDestroy {
     this.cleanup();
     this.state.set('loading');
     this.errorMessage.set(null);
+    this.startLoadingTimer();
 
     this.subscription = this.ttsService.narrate(this.text(), true).subscribe({
       next: (result) => {
+        this.stopLoadingTimer();
         this.audioBlob = result.blob;
         this.objectUrl = URL.createObjectURL(result.blob);
         this.setupAudio(this.objectUrl);
       },
       error: (err) => {
+        this.stopLoadingTimer();
         this.state.set('error');
         this.errorMessage.set(err.message ?? 'Narration failed');
       },
@@ -149,6 +192,22 @@ export class AudioPlayerComponent implements OnDestroy {
     });
   }
 
+  private startLoadingTimer(): void {
+    this.stopLoadingTimer();
+    this.loadingStartTime = Date.now();
+    this.loadingElapsed.set(0);
+    this.loadingTimer = setInterval(() => {
+      this.loadingElapsed.set(Math.floor((Date.now() - this.loadingStartTime) / 1000));
+    }, 1000);
+  }
+
+  private stopLoadingTimer(): void {
+    if (this.loadingTimer !== null) {
+      clearInterval(this.loadingTimer);
+      this.loadingTimer = null;
+    }
+  }
+
   private formatTime(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
@@ -158,6 +217,7 @@ export class AudioPlayerComponent implements OnDestroy {
   private cleanup(): void {
     this.subscription?.unsubscribe();
     this.subscription = null;
+    this.stopLoadingTimer();
     if (this.audioElement) {
       this.audioElement.pause();
       this.audioElement.src = '';
