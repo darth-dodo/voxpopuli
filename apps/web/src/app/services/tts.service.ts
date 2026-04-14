@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Observable, from } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export interface TtsResult {
   blob: Blob;
@@ -8,16 +9,18 @@ export interface TtsResult {
 
 @Injectable({ providedIn: 'root' })
 export class TtsService {
+  private readonly baseUrl = `${environment.apiUrl}/tts`;
+
   /**
    * POST to /api/tts/narrate with the answer text.
-   * Reads chunked MP3 response, collects into a Blob.
+   * Reads the MP3 response and collects into a Blob.
    */
   narrate(text: string, rewrite = true): Observable<TtsResult> {
     return from(this.fetchNarration(text, rewrite));
   }
 
   private async fetchNarration(text: string, rewrite: boolean): Promise<TtsResult> {
-    const response = await fetch('/api/tts/narrate', {
+    const response = await fetch(`${this.baseUrl}/narrate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, rewrite }),
