@@ -21,11 +21,12 @@ export class TtsController {
   constructor(private readonly ttsService: TtsService) {}
 
   /**
-   * Stream narrated audio for the given text.
+   * Generate narrated audio for the given text.
    *
    * Optionally rewrites the text into a podcast-style script before
-   * synthesising speech via ElevenLabs.  The response is a chunked
-   * `audio/mpeg` stream with character count metadata in headers.
+   * synthesising speech via ElevenLabs. The audio stream is buffered
+   * into a complete response with Content-Length for compatibility
+   * with reverse proxies (Render, Cloudflare) that drop chunked streams.
    */
   @Post('narrate')
   async narrate(@Body() body: TtsRequest, @Res() res: Response): Promise<void> {
@@ -47,19 +48,19 @@ export class TtsController {
         voiceId: body.voiceId,
       });
 
+      // Buffer the stream into a single Buffer for reliable delivery
+      // through reverse proxies that don't support chunked transfer.
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const audioBuffer = Buffer.concat(chunks);
+
       res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Transfer-Encoding', 'chunked');
+      res.setHeader('Content-Length', audioBuffer.length);
       res.setHeader('X-TTS-Characters', String(characterCount));
-      res.setHeader('X-Accel-Buffering', 'no');
       res.setHeader('Cache-Control', 'no-cache');
-
-      stream.pipe(res);
-
-      stream.on('error', () => {
-        if (!res.headersSent) {
-          res.status(HttpStatus.BAD_GATEWAY).json({ message: 'Audio streaming failed' });
-        }
-      });
+      res.end(audioBuffer);
     } catch (error) {
       if (error instanceof HttpException) throw error;
 

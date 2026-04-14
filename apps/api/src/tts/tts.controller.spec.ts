@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TtsController } from './tts.controller';
 import { TtsService } from './tts.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { PassThrough, Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 
 // Mock LLM provider modules to avoid ESM resolution issues
 jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
@@ -14,15 +14,15 @@ jest.mock('elevenlabs', () => ({
   ElevenLabsClient: jest.fn().mockImplementation(() => ({})),
 }));
 
-/** Create a mock Express Response backed by a PassThrough stream. */
+/** Create a mock Express Response. */
 function createMockRes() {
-  const passThrough = new PassThrough();
-  return Object.assign(passThrough, {
+  return {
     setHeader: jest.fn(),
     status: jest.fn().mockReturnThis(),
     json: jest.fn(),
+    end: jest.fn(),
     headersSent: false,
-  });
+  };
 }
 
 describe('TtsController', () => {
@@ -52,14 +52,15 @@ describe('TtsController', () => {
   });
 
   describe('POST /api/tts/narrate', () => {
-    it('should set audio/mpeg content type and X-TTS-Characters header', async () => {
+    it('should buffer audio and set Content-Length, Content-Type, and X-TTS-Characters', async () => {
       const mockRes = createMockRes();
 
       await controller.narrate({ text: 'Hello world', rewrite: true }, mockRes as never);
 
       expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'audio/mpeg');
       expect(mockRes.setHeader).toHaveBeenCalledWith('X-TTS-Characters', '150');
-      expect(mockRes.setHeader).toHaveBeenCalledWith('Transfer-Encoding', 'chunked');
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Length', 10); // 'fake-audio'.length
+      expect(mockRes.end).toHaveBeenCalledWith(Buffer.from('fake-audio'));
     });
 
     it('should throw 400 for empty text', async () => {
