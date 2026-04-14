@@ -47,8 +47,9 @@ Follow the strategy you chose. Use these tools:
 ## STEP 3: COVERAGE CHECK (before stopping)
 Review your identified facets:
 - Does each facet have at least one relevant source?
-- If a facet has zero evidence and you have iterations left, try one more targeted search.
-- If you've used 6+ iterations and still have gaps, stop — gaps will be flagged downstream.
+- If a facet has zero evidence, note the gap — do NOT search again.
+- You MUST stop after completing your planned searches from Step 1.
+- Gaps will be flagged downstream by the Synthesizer.
 
 ## IMPORTANT
 - Prioritize stories with high points and active discussion.
