@@ -69,5 +69,6 @@ testem.log
 .github/instructions/nx.instructions.md
 .claude/worktrees
 .claude/settings.local.json
+.superpowers/
 __screenshots__/
 test-output/

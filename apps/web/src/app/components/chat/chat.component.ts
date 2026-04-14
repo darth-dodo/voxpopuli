@@ -2,6 +2,7 @@ import {
   Component,
   type OnInit,
   type OnDestroy,
+  ViewChild,
   inject,
   signal,
   computed,
@@ -18,6 +19,7 @@ import { SourceCardComponent } from '../source-card/source-card.component';
 import { TrustBarComponent } from '../trust-bar/trust-bar.component';
 import { ProviderSelectorComponent } from '../provider-selector/provider-selector.component';
 import { MetaBarComponent } from '../meta-bar/meta-bar.component';
+import { AudioPlayerComponent } from '../audio-player/audio-player.component';
 
 /** Maximum character length for a user query. */
 const MAX_QUERY_LENGTH = 500;
@@ -43,6 +45,7 @@ const MAX_QUERY_LENGTH = 500;
     TrustBarComponent,
     ProviderSelectorComponent,
     MetaBarComponent,
+    AudioPlayerComponent,
   ],
   templateUrl: './chat.component.html',
 })
@@ -210,6 +213,17 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   /** Currently active tab in the result view. */
   readonly activeTab = signal<'answer' | 'sources' | 'steps'>('steps');
+
+  /** Reference to the audio player for triggering from header button. */
+  @ViewChild(AudioPlayerComponent) audioPlayer?: AudioPlayerComponent;
+
+  /** Whether the audio player should be enabled (answer fully loaded). */
+  readonly answerReady = computed(() => !this.loading() && !!this.response()?.answer);
+
+  /** Trigger narration from the header Listen button. */
+  triggerListen(): void {
+    this.audioPlayer?.onListen();
+  }
 
   /** Maximum query length exposed to the template. */
   readonly maxLength = MAX_QUERY_LENGTH;

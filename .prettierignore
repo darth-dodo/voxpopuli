@@ -5,4 +5,5 @@ pnpm-lock.yaml
 coverage
 .angular
 .playwright-mcp
+.superpowers
 evals/results

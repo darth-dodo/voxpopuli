@@ -12,6 +12,9 @@ import { invokeWithRetry, isTpmError } from '../../llm/invoke-with-retry';
 
 const MAX_REACT_ITERATIONS = 8;
 
+/** Each ReAct "step" is ~2 graph nodes (LLM call + tool execution). Add buffer. */
+const RECURSION_LIMIT = MAX_REACT_ITERATIONS * 2 + 1;
+
 /**
  * Produce a short, human-friendly summary of a tool's raw output.
  * The full output is still kept in `allMessages` for the compaction phase —
@@ -165,6 +168,7 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
         metadata: { pipeline_stage: 'retriever', phase: 'react', query: state.query },
         tags: ['multi-agent', 'retriever', 'react'],
         streamMode: 'values',
+        recursionLimit: RECURSION_LIMIT,
       },
     );
 

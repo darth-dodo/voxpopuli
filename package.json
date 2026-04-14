@@ -113,6 +113,7 @@
     "axios": "^1.14.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "elevenlabs": "^1.59.0",
     "helmet": "^8.1.0",
     "langchain": "^1.2.39",
     "lru-cache": "^11.2.7",

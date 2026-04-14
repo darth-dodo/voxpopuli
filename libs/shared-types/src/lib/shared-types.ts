@@ -88,6 +88,22 @@ export interface RewriteTrustMetadata {
   toneAlignment: number;
 }
 
+/** ElevenLabs voice generation settings. */
+export interface VoiceSettings {
+  stability: number;
+  similarityBoost: number;
+  style: number;
+  useSpeakerBoost: boolean;
+}
+
+/** Configuration for an ElevenLabs voice. */
+export interface VoiceConfig {
+  id: string;
+  name: string;
+  model: string;
+  settings: VoiceSettings;
+}
+
 /** A single claim extracted from source material. */
 export interface Claim {
   /** The claim text. */

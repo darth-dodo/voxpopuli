@@ -405,39 +405,68 @@
     >
       <!-- Header -->
       <header
-        class="sticky top-0 z-40 bg-surface-base/90 backdrop-blur-sm flex items-center justify-between mb-4 py-3 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
+        class="sticky top-0 z-40 bg-surface-base/90 backdrop-blur-sm -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 mb-4"
       >
-        <div class="flex items-center gap-3">
-          <button
-            type="button"
-            class="text-editorial text-xl font-semibold text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer"
-            (click)="goHome()"
-            aria-label="Back to home"
-          >
-            VoxPopuli
-          </button>
-          <span class="text-text-faint text-sm hidden sm:inline">Voice of HackerNews</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
-            (click)="goHome()"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke-width="1.5"
-              stroke="currentColor"
-              class="w-3.5 h-3.5"
-              aria-hidden="true"
+        <!-- Top bar: logo + controls -->
+        <div class="flex items-center justify-between py-3">
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-editorial text-xl font-semibold text-accent-amber hover:text-accent-amber-glow transition-colors cursor-pointer"
+              (click)="goHome()"
+              aria-label="Back to home"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            New question
-          </button>
-          <ng-container *ngTemplateOutlet="themeToggle" />
+              VoxPopuli
+            </button>
+            <span class="text-text-faint text-sm hidden sm:inline">Voice of HackerNews</span>
+          </div>
+          <div class="flex items-center gap-2">
+            @if (answerReady() && (!audioPlayer || audioPlayer.state() === 'idle')) {
+            <button
+              type="button"
+              class="group inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-accent-amber/40 transition-all cursor-pointer"
+              (click)="triggerListen()"
+              aria-label="Listen to narration"
+            >
+              <svg
+                class="w-3.5 h-3.5 text-text-muted group-hover:text-accent-amber transition-colors"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              </svg>
+              <span
+                class="text-mono text-xs text-text-muted group-hover:text-accent-amber transition-colors"
+                >Listen</span
+              >
+            </button>
+            }
+            <button
+              type="button"
+              class="text-mono text-xs text-text-muted hover:text-text-secondary cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-border-default transition-colors"
+              (click)="goHome()"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
+                stroke="currentColor"
+                class="w-3.5 h-3.5"
+                aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              New question
+            </button>
+            <ng-container *ngTemplateOutlet="themeToggle" />
+          </div>
         </div>
       </header>
 
@@ -629,6 +658,9 @@
           }
         </div>
         } }
+
+        <!-- Audio player strip — unhides when Listen is clicked -->
+        <app-audio-player [text]="enrichedAnswer()" [disabled]="!answerReady()" />
 
         <!-- Answer content -->
         @if (response(); as res) { @if (!loading()) {
