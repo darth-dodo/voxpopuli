@@ -9,11 +9,13 @@ jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }))
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-// Mock the elevenlabs SDK
+// Mock the elevenlabs SDK — use mockImplementation so each call creates a fresh stream
 jest.mock('elevenlabs', () => ({
   ElevenLabsClient: jest.fn().mockImplementation(() => ({
     textToSpeech: {
-      convertAsStream: jest.fn().mockResolvedValue(Readable.from([Buffer.from('fake-mp3-data')])),
+      convertAsStream: jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(Readable.from([Buffer.from('fake-mp3-data')]))),
     },
   })),
 }));
