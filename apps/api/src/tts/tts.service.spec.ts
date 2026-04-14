@@ -29,7 +29,7 @@ describe('TtsService', () => {
       const config: Record<string, string> = {
         ELEVENLABS_API_KEY: 'test-api-key',
         ELEVENLABS_VOICE_ID: 'nPczCjzI2devNBz1zQrb',
-        ELEVENLABS_MODEL: 'eleven_multilingual_v2',
+        ELEVENLABS_MODEL: 'eleven_flash_v2_5',
       };
       return config[key] ?? defaultValue;
     }),

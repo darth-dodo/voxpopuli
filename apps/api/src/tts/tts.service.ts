@@ -21,7 +21,7 @@ export class TtsService {
       apiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
     });
     this.voiceId = this.configService.get<string>('ELEVENLABS_VOICE_ID', 'nPczCjzI2devNBz1zQrb');
-    this.model = this.configService.get<string>('ELEVENLABS_MODEL', 'eleven_multilingual_v2');
+    this.model = this.configService.get<string>('ELEVENLABS_MODEL', 'eleven_flash_v2_5');
   }
 
   /**

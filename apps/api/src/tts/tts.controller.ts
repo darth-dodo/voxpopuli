@@ -81,7 +81,7 @@ export class TtsController {
     return {
       id: 'nPczCjzI2devNBz1zQrb',
       name: 'Brian',
-      model: 'eleven_multilingual_v2',
+      model: 'eleven_flash_v2_5',
       settings: {
         stability: 0.65,
         similarityBoost: 0.75,
