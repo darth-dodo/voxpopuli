@@ -1,8 +1,11 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
   Query,
+  Param,
+  Res,
   Sse,
   Header,
   Logger,
@@ -12,12 +15,19 @@ import {
   UsePipes,
   ValidationPipe,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Observable } from 'rxjs';
-import type { AgentResponse } from '@voxpopuli/shared-types';
+import type {
+  AgentResponse,
+  QueryResult,
+  StoredPipelineEvent,
+  AgentStep,
+} from '@voxpopuli/shared-types';
 import { PipelineConfigSchema } from '@voxpopuli/shared-types';
 import { AgentService } from '../agent/agent.service';
 import { OrchestratorService } from '../agent/orchestrator.service';
 import { CacheService } from '../cache/cache.service';
+import { QueryStore } from '../cache/query-store';
 import { RagQueryDto } from './dto/rag-query.dto';
 
 /** Cache TTL for query results (10 minutes). */
@@ -52,6 +62,7 @@ export class RagController {
     private readonly agent: AgentService,
     private readonly orchestrator: OrchestratorService,
     private readonly cache: CacheService,
+    private readonly queryStore: QueryStore,
   ) {}
 
   /**
@@ -108,6 +119,32 @@ export class RagController {
   }
 
   /**
+   * Retrieve a stored query result by ID.
+   *
+   * Returns 200 with full {@link QueryResult} when complete or errored,
+   * 202 with partial data when still running, or 404 if not found/expired.
+   *
+   * @param queryId - The UUID returned by the SSE `init` event
+   */
+  @Get('query/:id/result')
+  getResult(@Param('id') queryId: string, @Res() res: Response): void {
+    const result = this.queryStore.get(queryId);
+    if (!result) {
+      throw new HttpException('Query not found or expired', HttpStatus.NOT_FOUND);
+    }
+    if (result.status === 'running') {
+      res.status(HttpStatus.ACCEPTED).json({
+        status: 'running',
+        queryId: result.queryId,
+        pipelineEvents: result.pipelineEvents,
+        steps: result.steps,
+      });
+      return;
+    }
+    res.status(HttpStatus.OK).json(result);
+  }
+
+  /**
    * Stream a RAG query as Server-Sent Events.
    *
    * Events are emitted in real time as the agent loop progresses — each
@@ -151,6 +188,12 @@ export class RagController {
    * stall detection.
    */
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
+    // Check for duplicate in-flight query
+    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
+    if (existingId) {
+      return this.pollExistingQuery(existingId);
+    }
+
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;
@@ -172,29 +215,39 @@ export class RagController {
         subscriber.next(msg);
       };
 
+      const queryId = this.queryStore.create(query, provider ?? 'default');
       const generator = this.agent.runStream(query, { provider });
 
       (async () => {
         let isFirst = true;
+
+        // Emit init event with queryId as the very first SSE event
+        emit({ type: 'init', data: JSON.stringify({ queryId }) }, true);
+        isFirst = false;
+
         try {
           for await (const event of generator) {
             if (cancelled) break;
 
             if (event.kind === 'step') {
+              const stepData: AgentStep = {
+                type: event.step.type,
+                content: event.step.content,
+                toolName: event.step.toolName,
+                toolInput: event.step.toolInput,
+                timestamp: event.step.timestamp,
+              };
+              this.queryStore.appendStep(queryId, stepData);
               emit(
                 {
                   type: event.step.type,
-                  data: JSON.stringify({
-                    content: event.step.content,
-                    toolName: event.step.toolName,
-                    toolInput: event.step.toolInput,
-                    timestamp: event.step.timestamp,
-                  }),
+                  data: JSON.stringify(stepData),
                 },
                 isFirst,
               );
               isFirst = false;
             } else if (event.kind === 'complete') {
+              this.queryStore.complete(queryId, event.response);
               emit(
                 {
                   type: 'answer',
@@ -214,6 +267,7 @@ export class RagController {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           this.logger.error(`Stream error: ${message}`, err instanceof Error ? err.stack : '');
+          this.queryStore.fail(queryId, message);
           emit(
             {
               type: 'error',
@@ -249,6 +303,12 @@ export class RagController {
    * stall detection.
    */
   private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
+    // Check for duplicate in-flight query
+    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
+    if (existingId) {
+      return this.pollExistingQuery(existingId);
+    }
+
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;
@@ -277,15 +337,22 @@ export class RagController {
       });
       const config = parsed.success ? parsed.data : PipelineConfigSchema.parse({});
 
+      const queryId = this.queryStore.create(query, provider ?? 'default');
       const generator = this.orchestrator.runWithFallback(query, config);
 
       (async () => {
         let isFirst = true;
+
+        // Emit init event with queryId as the very first SSE event
+        emit({ type: 'init', data: JSON.stringify({ queryId }) }, true);
+        isFirst = false;
+
         try {
           for await (const event of generator) {
             if (cancelled) break;
 
             if (event.kind === 'pipeline') {
+              this.queryStore.appendEvent(queryId, event.event as StoredPipelineEvent);
               emit(
                 {
                   type: 'pipeline',
@@ -295,15 +362,18 @@ export class RagController {
               );
               isFirst = false;
             } else if (event.kind === 'step') {
+              const stepData: AgentStep = {
+                type: event.step.type,
+                content: event.step.content,
+                toolName: event.step.toolName,
+                toolInput: event.step.toolInput,
+                timestamp: event.step.timestamp,
+              };
+              this.queryStore.appendStep(queryId, stepData);
               emit(
                 {
                   type: event.step.type,
-                  data: JSON.stringify({
-                    content: event.step.content,
-                    toolName: event.step.toolName,
-                    toolInput: event.step.toolInput,
-                    timestamp: event.step.timestamp,
-                  }),
+                  data: JSON.stringify(stepData),
                 },
                 isFirst,
               );
@@ -318,6 +388,7 @@ export class RagController {
               );
               isFirst = false;
             } else if (event.kind === 'complete') {
+              this.queryStore.complete(queryId, event.response);
               emit(
                 {
                   type: 'answer',
@@ -340,6 +411,7 @@ export class RagController {
             `Multi-agent stream error: ${message}`,
             err instanceof Error ? err.stack : '',
           );
+          this.queryStore.fail(queryId, message);
           emit(
             {
               type: 'error',
@@ -356,6 +428,87 @@ export class RagController {
       return () => {
         cancelled = true;
         clearInterval(heartbeatInterval);
+      };
+    });
+  }
+
+  /**
+   * Poll an existing in-flight query instead of starting a duplicate agent run.
+   *
+   * Returns an Observable that emits SSE events by polling the QueryStore
+   * every 2 seconds for new pipeline events, steps, and completion status.
+   *
+   * @param queryId - The existing query's ID from QueryStore.findRunning()
+   * @returns Observable of SSE {@link MessageEvent}s
+   */
+  private pollExistingQuery(queryId: string): Observable<MessageEvent> {
+    return new Observable<MessageEvent>((subscriber) => {
+      let eventId = 0;
+      let lastEventCount = 0;
+      let lastStepCount = 0;
+
+      const emit = (event: Partial<MessageEvent>): void => {
+        subscriber.next({ ...event, id: String(++eventId) } as MessageEvent);
+      };
+
+      // Emit init with queryId
+      emit({ type: 'init', data: JSON.stringify({ queryId }) });
+
+      const interval = setInterval(() => {
+        const result = this.queryStore.get(queryId);
+        if (!result) {
+          emit({ type: 'error', data: JSON.stringify({ message: 'Query expired' }) });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+          return;
+        }
+
+        // Emit any new pipeline events
+        while (lastEventCount < result.pipelineEvents.length) {
+          emit({
+            type: 'pipeline',
+            data: JSON.stringify(result.pipelineEvents[lastEventCount]),
+          });
+          lastEventCount++;
+        }
+
+        // Emit any new steps
+        while (lastStepCount < result.steps.length) {
+          const step = result.steps[lastStepCount];
+          emit({ type: step.type, data: JSON.stringify(step) });
+          lastStepCount++;
+        }
+
+        if (result.status === 'complete' && result.response) {
+          emit({
+            type: 'answer',
+            data: JSON.stringify({
+              answer: result.response.answer,
+              sources: result.response.sources,
+              trust: result.response.trust,
+              meta: result.response.meta,
+            }),
+          });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+        } else if (result.status === 'error') {
+          emit({ type: 'error', data: JSON.stringify({ message: result.error }) });
+          clearInterval(interval);
+          clearInterval(heartbeat);
+          subscriber.complete();
+        }
+      }, 2000);
+
+      // Heartbeat
+      const heartbeat = setInterval(() => {
+        emit({ type: 'ping', data: '' });
+      }, HEARTBEAT_INTERVAL_MS);
+
+      return () => {
+        clearInterval(interval);
+        clearInterval(heartbeat);
       };
     });
   }

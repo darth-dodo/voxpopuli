@@ -55,6 +55,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Whether the page was backgrounded while a stream was active. */
   readonly wasBackgrounded = signal(false);
 
+  /** Query ID from the init SSE event, used for fetch-on-return. */
+  readonly queryId = signal<string | null>(null);
+
   /** Bound reference to the visibility-change handler for cleanup. */
   private readonly onVisibilityChange = this.handleVisibilityChange.bind(this);
 
@@ -107,35 +110,63 @@ export class ChatComponent implements OnInit, OnDestroy {
    * Handle transitions between foreground and background.
    *
    * When the page is hidden during an active stream, a flag is set so that
-   * on return we can distinguish a background-induced error from a normal one.
-   * When the page becomes visible again and the stream has errored while
-   * backgrounded, we show a user-friendly message with the collected context
-   * preserved — the user can choose to retry manually.
-   *
-   * We deliberately do NOT auto-retry because:
-   * 1. Retrying calls `submit()` which wipes all collected pipeline events and steps.
-   * 2. Each retry starts a new server-side agent run, wasting resources.
-   * 3. The user may have useful partial results from before the interruption.
+   * on return we can fetch the stored result instead of relying on SSE
+   * reconnection.
    */
   private handleVisibilityChange(): void {
     if (document.hidden) {
-      // Page is being backgrounded
       if (this.isStreaming()) {
         this.wasBackgrounded.set(true);
       }
-    } else {
-      // Page returning to foreground
-      if (this.wasBackgrounded() && !this.isStreaming()) {
-        this.wasBackgrounded.set(false);
-        // RagService handles reconnection — check if it failed
-        const state = this.ragService.connectionState();
-        if (state === 'failed' || state === 'stalled') {
-          this.error.set('Connection lost while in the background. Tap retry to try again.');
-          this.stopActiveStages('Connection lost');
-        }
-        // If state is 'reconnecting' or 'open', the stream is still alive — no action needed
-      }
+      return;
     }
+
+    // Returning to foreground
+    if (!this.wasBackgrounded()) return;
+    this.wasBackgrounded.set(false);
+
+    const qid = this.queryId();
+    if (!qid) return;
+
+    // Fetch result instead of reconnecting SSE
+    this.ragService.fetchResult(qid).subscribe({
+      next: (result) => {
+        if (result.status === 'complete' && result.response) {
+          this.response.set(result.response);
+          this.pipelineEvents.set(result.pipelineEvents ?? []);
+          if (result.steps?.length) {
+            this.steps.set(result.steps);
+          }
+          this.isStreaming.set(false);
+          this.loading.set(false);
+          this.stopElapsedTimer();
+          this.activeTab.set('answer');
+        } else if (result.status === 'running') {
+          if (result.pipelineEvents?.length) {
+            this.pipelineEvents.set(result.pipelineEvents);
+          }
+          if (result.steps?.length) {
+            this.steps.set(result.steps);
+          }
+          // Still running — keep streaming state, user can wait or cancel
+        } else if (result.status === 'error') {
+          this.error.set(result.error ?? 'Query failed while in background.');
+          this.isStreaming.set(false);
+          this.loading.set(false);
+          this.stopElapsedTimer();
+          this.stopActiveStages('Error');
+          this.activeTab.set('answer');
+        }
+      },
+      error: () => {
+        this.error.set('Query result expired. Tap retry to start a new query.');
+        this.isStreaming.set(false);
+        this.loading.set(false);
+        this.stopElapsedTimer();
+        this.stopActiveStages('Expired');
+        this.activeTab.set('answer');
+      },
+    });
   }
 
   /** Current query string bound to the input field. */
@@ -176,18 +207,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   /** Human-readable connection status for UI display during streaming. */
   readonly connectionStatus = computed(() => {
     const state = this.ragService.connectionState();
-    switch (state) {
-      case 'reconnecting':
-        return 'Reconnecting...';
-      case 'backgrounded':
-        return 'Paused (app in background)';
-      case 'stalled':
-        return 'Connection stalled';
-      case 'failed':
-        return 'Connection failed';
-      default:
-        return null;
-    }
+    return state === 'error' ? 'Connection lost' : null;
   });
 
   /** Human-readable status message derived from the latest pipeline event. */
@@ -307,6 +327,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.loading.set(true);
     this.isStreaming.set(true);
     this.wasBackgrounded.set(false);
+    this.queryId.set(null);
     this.error.set(null);
     this.response.set(null);
     this.steps.set([]);
@@ -367,6 +388,9 @@ export class ChatComponent implements OnInit, OnDestroy {
           case 'token':
             this.tokenContent.update((content) => content + event.content);
             break;
+          case 'init':
+            this.queryId.set(event.queryId);
+            break;
           case 'error':
             this.error.set(event.message);
             this.isStreaming.set(false);
@@ -380,15 +404,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       error: (err: unknown) => {
         const message =
           err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-
-        // If we were backgrounded and the connection was lost, show a friendlier message
-        if (this.wasBackgrounded()) {
-          this.wasBackgrounded.set(false);
-          this.error.set('Connection interrupted while in the background. Tap retry to try again.');
-        } else {
-          this.error.set(message);
-        }
-
+        this.error.set(message);
         this.isStreaming.set(false);
         this.loading.set(false);
         this.stopElapsedTimer();
@@ -500,6 +516,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.tokenContent.set('');
     this.loading.set(false);
     this.isStreaming.set(false);
+    this.queryId.set(null);
     this.activeTab.set('steps');
   }
 }
