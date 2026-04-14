@@ -108,7 +108,7 @@ export class RagService {
    * If no SSE event arrives within this window the connection is considered dead.
    * Mobile browsers often silently kill connections without firing onerror.
    */
-  private static readonly STALL_TIMEOUT_MS = 200_000;
+  private static readonly STALL_TIMEOUT_MS = 300_000;
 
   stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
     this.loading.set(true);
@@ -216,8 +216,9 @@ export class RagService {
                 return;
               }
 
-              // Reset counter on any valid payload
+              // Reset counters on any valid payload
               nullDataCount = 0;
+              retryCount = 0;
 
               const data: unknown = JSON.parse(event.data);
               const streamEvent = this.parseStreamEvent(eventType, data);
