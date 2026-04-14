@@ -5,7 +5,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { LlmProviderInterface } from '../llm-provider.interface';
 
 /** Mistral model identifier. */
-const MODEL_ID = 'mistral-large-latest';
+const MODEL_ID = 'mistral-small-latest';
 
 /** Mistral context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 262_000;
