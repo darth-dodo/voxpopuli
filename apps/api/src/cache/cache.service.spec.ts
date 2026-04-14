@@ -104,6 +104,37 @@ describe('CacheService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // set
+  // -------------------------------------------------------------------------
+
+  describe('set', () => {
+    it('should store a value retrievable by get()', () => {
+      service.set('direct-key', { foo: 'bar' }, 60);
+
+      const result = service.get<{ foo: string }>('direct-key');
+
+      expect(result).toEqual({ foo: 'bar' });
+    });
+
+    it('should overwrite an existing value', () => {
+      service.set('overwrite-key', 'first', 60);
+      service.set('overwrite-key', 'second', 60);
+
+      const result = service.get<string>('overwrite-key');
+
+      expect(result).toBe('second');
+    });
+
+    it('should handle null values via sentinel wrapping', () => {
+      service.set('null-direct', null, 60);
+
+      const result = service.get<null>('null-direct');
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // del
   // -------------------------------------------------------------------------
 

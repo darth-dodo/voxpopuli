@@ -51,6 +51,18 @@ export class CacheService {
   }
 
   /**
+   * Store a value in the cache with the given TTL.
+   *
+   * @param key - Unique cache key
+   * @param value - Value to store
+   * @param ttlSeconds - Time-to-live in seconds
+   */
+  set<T>(key: string, value: T, ttlSeconds: number): void {
+    this.cache.set(key, this.wrap(value), { ttl: ttlSeconds * 1000 });
+    this.checkCapacity();
+  }
+
+  /**
    * Retrieve a value from the cache by key.
    *
    * @param key - Cache key to look up

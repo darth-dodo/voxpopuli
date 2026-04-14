@@ -281,3 +281,27 @@ export interface HealthResponse {
   uptime: number;
   cacheStats: CacheStats;
 }
+
+// ---------------------------------------------------------------------------
+// Query result store
+// ---------------------------------------------------------------------------
+
+/** Stored pipeline event for query result retrieval. */
+export interface StoredPipelineEvent {
+  stage: string;
+  status: string;
+  detail: string;
+  elapsed: number;
+}
+
+/** Stored query result, retrievable by queryId. */
+export interface QueryResult {
+  queryId: string;
+  status: 'running' | 'complete' | 'error';
+  response: AgentResponse | null;
+  pipelineEvents: StoredPipelineEvent[];
+  steps: AgentStep[];
+  error: string | null;
+  createdAt: number;
+  completedAt: number | null;
+}

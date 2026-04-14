@@ -18,6 +18,7 @@ export type StreamEvent =
   | { type: 'error'; message: string }
   | { type: 'pipeline'; stage: string; status: string; detail: string; elapsed: number }
   | { type: 'token'; content: string }
+  | { type: 'init'; queryId: string }
   | { type: 'ping' };
 
 /** SSE connection lifecycle states for UI consumption. */
@@ -178,6 +179,7 @@ export class RagService {
           'error',
           'pipeline',
           'token',
+          'init',
           'ping',
         ] as const;
 
@@ -361,7 +363,7 @@ export class RagService {
    * @returns A discriminated `StreamEvent`.
    */
   private parseStreamEvent(
-    type: 'thought' | 'action' | 'observation' | 'answer' | 'error' | 'pipeline' | 'token',
+    type: 'thought' | 'action' | 'observation' | 'answer' | 'error' | 'pipeline' | 'token' | 'init',
     data: unknown,
   ): StreamEvent {
     const record = data as Record<string, unknown>;
@@ -408,6 +410,11 @@ export class RagService {
         return {
           type: 'token',
           content: String(record['content'] ?? ''),
+        };
+      case 'init':
+        return {
+          type: 'init',
+          queryId: String(record['queryId'] ?? ''),
         };
     }
   }
