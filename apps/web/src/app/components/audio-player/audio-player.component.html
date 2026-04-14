@@ -1,66 +1,79 @@
-<!-- Idle: Listen pill -->
+<!-- ═══════════════════════════════════════════════
+     Audio Narration — "The Broadcast Strip"
+     Lives in the sticky header. All states inline.
+     ═══════════════════════════════════════════════ -->
+
+<!-- ─── Idle: Listen pill ─── -->
 @if (state() === 'idle') {
 <button
   type="button"
-  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-accent-amber/40 bg-accent-amber/10 text-accent-amber text-xs font-medium hover:bg-accent-amber/20 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+  class="group inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border-subtle hover:border-accent-amber/40 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
   [disabled]="disabled()"
   (click)="onListen()"
   aria-label="Listen to narration"
 >
-  <svg
-    class="w-3.5 h-3.5"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-    <line x1="12" x2="12" y1="19" y2="22" />
-  </svg>
-  Listen
+  <div class="vp-waveform vp-waveform--idle" aria-hidden="true">
+    <div class="vp-waveform-bar group-hover:!bg-accent-amber group-hover:!opacity-60"></div>
+    <div class="vp-waveform-bar group-hover:!bg-accent-amber group-hover:!opacity-60"></div>
+    <div class="vp-waveform-bar group-hover:!bg-accent-amber group-hover:!opacity-60"></div>
+    <div class="vp-waveform-bar group-hover:!bg-accent-amber group-hover:!opacity-60"></div>
+    <div class="vp-waveform-bar group-hover:!bg-accent-amber group-hover:!opacity-60"></div>
+  </div>
+  <span class="text-mono text-xs text-text-muted group-hover:text-accent-amber transition-colors whitespace-nowrap">
+    Listen
+  </span>
+  <span class="text-mono text-[10px] text-text-faint group-hover:text-accent-amber/50 transition-colors hidden sm:inline">
+    ~{{ estimatedMinutes() }}m
+  </span>
 </button>
 }
 
-<!-- Loading: Phase text + elapsed + cancel -->
+<!-- ─── Loading: Waveform oscillates ─── -->
 @if (state() === 'loading') {
 <div
-  class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-accent-amber/40 bg-accent-amber/10 text-accent-amber text-xs font-medium"
+  class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-accent-amber/20 bg-accent-amber/5"
 >
-  <svg
-    class="w-3.5 h-3.5 animate-spin"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-  >
-    <circle cx="12" cy="12" r="10" stroke-opacity="0.3" />
-    <path d="M12 2a10 10 0 0 1 10 10" />
-  </svg>
-  <span>{{ loadingPhase() }}</span>
-  <span class="tabular-nums text-accent-amber/60">{{ loadingElapsed() }}s</span>
+  <div class="vp-waveform vp-waveform--loading" aria-hidden="true">
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+  </div>
+  <span class="text-mono text-xs text-accent-amber whitespace-nowrap hidden sm:inline">
+    {{ loadingPhase() }}
+  </span>
+  <span class="text-mono text-[10px] tabular-nums text-accent-amber/50">
+    {{ loadingElapsed() }}s
+  </span>
   <button
     type="button"
-    class="ml-0.5 text-accent-amber/50 hover:text-accent-amber transition-colors cursor-pointer"
+    class="p-0.5 text-text-faint hover:text-accent-amber transition-colors cursor-pointer"
     (click)="cancelLoading()"
-    aria-label="Cancel narration"
+    aria-label="Cancel"
   >
-    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+      stroke-linecap="round" stroke-linejoin="round">
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   </button>
 </div>
 }
 
-<!-- Error: Message + Retry -->
+<!-- ─── Error: Red bars + retry ─── -->
 @if (state() === 'error') {
-<div class="inline-flex items-center gap-2 text-xs">
-  <span class="text-trust-danger">{{ errorMessage() }}</span>
+<div class="inline-flex items-center gap-2 px-2.5 py-1.5">
+  <div class="vp-waveform vp-waveform--idle" aria-hidden="true">
+    <div class="vp-waveform-bar !bg-trust-danger"></div>
+    <div class="vp-waveform-bar !bg-trust-danger"></div>
+    <div class="vp-waveform-bar !bg-trust-danger"></div>
+    <div class="vp-waveform-bar !bg-trust-danger"></div>
+    <div class="vp-waveform-bar !bg-trust-danger"></div>
+  </div>
+  <span class="text-mono text-[10px] text-trust-danger hidden sm:inline">Failed</span>
   <button
     type="button"
-    class="px-2 py-1 rounded border border-trust-danger/40 text-trust-danger hover:bg-trust-danger/10 transition-colors cursor-pointer text-xs"
+    class="text-mono text-[10px] text-text-muted hover:text-accent-amber transition-colors cursor-pointer"
     (click)="onRetry()"
   >
     Retry
@@ -68,113 +81,86 @@
 </div>
 }
 
-<!-- Expanded Player: Playing / Paused / Complete -->
-@if (isExpanded()) {
-<div class="vp-card p-3 sm:p-4 mt-4">
-  <div class="flex items-center gap-3">
-    <!-- Play/Pause/Replay button -->
-    <button
-      type="button"
-      class="flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors"
-      [class]="state() === 'complete'
-          ? 'border-2 border-text-muted text-text-muted hover:border-accent-amber hover:text-accent-amber'
-          : state() === 'playing'
-            ? 'bg-accent-amber text-surface-base'
-            : 'border-2 border-accent-amber text-accent-amber hover:bg-accent-amber/10'"
-      (click)="togglePlayPause()"
-      [attr.aria-label]="state() === 'playing' ? 'Pause' : state() === 'complete' ? 'Replay' : 'Play'"
+<!-- ─── Active: Play/Pause/Complete — compact inline strip ─── -->
+@if (state() === 'playing' || state() === 'paused' || state() === 'complete') {
+<div
+  class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors"
+  [class]="state() === 'playing'
+    ? 'border-accent-amber/30 bg-accent-amber/5'
+    : 'border-border-subtle'"
+>
+  <!-- Play/Pause -->
+  <button
+    type="button"
+    class="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center cursor-pointer transition-all"
+    [class]="state() === 'playing'
+        ? 'bg-accent-amber text-surface-base'
+        : state() === 'complete'
+          ? 'border border-text-faint text-text-faint hover:border-accent-amber hover:text-accent-amber'
+          : 'border border-accent-amber text-accent-amber hover:bg-accent-amber/10'"
+    (click)="togglePlayPause()"
+    [attr.aria-label]="state() === 'playing' ? 'Pause' : state() === 'complete' ? 'Replay' : 'Play'"
+  >
+    @if (state() === 'playing') {
+    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="4" width="4" height="16" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+    } @else if (state() === 'complete') {
+    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+    } @else {
+    <svg class="w-2.5 h-2.5 ml-px" viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="6,3 20,12 6,21" />
+    </svg>
+    }
+  </button>
+
+  <!-- Waveform -->
+  <div class="vp-waveform" [class]="waveformClass()" aria-hidden="true">
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+    <div class="vp-waveform-bar"></div>
+  </div>
+
+  <!-- Seekable progress — thin bar -->
+  <div
+    #progressBar
+    class="vp-seek-track w-16 sm:w-24 h-1 rounded-full bg-surface-overlay"
+    (click)="seekTo($event)"
+    role="slider"
+    [attr.aria-valuenow]="currentTime()"
+    [attr.aria-valuemax]="duration()"
+    aria-label="Seek"
+  >
+    <div
+      class="h-full rounded-full relative"
+      [class]="state() === 'complete' ? 'bg-accent-amber/30' : 'bg-accent-amber'"
+      [style.width.%]="progress()"
     >
-      @if (state() === 'playing') {
-      <!-- Pause icon -->
-      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-        <rect x="6" y="4" width="4" height="16" rx="1" />
-        <rect x="14" y="4" width="4" height="16" rx="1" />
-      </svg>
-      } @else if (state() === 'complete') {
-      <!-- Replay icon -->
-      <svg
-        class="w-4 h-4"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
-        <path d="M21 3v5h-5" />
-      </svg>
-      } @else {
-      <!-- Play icon -->
-      <svg class="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-        <polygon points="5,3 19,12 5,21" />
-      </svg>
-      }
-    </button>
-
-    <!-- Center: progress + time -->
-    <div class="flex-1 min-w-0 space-y-1">
-      <!-- Seekable progress bar -->
-      <div
-        #progressBar
-        class="h-1.5 rounded-full bg-accent-amber/20 cursor-pointer group"
-        (click)="seekTo($event)"
-        role="slider"
-        [attr.aria-valuenow]="Math.floor(currentTime())"
-        [attr.aria-valuemax]="Math.floor(duration())"
-        aria-label="Audio progress"
-      >
-        <div
-          class="h-full rounded-full transition-all relative"
-          [class]="state() === 'complete' ? 'bg-accent-amber/40' : 'bg-accent-amber'"
-          [style.width.%]="progress()"
-        >
-          <!-- Seek thumb (visible on hover) -->
-          <div
-            class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-accent-amber opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-          ></div>
-        </div>
-      </div>
-
-      <!-- Time display -->
-      <div class="flex items-center justify-between">
-        <span class="text-text-muted text-[10px] tabular-nums">{{ formattedTime() }}</span>
-        <span class="text-text-muted text-[10px] tabular-nums">{{ formattedDuration() }}</span>
-      </div>
-    </div>
-
-    <!-- Controls: speed + download -->
-    <div class="flex items-center gap-1.5">
-      <button
-        type="button"
-        class="flex-shrink-0 px-1.5 py-0.5 rounded-lg bg-accent-amber/10 text-accent-amber text-[10px] font-medium cursor-pointer hover:bg-accent-amber/20 transition-colors"
-        (click)="cycleSpeed()"
-        aria-label="Change playback speed"
-      >
-        {{ playbackSpeed() }}x
-      </button>
-
-      <button
-        type="button"
-        class="flex-shrink-0 w-8 h-8 flex items-center justify-center text-text-muted hover:text-accent-amber cursor-pointer transition-colors"
-        (click)="download()"
-        aria-label="Download narration"
-      >
-        <svg
-          class="w-4 h-4"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7,10 12,15 17,10" />
-          <line x1="12" x2="12" y1="15" y2="3" />
-        </svg>
-      </button>
+      <div class="vp-seek-thumb"></div>
     </div>
   </div>
+
+  <!-- Time -->
+  <span class="text-mono text-[10px] tabular-nums text-text-muted whitespace-nowrap hidden sm:inline">
+    {{ formattedTime() }}
+  </span>
+
+  <!-- Speed -->
+  <button
+    type="button"
+    class="text-mono text-[10px] tabular-nums px-1 py-0.5 rounded bg-surface-overlay text-text-muted hover:text-accent-amber cursor-pointer transition-colors"
+    (click)="cycleSpeed()"
+    aria-label="Speed"
+  >
+    {{ playbackSpeed() }}x
+  </button>
+
 </div>
 }

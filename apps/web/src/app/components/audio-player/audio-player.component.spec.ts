@@ -82,7 +82,7 @@ describe('AudioPlayerComponent', () => {
 
   it('should show loading elapsed and phase text', () => {
     expect(component.loadingElapsed()).toBe(0);
-    expect(component.loadingPhase()).toBe('Rewriting for speech...');
+    expect(component.loadingPhase()).toBe('Rewriting for speech');
   });
 
   it('should cycle speed on speed button click', () => {
