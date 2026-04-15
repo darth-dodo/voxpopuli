@@ -60,8 +60,16 @@ export class OrchestratorService {
     query: string,
     config: PipelineConfig,
   ): AsyncGenerator<PipelineStreamEvent | AgentStreamEvent> {
+    // Track which stages completed so fallback only marks remaining stages as error
+    const completedStages = new Set<string>();
+
     try {
-      yield* this.runStream(query, config);
+      for await (const event of this.runStream(query, config)) {
+        if (event.kind === 'pipeline' && event.event.status === 'done') {
+          completedStages.add(event.event.stage);
+        }
+        yield event;
+      }
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Pipeline failed, falling back to legacy AgentService: ${rawMessage}`);
@@ -72,12 +80,14 @@ export class OrchestratorService {
           ? 'Rate limit reached — retrying with fallback agent...'
           : 'Pipeline error — retrying with fallback agent...';
 
-      // Mark all pipeline stages as failed so the UI shows the error
+      // Only mark stages that hadn't completed as error
       for (const stage of ['retriever', 'synthesizer', 'writer'] as const) {
-        yield {
-          kind: 'pipeline',
-          event: { stage, status: 'error' as const, detail, elapsed: 0 },
-        } as PipelineStreamEvent;
+        if (!completedStages.has(stage)) {
+          yield {
+            kind: 'pipeline',
+            event: { stage, status: 'error' as const, detail, elapsed: 0 },
+          } as PipelineStreamEvent;
+        }
       }
 
       // Signal that the fallback agent is starting

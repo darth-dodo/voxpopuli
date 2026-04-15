@@ -110,8 +110,9 @@ export class ChatComponent implements OnInit, OnDestroy {
    * Handle transitions between foreground and background.
    *
    * When the page is hidden during an active stream, a flag is set so that
-   * on return we can fetch the stored result instead of relying on SSE
-   * reconnection.
+   * on return we can recover: fetch the stored result if complete, or
+   * reconnect SSE if still running (backend dedup prevents a duplicate
+   * agent run).
    */
   private handleVisibilityChange(): void {
     if (document.hidden) {
@@ -128,7 +129,15 @@ export class ChatComponent implements OnInit, OnDestroy {
     const qid = this.queryId();
     if (!qid) return;
 
-    // Fetch result instead of reconnecting SSE
+    // Kill the stale SSE connection
+    if (this.streamSub) {
+      this.streamSub.unsubscribe();
+      this.streamSub = null;
+    }
+
+    // Fetch stored result — if already complete we're done, otherwise
+    // reconnect the SSE stream (backend findRunning dedup prevents a
+    // duplicate agent run and polls the existing query server-side).
     this.ragService.fetchResult(qid).subscribe({
       next: (result) => {
         if (result.status === 'complete' && result.response) {
@@ -142,13 +151,15 @@ export class ChatComponent implements OnInit, OnDestroy {
           this.stopElapsedTimer();
           this.activeTab.set('answer');
         } else if (result.status === 'running') {
+          // Update UI with partial progress collected so far
           if (result.pipelineEvents?.length) {
             this.pipelineEvents.set(result.pipelineEvents);
           }
           if (result.steps?.length) {
             this.steps.set(result.steps);
           }
-          // Still running — keep streaming state, user can wait or cancel
+          // Reconnect SSE — backend dedup routes to pollExistingQuery
+          this.reconnectStream();
         } else if (result.status === 'error') {
           this.error.set(result.error ?? 'Query failed while in background.');
           this.isStreaming.set(false);
@@ -167,6 +178,97 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.activeTab.set('answer');
       },
     });
+  }
+
+  /**
+   * Open (or reconnect) the SSE stream for the current query.
+   *
+   * On a fresh submit this starts a new agent run. On a background-return
+   * reconnect the backend's {@link QueryStore.findRunning} dedup routes to
+   * the existing in-flight query — no duplicate agent run.
+   */
+  private reconnectStream(): void {
+    const q = this.query().trim();
+    if (!q) return;
+    this.streamSub = this.ragService.stream(q, this.selectedProvider(), true).subscribe({
+      next: (event: StreamEvent) => this.handleStreamEvent(event),
+      error: (err: unknown) => {
+        const message =
+          err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+        this.error.set(message);
+        this.isStreaming.set(false);
+        this.loading.set(false);
+        this.stopElapsedTimer();
+        this.stopActiveStages('Connection lost');
+        this.activeTab.set('answer');
+      },
+      complete: () => {
+        this.isStreaming.set(false);
+      },
+    });
+  }
+
+  /** Route a single SSE event to the appropriate signal update. */
+  private handleStreamEvent(event: StreamEvent): void {
+    switch (event.type) {
+      case 'thought':
+        this.steps.update((prev) => [
+          ...prev,
+          { type: 'thought', content: event.content, timestamp: event.timestamp },
+        ]);
+        break;
+      case 'action':
+        this.steps.update((prev) => [
+          ...prev,
+          {
+            type: 'action',
+            content: event.toolName,
+            toolName: event.toolName,
+            toolInput: event.toolInput,
+            timestamp: event.timestamp,
+          },
+        ]);
+        break;
+      case 'observation':
+        this.steps.update((prev) => [
+          ...prev,
+          { type: 'observation', content: event.content, timestamp: event.timestamp },
+        ]);
+        break;
+      case 'answer':
+        this.response.set(event.response);
+        this.isStreaming.set(false);
+        this.loading.set(false);
+        this.stopElapsedTimer();
+        this.activeTab.set('answer');
+        break;
+      case 'pipeline':
+        this.isPipelineMode.set(true);
+        this.pipelineEvents.update((events) => [
+          ...events,
+          {
+            stage: event.stage,
+            status: event.status,
+            detail: event.detail,
+            elapsed: event.elapsed,
+          },
+        ]);
+        break;
+      case 'token':
+        this.tokenContent.update((content) => content + event.content);
+        break;
+      case 'init':
+        this.queryId.set(event.queryId);
+        break;
+      case 'error':
+        this.error.set(event.message);
+        this.isStreaming.set(false);
+        this.loading.set(false);
+        this.stopElapsedTimer();
+        this.stopActiveStages('Error');
+        this.activeTab.set('answer');
+        break;
+    }
   }
 
   /** Current query string bound to the input field. */
@@ -338,83 +440,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.startElapsedTimer();
 
     this.streamSub?.unsubscribe();
-    this.streamSub = this.ragService.stream(q, this.selectedProvider(), true).subscribe({
-      next: (event: StreamEvent) => {
-        switch (event.type) {
-          case 'thought':
-            this.steps.update((prev) => [
-              ...prev,
-              { type: 'thought', content: event.content, timestamp: event.timestamp },
-            ]);
-            break;
-          case 'action':
-            this.steps.update((prev) => [
-              ...prev,
-              {
-                type: 'action',
-                content: event.toolName,
-                toolName: event.toolName,
-                toolInput: event.toolInput,
-                timestamp: event.timestamp,
-              },
-            ]);
-            break;
-          case 'observation':
-            this.steps.update((prev) => [
-              ...prev,
-              { type: 'observation', content: event.content, timestamp: event.timestamp },
-            ]);
-            break;
-          case 'answer':
-            this.response.set(event.response);
-            this.isStreaming.set(false);
-            this.loading.set(false);
-            this.stopElapsedTimer();
-            // Auto-switch to answer tab when answer arrives
-            this.activeTab.set('answer');
-            break;
-          case 'pipeline':
-            this.isPipelineMode.set(true);
-            this.pipelineEvents.update((events) => [
-              ...events,
-              {
-                stage: event.stage,
-                status: event.status,
-                detail: event.detail,
-                elapsed: event.elapsed,
-              },
-            ]);
-            break;
-          case 'token':
-            this.tokenContent.update((content) => content + event.content);
-            break;
-          case 'init':
-            this.queryId.set(event.queryId);
-            break;
-          case 'error':
-            this.error.set(event.message);
-            this.isStreaming.set(false);
-            this.loading.set(false);
-            this.stopElapsedTimer();
-            this.stopActiveStages('Error');
-            this.activeTab.set('answer');
-            break;
-        }
-      },
-      error: (err: unknown) => {
-        const message =
-          err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-        this.error.set(message);
-        this.isStreaming.set(false);
-        this.loading.set(false);
-        this.stopElapsedTimer();
-        this.stopActiveStages('Connection lost');
-        this.activeTab.set('answer');
-      },
-      complete: () => {
-        this.isStreaming.set(false);
-      },
-    });
+    this.reconnectStream();
   }
 
   /**
