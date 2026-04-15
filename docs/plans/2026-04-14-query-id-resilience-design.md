@@ -109,7 +109,7 @@ export class QueryStore {
 ```
 GET /api/rag/query/:id/result
   → 200 { ...QueryResult }        (complete or error)
-  → 202 { status: 'running', queryId, pipelineEvents, steps }  (still running)
+  → 202 { ...QueryResult }        (still running — full QueryResult shape with response: null, error: null, completedAt: null)
   → 404 { message: 'Query not found or expired' }
 ```
 
@@ -228,11 +228,11 @@ private handleVisibilityChange(): void {
         this.stopElapsedTimer();
         this.activeTab.set('answer');
       } else if (result.status === 'running') {
-        // Agent still working — show status with partial data
-        this.pipelineEvents.set(result.pipelineEvents);
-        this.steps.set(result.steps);
-        this.error.set('Still processing your query. Please wait...');
-        // Could optionally reconnect SSE here for live updates
+        // Agent still working — kill stale subscription and reconnect SSE for live updates.
+        // reconnectStream() reuses handleStreamEvent() (extracted from submit()) so both
+        // paths share the same event-handling logic. The backend's findRunning dedup routes
+        // the reconnected SSE to pollExistingQuery, preventing a duplicate agent run.
+        this.reconnectStream(qid);
       } else if (result.status === 'error') {
         this.error.set(result.error ?? 'Query failed while in background.');
         this.stopActiveStages('Error');
@@ -257,6 +257,10 @@ readonly connectionStatus = computed(() => {
 ```
 
 **Remove**: All references to `reconnecting`, `backgrounded`, `stalled`, `failed` states.
+
+### Pipeline Fallback Accuracy
+
+`OrchestratorService.runWithFallback()` tracks completed stages via a `Set`. When the pipeline falls back to legacy mode, only stages that had not already completed are marked as error. This prevents contradictory done-then-error sequences in the pipeline event stream.
 
 ### Bug Fixes (Independent, can ship first)
 
@@ -294,6 +298,8 @@ retryCount = 0; // ← ADD: reset backoff on successful reconnect
 | **Total**                  | ~190                                                | ~310                                                     | **+120** |
 
 Net: +120 lines but replaces ~150 lines of fragile state management with ~80 lines of straightforward cache operations.
+
+**Note (post-implementation):** The estimates above are outdated. The actual implementation is leaner than projected: the inline event-handling switch in `submit()` was extracted into a shared `handleStreamEvent()` method, and the visibility handler reconnects SSE directly via `reconnectStream()` rather than relying on client-side polling, which eliminated significant duplication.
 
 ## Execution Order
 

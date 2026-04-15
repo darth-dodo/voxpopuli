@@ -2,6 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-04-14
+**Updated:** 2026-04-15
 **Deciders:** Abhishek Juneja
 **Linear:** AI-345 through AI-351
 
@@ -48,13 +49,13 @@ TTL is 5 minutes — long enough for return-from-background, short enough to avo
 ```
 GET /api/rag/query/:id/result
   → 200 QueryResult          (status: complete or error)
-  → 202 { status: 'running', pipelineEvents, steps }  (agent still working)
+  → 202 QueryResult              (status: running, with response: null, error: null, createdAt, completedAt: null — full QueryResult shape enforced at compile time via satisfies)
   → 404 { message: 'Query not found or expired' }
 ```
 
 ### Frontend simplification
 
-`ConnectionState` reduces from 8 states to 3: `streaming | done | error`. The visibility handler in `ChatComponent` changes from "try to reconnect SSE" to "fetch the result." ~150 lines of reconnection, backoff, null-data counting, and visibility-aware SSE management are deleted.
+`ConnectionState` reduces from 8 states to 3: `streaming | done | error`. The visibility handler in `ChatComponent` kills the stale SSE subscription, fetches the result via the query endpoint, and if the agent is still running, reconnects the SSE stream. The backend's `findRunning` deduplication routes the reconnection to `pollExistingQuery`, so no duplicate agent run is triggered. A shared `handleStreamEvent` method routes events identically for both the initial submission and any reconnected stream. ~150 lines of reconnection, backoff, null-data counting, and visibility-aware SSE management are deleted.
 
 ### SSE event flow change
 
@@ -88,6 +89,7 @@ QueryStore was chosen because:
 - **Code simplification.** ~150 lines of fragile state management replaced by ~80 lines of cache operations.
 - **M5 readiness.** TTS voice output can reference stored results by queryId, independent of SSE lifecycle.
 - **Query deduplication.** Identical in-flight queries share a single agent run via `findRunning()`.
+- **Clean fallback event history.** The orchestrator's `runWithFallback` path now tracks which pipeline stages completed before an error and only emits error events for stages that did not complete, preventing contradictory done-then-error sequences for the same stage in the stored result.
 
 ### Negative
 

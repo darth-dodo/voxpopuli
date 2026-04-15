@@ -11,7 +11,41 @@
 | -------------------------- | ------------------------------------------------------------------------ |
 | [product.md](product.md)   | Product vision, capabilities, API contracts, design decisions            |
 | **architecture.md** (this) | Technical architecture, module design, milestones, Linear task breakdown |
-| [README.md](README.md)     | Public-facing overview for users and contributors                        |
+| [README.md](../README.md)  | Public-facing overview for users and contributors                        |
+
+---
+
+## Table of Contents
+
+- [1. System Architecture](#1-system-architecture)
+  - [1.1 High-Level Diagram](#11-high-level-diagram)
+  - [1.2 Module Dependency Graph](#12-module-dependency-graph)
+  - [1.3 Tech Stack](#13-tech-stack)
+  - [1.4 Project Structure](#14-project-structure)
+- [2. Module Specifications](#2-module-specifications)
+  - [2.1 Shared Types](#21-shared-types-libsshared-types)
+  - [2.2 CacheModule](#22-cachemodule)
+  - [2.3 HnModule](#23-hnmodule)
+  - [2.4 ChunkerModule](#24-chunkermodule)
+  - [2.5 LlmModule](#25-llmmodule)
+  - [2.6 AgentModule](#26-agentmodule)
+  - [2.7 RagModule](#27-ragmodule)
+  - [2.8 TtsModule](#28-ttsmodule)
+  - [2.9 Frontend Architecture](#29-frontend-architecture)
+- [3. Milestones & Linear Task Breakdown](#3-milestones--linear-task-breakdown)
+  - [Milestone 1: Scaffold & Data Layer](#milestone-1-scaffold--data-layer----complete)
+  - [Milestone 2: LLM & Chunker](#milestone-2-llm--chunker----complete)
+  - [Milestone 3: Agent Core](#milestone-3-agent-core)
+  - [Milestone 4: Frontend](#milestone-4-frontend)
+  - [Milestone 5: Voice Output](#milestone-5-voice-output)
+  - [Milestone 6: Eval Harness](#milestone-6-eval-harness----complete)
+  - [Milestone 8: Multi-Agent Pipeline](#milestone-8-multi-agent-pipeline)
+- [4. Milestone Dependencies](#4-milestone-dependencies)
+- [5. Implementation Order (Solo Dev)](#5-implementation-order-solo-dev)
+- [6. Environment Configuration](#6-environment-configuration)
+- [7. Key Technical Constraints](#7-key-technical-constraints)
+- [8. Definition of Done](#8-definition-of-done)
+- [9. Cross-References to product.md](#9-cross-references-to-productmd)
 
 ---
 
@@ -372,6 +406,8 @@ The pipeline can fail at three points. Each has a different recovery strategy:
 
 **Key rule:** Never re-run the Retriever on a downstream failure. The Retriever is the slowest and most expensive stage (ReAct loop + HN API calls). If its output exists, reuse it.
 
+**Partial-stage error reporting:** `OrchestratorService.runWithFallback()` tracks which pipeline stages completed before an error occurred and only emits error events for stages that did not complete. Previously, all three stages were marked as error during fallback even if the Retriever had already succeeded.
+
 **Fallback response construction:** When the Writer fails after retry, `buildFallbackResponse()` constructs a minimal `AgentResponse` directly from `AnalysisResult` fields:
 
 - `headline` = `analysis.summary`
@@ -469,11 +505,14 @@ The original ReAct agent from v0.5.0. Retained as a fallback path via `Orchestra
 
 Thin controller layer. No business logic.
 
-| Endpoint          | Method | Description                      |
-| ----------------- | ------ | -------------------------------- |
-| `/api/rag/query`  | POST   | Full blocking response           |
-| `/api/rag/stream` | GET    | SSE streaming of reasoning steps |
-| `/api/health`     | GET    | Provider status + cache stats    |
+| Endpoint                    | Method | Description                                                |
+| --------------------------- | ------ | ---------------------------------------------------------- |
+| `/api/rag/query`            | POST   | Full blocking response                                     |
+| `/api/rag/stream`           | GET    | SSE streaming of reasoning steps                           |
+| `/api/rag/query/:id/result` | GET    | Fetch stored query result by queryId (202 while in-flight) |
+| `/api/health`               | GET    | Provider status + cache stats                              |
+
+**QueryStore:** An in-memory `QueryStore` service manages query result lifecycle. It stores completed results keyed by queryId and buffers SSE events for in-flight queries. The `findRunning` method enables query deduplication so that reconnecting clients are routed to `pollExistingQuery` instead of spawning a new agent run. The `GET /api/rag/query/:id/result` endpoint returns a 202 response with a full `QueryResult` shape (including `response: null`, `error: null`, `createdAt`, and `completedAt: null`) while the query is still running, enforced at compile time via `satisfies QueryResult`. Once the query completes, it returns 200 with the populated result.
 
 **Middleware:** Rate limiting (10/min per IP, 60/min global) via `express-rate-limit`.
 
@@ -507,17 +546,17 @@ ChatComponent (page shell — sticky header with query input, answer display, ca
 └── ProviderSelectorComponent — LLM provider dropdown
 ```
 
-| Component                   | Responsibility                                                                                                                                                                                     |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatComponent`             | Page shell: query input (sticky header), answer display with `ngx-markdown` rendering, query display during streaming, cancel button, background-resilient elapsed timer                           |
-| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE with per-stage elapsed counters (capped at stall threshold); legacy mode falls back to ReAct step view |
-| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                                                                                 |
-| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                                                                                     |
-| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                                                                              |
-| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                                                                              |
-| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                                                                                                                          |
-| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming with 45-second stall detection watchdog                                                                                    |
-| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                                                                                                                           |
+| Component                   | Responsibility                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ChatComponent`             | Page shell: query input (sticky header), answer display with `ngx-markdown` rendering, query display during streaming, cancel button, background-resilient elapsed timer. Event handling is extracted into a shared `handleStreamEvent()` method used by both `submit()` (via `reconnectStream()`) and the visibility handler's reconnect path. |
+| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE with per-stage elapsed counters (capped at stall threshold); legacy mode falls back to ReAct step view                                                                                                                                              |
+| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                                                                                                                                                                                                                              |
+| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                                                                                                                                                                                                                                  |
+| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                                                                                                                                                                                                                           |
+| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                                                                                                                                                                                                                           |
+| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                                                                                                                                                                                                                                                                       |
+| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming with 300-second stall detection watchdog                                                                                                                                                                                                                                |
+| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                                                                                                                                                                                                                                                                        |
 
 #### Styling
 
@@ -649,7 +688,7 @@ Epic (Linear Project or Cycle)
 
 **Goal:** The ReAct loop works end-to-end. Ask a question, get a sourced answer.
 **Demo:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
-**Status:** DONE -- 14 issues, ~173 tests across 13 API test suites, live-tested with Mistral.
+**Status:** DONE -- 14 issues, live-tested with Mistral. Current test counts: 293 API tests, 243 Web tests (536 total).
 
 #### Epic 3.1: ReAct Agent
 
@@ -1014,8 +1053,9 @@ evals/
   - Sticky header with query input during streaming
   - Cancel button to abort active SSE stream (preserves collected steps/events)
   - Background-resilient elapsed timer using `Date.now()` wall-clock comparison
-  - Visibility change detection: flag when backgrounded, show contextual message on return
-  - 45-second stall detection watchdog in RagService that surfaces user-friendly error
+  - Background tab recovery: on tab return, kills the stale SSE subscription, fetches the stored result by queryId, and if the query is still running reconnects the SSE stream. The backend's `findRunning` dedup routes the reconnected SSE to `pollExistingQuery`, preventing duplicate agent runs. A shared `handleStreamEvent()` method processes events for both the initial submit path and the reconnect path.
+  - 300-second stall detection watchdog in RagService that surfaces user-friendly error
+  - Simplified 3-state `ConnectionState` (streaming, done, error) replaces the prior 8-state reconnection state machine
 
 - **Story: Update RagService for pipeline SSE** (AI-TBD)
   - Parse `PipelineEvent` SSE alongside legacy event types

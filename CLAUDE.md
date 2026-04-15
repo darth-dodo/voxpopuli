@@ -4,7 +4,7 @@ Project-specific instructions for Claude Code when working in this repository.
 
 ## Project Overview
 
-VoxPopuli is an agentic RAG system over Hacker News. See [product.md](product.md) for what and why, [architecture.md](architecture.md) for how.
+VoxPopuli is an agentic RAG system over Hacker News. See [product.md](docs/product.md) for what and why, [architecture.md](docs/architecture.md) for how.
 
 **Stack:** Nx monorepo, NestJS backend, Angular 17+ frontend, triple-stack LLM (Claude/Mistral/Groq), ElevenLabs TTS, node-cache.
 
@@ -111,9 +111,9 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 - **Tailwind CSS v4** for styling. CSS-first config via `@theme` block in `styles.css` (no `tailwind.config.js`).
 - **Design system: "Data Noir Editorial"** with light theme support. Light/dark theme via CSS variable overrides (`.light` class on `<html>`).
 - **`ngx-markdown`** for answer rendering (Markdown-to-HTML in the chat component).
-- SSE via native `EventSource`, not libraries. RagService includes stall detection (120s watchdog), retry logic (2 attempts with backoff), and null-data threshold handling.
+- SSE via native `EventSource`, not libraries. RagService includes stall detection (300s watchdog, checks every 5s while page visible).
 - **Streaming UX**: Sticky header with backdrop-blur on the results page. Submitted query shown below header during results. Cancel button available on both pipeline and legacy streaming states. Wall-clock based elapsed timer resilient to background throttling.
-- **Background tab handling**: When the page is backgrounded during a stream, the component preserves collected context (steps, pipeline events) and does not auto-retry on return. The user can manually retry if the connection was lost.
+- **Background tab handling**: When the page returns from background during a stream, ChatComponent kills the stale SSE subscription and fetches the stored result via the query result endpoint. If the query is still running (202 response), it reconnects the SSE stream automatically. Backend query deduplication prevents duplicate agent runs on reconnect. Event handling logic is shared between the initial submit path and the reconnect path via a common handler method.
 - **Homepage design**: `vp-noise` texture, radial amber gradient on hero, masthead rule beneath title, editorial timeline layout (replacing "How It Works"), example preview card matching actual answer view with trust indicators, footer with "Try it now" scroll CTA and v0.8 version badge, example cards in 3x2 grid with numbered labels.
 - Proxy config at `apps/web/proxy.conf.json` for dev server to API forwarding.
 - Angular 21's Vite-based dev server requires `/api/**` glob pattern for proxy routes.
@@ -147,7 +147,7 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 | Pipeline stages       | Retriever (ReAct+compact) → Synthesizer → Writer                                           |
 | Pipeline timeout      | 30s default (configurable via PipelineConfig)                                              |
 | Stage timer cap       | 180s (MAX_STAGE_ELAPSED_MS in AgentStepsComponent)                                         |
-| SSE stall timeout     | 120s watchdog in RagService (checks every 5s, only when page visible)                      |
+| SSE stall timeout     | 300s watchdog in RagService (checks every 5s, only when page visible)                      |
 
 ## Environment Variables
 
@@ -174,10 +174,11 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude), default
 17. **Eval queries.json is the source of truth.** The LangSmith dataset is synced from this file on each run. Edit queries in the JSON file, not the LangSmith UI.
 18. **LLM judge strips markdown fences.** If you change the judge provider, verify it handles fencing correctly -- some providers wrap JSON output in triple-backtick blocks.
 19. **Agent token tracking uses LangChain `usage_metadata`.** If tokens show as 0, the provider may not report them.
-20. **Don't mix pipeline and legacy event types.** The frontend detects pipeline mode from `pipeline` SSE events. Legacy `thought`/`action`/`observation` events come from the Retriever's inner ReAct loop within the pipeline — they coexist, not replace.
+20. **Don't mix pipeline and legacy event types.** The frontend detects pipeline mode from `pipeline` SSE events. Legacy `thought`/`action`/`observation` events come from the Retriever's inner ReAct loop within the pipeline — they coexist, not replace. During fallback, `runWithFallback` only emits pipeline error events for stages that had not already completed, avoiding contradictory done-then-error sequences for a single stage.
 21. **LangGraph Annotation types must match node return types.** If you change what a node returns, update the StateGraph annotation. Zod 4's `.default()` on nested objects needs a factory function, not `{}`.
-22. **SSE stall detection in RagService.** A 120s watchdog (`STALL_TIMEOUT_MS`) fires `handleStall()` if no events arrive while the page is visible. Don't remove the `lastEventTime = Date.now()` bump in the event handler — it resets the watchdog on every received event.
+22. **SSE stall detection in RagService.** A 300s watchdog (`STALL_TIMEOUT_MS`) fires `handleStall()` if no events arrive while the page is visible. Don't remove the `lastEventTime = Date.now()` bump in the event handler — it resets the watchdog on every received event.
 23. **Pipeline stage timer cap.** AgentStepsComponent caps live elapsed at 180s (`MAX_STAGE_ELAPSED_MS`) to prevent runaway counters on stalled connections. The timer stops updating for a stage once it hits the cap.
+24. **Query result 202 response is a full QueryResult shape.** The `getResult` endpoint returns a complete `QueryResult` object (enforced via `satisfies QueryResult`) even when the query is still running (202). Do not assume any fields are missing from the 202 response body.
 
 ## Architecture Decision Records
 

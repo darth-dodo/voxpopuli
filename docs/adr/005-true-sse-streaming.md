@@ -71,6 +71,7 @@ AsyncGenerator was chosen because:
 - **Zero duplication.** `run()` and `stream()` share the same core logic via `runStream()`.
 - **No frontend changes.** The Angular `RagService.stream()` already handles SSE events incrementally via `EventSource`.
 - **Partial response on failure.** Mid-loop errors still yield partial results (AI-164 behavior preserved) — the `complete` event carries the partial response.
+- **Accurate stage status on fallback errors.** The pipeline fallback path in `OrchestratorService.runWithFallback()` tracks which stages completed before a downstream failure and only emits `error` events for incomplete stages. Stages that finished successfully retain their `done` status rather than being retroactively marked as `error`.
 
 ### Negative
 

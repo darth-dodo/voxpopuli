@@ -12,23 +12,26 @@
 
 > _"Voice of the People."_
 
-**Ask anything about HackerNews. Get a sourced, reasoned answer -- with receipts.**
-
-VoxPopuli is an agentic RAG system that turns 18+ years of [HackerNews](https://news.ycombinator.com) discussion into answers you can trust. It searches stories, reads comment threads, cross-references sources, and delivers a synthesized answer -- cited, verified, and transparent.
+An **agentic RAG system** that turns 18+ years of [HackerNews](https://news.ycombinator.com) discussion into sourced, reasoned answers. Multi-agent pipeline, real-time streaming, trust verification, and automated evaluation -- built as a technical showcase of modern LLM application architecture.
 
 <p align="center">
   <img src="docs/screenshots/landing-dark-desktop.png" alt="VoxPopuli landing page - dark theme" width="720" />
 </p>
 
-<p align="center">
-  <em>Dark theme with editorial typography and amber accents</em>
-</p>
+---
+
+## Technical Highlights
+
+- **Multi-agent pipeline** orchestrated by LangGraph StateGraph: Retriever (ReAct + compaction) → Synthesizer → Writer, with per-stage retry, fallback response construction, and dry-well circuit breaker
+- **Triple-stack LLM providers** (Claude / Mistral / Groq) behind a facade pattern -- hot-switchable from the UI, each with provider-specific retry and TPM handling
+- **SSE streaming with query-ID resilience** -- results stored server-side by queryId so mobile background-tab kills don't lose agent runs; automatic SSE reconnect with backend dedup prevents duplicate LLM calls
+- **Trust framework** computing source verification, recency, viewpoint diversity, and bias detection on every answer
+- **Automated eval harness** with 27 queries, 5 evaluators (source accuracy, LLM-as-judge quality, efficiency, latency, cost), and LangSmith tracing integration
+- **536 tests** (293 API + 243 Web) with CI on every push
 
 ---
 
 ## How It Works
-
-Ask a question in natural language. A **multi-agent pipeline** collects evidence, synthesizes insights, and writes a sourced editorial answer.
 
 ```
 You:   "Is SQLite good enough for production web apps?"
@@ -46,230 +49,109 @@ VoxPopuli:
   All 4 sources verified · Mostly recent sources · Multiple viewpoints
 ```
 
-The pipeline has three stages:
+**Pipeline stages:**
 
-1. **Retriever** -- ReAct agent (up to 7 tool calls) collects and compacts HN evidence
-2. **Synthesizer** -- extracts insights, contradictions, and sentiment from the evidence bundle
-3. **Writer** -- produces an editorial answer with citations and trust metadata
+1. **Retriever** -- ReAct agent searches HN via Algolia, crawls Firebase comment threads, then compacts raw data into a structured EvidenceBundle via a second LLM call
+2. **Synthesizer** -- extracts insights, contradictions, confidence scores, and knowledge gaps from the evidence bundle
+3. **Writer** -- produces an editorial answer with headline, sections, citations, and a bottom-line summary
 
-The multi-agent pipeline is the default mode. The single-agent ReAct loop is available as a fallback (`useMultiAgent=false`). Both modes use the same three tools: `search_hn`, `get_story`, and `get_comments`.
-
----
-
-## Query Flow
-
-Asking "AI tools" — from query to answer in three pipeline stages.
-
-<table>
-<tr>
-<td width="50%">
-
-**1. Type your question**
-
-<img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="100%" />
-
-</td>
-<td width="50%">
-
-**2. Pipeline starts — Retriever searching HN**
-
-<img src="docs/screenshots/flow-02-streaming-steps.png" alt="Pipeline streaming" width="100%" />
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-**3. All stages complete — Writer composing**
-
-<img src="docs/screenshots/flow-05-steps-complete.png" alt="Pipeline stages complete" width="100%" />
-
-</td>
-<td width="50%">
-
-**4. Editorial answer with citations**
-
-<img src="docs/screenshots/flow-06-steps-done.png" alt="Answer with sections" width="100%" />
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-**5. Sources tab — 8 HN stories referenced**
-
-<img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="100%" />
-
-</td>
-<td width="50%">
-
-**6. Full answer — sections, trust badges, meta**
-
-<img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer page" width="100%" />
-
-</td>
-</tr>
-</table>
+The pipeline falls back to a single-agent ReAct loop on failure, preserving accurate stage status (only incomplete stages marked as error).
 
 ---
 
-## Features
+<details>
+<summary><strong>Query Flow Screenshots</strong> (click to expand)</summary>
 
-### Real-Time Reasoning
+|                                                                                                      |                                                                                                 |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **1. Type your question**                                                                            | **2. Retriever searching HN**                                                                   |
+| <img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="360" />                 | <img src="docs/screenshots/flow-02-streaming-steps.png" alt="Pipeline streaming" width="360" /> |
+| **3. All stages complete**                                                                           | **4. Editorial answer with citations**                                                          |
+| <img src="docs/screenshots/flow-05-steps-complete.png" alt="Pipeline stages complete" width="360" /> | <img src="docs/screenshots/flow-06-steps-done.png" alt="Answer with sections" width="360" />    |
+| **5. Sources tab**                                                                                   | **6. Full answer with trust badges**                                                            |
+| <img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="360" />                     | <img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer page" width="360" />       |
 
-Every step streams to the UI as it happens. You see what the agent searches, what it finds, and when it decides to dig deeper. No black box.
-
-### Trust Indicators
-
-Every answer comes with verification metadata:
-
-- **Sources verified** -- how many story IDs were confirmed
-- **Recency** -- are sources from the last 12 months?
-- **Viewpoint diversity** -- balanced, one-sided, or actively debated?
-- **Show HN bias** -- flagged when the author has a vested interest
-
-### Three LLM Providers
-
-Pick your tradeoff. Switch from the UI.
-
-| Provider             | Best for                          | Speed         |
-| -------------------- | --------------------------------- | ------------- |
-| **Mistral** Large 3  | Default — balanced cost & quality | ~80 tokens/s  |
-| **Qwen3** 32B (Groq) | Fast development                  | ~300 tokens/s |
-| **Claude** Haiku 4.5 | Best synthesis quality            | ~100 tokens/s |
-
-### Multi-Agent Pipeline
-
-Three-stage pipeline (Retriever / Synthesizer / Writer) orchestrated by LangGraph StateGraph. Now the default query mode. Each stage has per-stage retry with fallback response construction, circuit breaker for dry-well detection, and real-time step streaming. The UI shows live pipeline stage progress with elapsed timers and stall detection.
-
-### Eval Harness
-
-Automated quality scoring with 27 test queries across 5 evaluators (source accuracy, quality judge, efficiency, latency, cost). LangSmith integration for tracing and dataset management.
-
-### Dark + Light Themes
-
-Toggle between a dark OLED theme (optimized for eye comfort) and a warm light theme. Smooth CSS transitions.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js >= 22, pnpm
-- At least one LLM API key:
-  - [Groq](https://console.groq.com) (hosts Qwen3 -- free tier, recommended for development)
-  - [Mistral](https://console.mistral.ai)
-  - [Anthropic](https://console.anthropic.com)
-
-### Setup
-
-```bash
-git clone https://github.com/darth-dodo/voxpopuli.git
-cd voxpopuli
-pnpm install
-
-cp .env.example .env
-# Add at least one LLM API key (default provider is Mistral)
-```
-
-### Run
-
-```bash
-# Terminal 1 -- Backend
-npx nx serve api
-
-# Terminal 2 -- Frontend (proxies /api/** to backend)
-npx nx serve web --port 4201
-```
-
-Open [http://localhost:4201](http://localhost:4201) and ask a question.
-
-### API Only
-
-```bash
-curl -X POST http://localhost:3000/api/rag/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "What does HN think about Rust?"}'
-```
+</details>
 
 ---
 
 ## Architecture
 
-| Layer        | Technology                                                   |
-| ------------ | ------------------------------------------------------------ |
-| Monorepo     | Nx                                                           |
-| Backend      | NestJS 11 (TypeScript)                                       |
-| Frontend     | Angular 21 (standalone components, signals)                  |
-| Design       | Tailwind CSS v4, "Data Noir Editorial" design system         |
-| LLM          | Claude / Mistral / Groq via LangChain.js                     |
-| Pipeline     | LangGraph StateGraph (OrchestratorService, 3-stage pipeline) |
-| Streaming    | Server-Sent Events (SSE) with native EventSource             |
-| Caching      | node-cache (in-memory, TTL-based)                            |
-| Data         | HN Algolia API (search) + Firebase API (items/comments)      |
-| Eval         | Custom harness + LangSmith tracing                           |
-| Markdown     | ngx-markdown + marked                                        |
-| Shared types | `@voxpopuli/shared-types`                                    |
+| Layer        | Technology                                                              |
+| ------------ | ----------------------------------------------------------------------- |
+| Monorepo     | Nx                                                                      |
+| Backend      | NestJS 11 (TypeScript, module-per-domain DI)                            |
+| Frontend     | Angular 21 (standalone components, signals, Tailwind CSS v4)            |
+| LLM          | Claude / Mistral / Groq via LangChain.js facade                         |
+| Pipeline     | LangGraph StateGraph with per-stage retry and fallback                  |
+| Streaming    | SSE for live progress + QueryStore for result persistence and reconnect |
+| Caching      | LRU cache (in-memory, TTL-based) with query deduplication               |
+| Data         | HN Algolia API (search) + Firebase API (items/comments)                 |
+| Eval         | Custom 5-evaluator harness + LangSmith tracing                          |
+| TTS          | ElevenLabs with LLM-rewritten podcast scripts                           |
+| Shared types | `@voxpopuli/shared-types` consumed by both apps                         |
 
-### Frontend Components
+### Key Design Decisions
 
-| Component        | Purpose                                                                     |
-| ---------------- | --------------------------------------------------------------------------- |
-| ChatComponent    | Landing page + results page with SSE streaming                              |
-| AgentSteps       | Compact timeline with merged action/result rows + pipeline stage indicators |
-| SourceCard       | Clickable HN story card with metadata                                       |
-| TrustBar         | Human-friendly trust indicators                                             |
-| ProviderSelector | LLM provider chip selector                                                  |
-| MetaBar          | Provider, tokens, human-readable latency                                    |
+| Decision            | Approach                                                           | Why                                                                                                             |
+| ------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Streaming primitive | AsyncGenerator yielding discriminated unions                       | Single source of truth -- `run()` wraps `runStream()`, zero duplication between blocking and streaming paths    |
+| Result delivery     | QueryStore decouples results from SSE connection                   | Mobile browsers kill background SSE; storing results server-side eliminates babysitting and duplicate LLM costs |
+| LLM abstraction     | Facade over LangChain providers with interface contract            | Hot-swap providers without touching agent or pipeline code                                                      |
+| Pipeline fallback   | Completed-stage tracking in generator consumer                     | Fallback preserves valid retriever output instead of marking all stages as failed                               |
+| Token budgeting     | Character-based estimation (1 token ≈ 4 chars) with priority tiers | Good enough for context window management without shipping a tokenizer to Node.js                               |
+| Trust computation   | Pure function, post-loop, no NestJS dependencies                   | Testable independently, runs on any agent output regardless of execution path                                   |
 
-See [architecture.md](architecture.md) for the full technical blueprint and [product.md](product.md) for the product specification.
-
----
-
-## Project Status
-
-| Milestone                  | Status  | Highlights                                                             |
-| -------------------------- | ------- | ---------------------------------------------------------------------- |
-| M1: Scaffold & Data Layer  | Done    | Nx monorepo, shared types, HN data + caching                           |
-| M2: LLM & Chunker          | Done    | Triple-stack LLM providers, token budgeting                            |
-| M3: Agent Core             | Done    | ReAct agent, RAG endpoints, trust framework                            |
-| M4: Frontend               | Done    | Chat UI, real-time streaming, design system                            |
-| M5: Voice Output           | Planned | ElevenLabs TTS with podcast-style narration                            |
-| M6: Eval Harness           | Done    | 27 queries, 5 evaluators, LangSmith integration                        |
-| M7: Deploy & Observability | ~87%    | Docker, Render, CORS, structured logging                               |
-| M8: Multi-Agent Pipeline   | Done    | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
-| M8: Audit & Polish         | Done    | Mistral default, homepage UX, overflow fixes, Groq rate-limit handling |
-
-**Current stats:** 478 tests passing (263 API + 215 Web) across 26 test suites.
+See [docs/architecture.md](docs/architecture.md) for the full technical blueprint and [docs/product.md](docs/product.md) for the product specification.
 
 ---
 
-## Who Is This For?
+## Engineering Quality
 
-| You are...                          | You ask...                                                         |
-| ----------------------------------- | ------------------------------------------------------------------ |
-| An **engineer** choosing tools      | "What does HN think about Bun vs Deno in 2026?"                    |
-| A **founder** validating an idea    | "Has anyone built a competitor to Notion? What was the reception?" |
-| A **researcher** tracking discourse | "How has sentiment on LLM agents changed over the past year?"      |
-| Just **curious**                    | "What's the most controversial HN post about remote work?"         |
+| Metric          | Value                                                                   |
+| --------------- | ----------------------------------------------------------------------- |
+| Test count      | 536 (293 API + 243 Web)                                                 |
+| Test framework  | Jest (API) + Vitest (Web)                                               |
+| Eval queries    | 27 (20 general + 7 trust-specific)                                      |
+| Eval dimensions | Source accuracy, quality judge, efficiency, latency, cost               |
+| CI              | GitHub Actions on affected projects                                     |
+| ADRs            | 7 architectural decision records                                        |
+| Type safety     | Strict mode, shared types lib, `satisfies` enforcement on API responses |
 
 ---
 
-## Development
+## Milestone Progress
+
+| Milestone                  | Status | Highlights                                                             |
+| -------------------------- | ------ | ---------------------------------------------------------------------- |
+| M1: Scaffold & Data Layer  | Done   | Nx monorepo, shared types, HN data + caching                           |
+| M2: LLM & Chunker          | Done   | Triple-stack LLM providers, token budgeting                            |
+| M3: Agent Core             | Done   | ReAct agent, RAG endpoints, trust framework                            |
+| M4: Frontend               | Done   | Chat UI, real-time streaming, design system                            |
+| M5: Voice Output           | Done   | ElevenLabs TTS with podcast-style narration                            |
+| M6: Eval Harness           | Done   | 27 queries, 5 evaluators, LangSmith integration                        |
+| M7: Deploy & Observability | ~87%   | Docker, Render, CORS, structured logging                               |
+| M8: Multi-Agent Pipeline   | Done   | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
+
+---
+
+## Quick Start
 
 ```bash
-npx nx test              # Run all tests
-npx nx test web          # Frontend tests (Vitest)
-npx nx test api          # Backend tests (Jest)
-npx nx lint              # Lint all projects
-npx nx build api         # Build backend
-npx nx build web         # Build frontend
-npx nx test web --coverage  # Coverage report
+git clone https://github.com/darth-dodo/voxpopuli.git && cd voxpopuli
+pnpm install
+cp .env.example .env   # Add at least one LLM API key (default: Mistral)
 
-# Eval harness (requires running API)
-npx tsx evals/run-eval.ts               # Run eval harness
-npx tsx evals/run-eval.ts -p groq       # Test Qwen3 (via Groq)
+npx nx serve api        # Backend on :3000
+npx nx serve web        # Frontend on :4200 (proxies /api/** to backend)
+```
+
+```bash
+npx nx test              # All tests
+npx nx test api          # Backend (Jest)
+npx nx test web          # Frontend (Vitest)
+npx tsx evals/run-eval.ts               # Eval harness (requires running API)
+npx tsx evals/run-eval.ts -p groq -n 5  # Groq provider, 5 concurrent
 npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
 ```
 

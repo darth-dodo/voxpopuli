@@ -136,9 +136,13 @@ export class RagController {
       res.status(HttpStatus.ACCEPTED).json({
         status: 'running',
         queryId: result.queryId,
+        response: null,
         pipelineEvents: result.pipelineEvents,
         steps: result.steps,
-      });
+        error: null,
+        createdAt: result.createdAt,
+        completedAt: null,
+      } satisfies QueryResult);
       return;
     }
     res.status(HttpStatus.OK).json(result);

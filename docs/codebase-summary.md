@@ -1,6 +1,6 @@
 # VoxPopuli -- Codebase Summary
 
-**Generated:** 2026-04-12
+**Generated:** 2026-04-15
 **Covers:** Milestones 1-4, 6-8 (Scaffold & Data Layer, LLM & Chunker, Agent Core, Frontend, Eval Harness, Deploy & Observability, Multi-Agent Pipeline)
 
 ---
@@ -242,13 +242,13 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 **OrchestratorService** (multi-agent pipeline):
 
-| Attribute  | Value                                                                                                      |
-| ---------- | ---------------------------------------------------------------------------------------------------------- |
-| Purpose    | LangGraph StateGraph pipeline: Retriever -> Synthesizer -> Writer producing structured editorial responses |
-| Stages     | `retriever` (ReAct + compaction), `synthesizer` (evidence analysis), `writer` (editorial prose)            |
-| Config     | `PipelineConfig` -- per-stage provider mapping, token budgets, 30s default timeout                         |
-| Recovery   | Synthesizer retries once; Writer retries once then falls back to `buildFallbackResponse()`                 |
-| SSE events | Emits `pipeline` events at stage transitions; legacy `thought`/`action`/`observation` from inner ReAct     |
+| Attribute  | Value                                                                                                                                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose    | LangGraph StateGraph pipeline: Retriever -> Synthesizer -> Writer producing structured editorial responses                                                                                                                                                                    |
+| Stages     | `retriever` (ReAct + compaction), `synthesizer` (evidence analysis), `writer` (editorial prose)                                                                                                                                                                               |
+| Config     | `PipelineConfig` -- per-stage provider mapping, token budgets, 30s default timeout                                                                                                                                                                                            |
+| Recovery   | Synthesizer retries once; Writer retries once then falls back to `buildFallbackResponse()`. `runWithFallback()` tracks which pipeline stages have already completed and only marks incomplete stages as errored during fallback, preserving valid output from earlier stages. |
+| SSE events | Emits `pipeline` events at stage transitions; legacy `thought`/`action`/`observation` from inner ReAct                                                                                                                                                                        |
 
 **Pipeline nodes** (`nodes/`):
 
@@ -276,14 +276,15 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 | Purpose      | HTTP API layer for RAG queries with caching, rate limiting, and structured errors |
 | Key class    | `RagController`                                                                   |
 | Test file    | `rag.controller.spec.ts` (7 tests)                                                |
-| Dependencies | `AgentService`, `CacheService`                                                    |
+| Dependencies | `AgentService`, `CacheService`, `QueryStore`                                      |
 
 **Endpoints:**
 
-| Endpoint          | Method | Description                                                        |
-| ----------------- | ------ | ------------------------------------------------------------------ |
-| `/api/rag/query`  | POST   | Blocking full `AgentResponse`, cached 10 min                       |
-| `/api/rag/stream` | GET    | SSE streaming, accepts `provider` and `useMultiAgent` query params |
+| Endpoint              | Method | Description                                                                                                                                                                                                |
+| --------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/api/rag/query`      | POST   | Blocking full `AgentResponse`, cached 10 min                                                                                                                                                               |
+| `/api/rag/stream`     | GET    | SSE streaming, accepts `provider` and `useMultiAgent` query params                                                                                                                                         |
+| `/api/rag/result/:id` | GET    | Returns stored query result by queryId. 200 with full `QueryResult` when complete or errored, 202 with full `QueryResult` shape (status `running`) when the agent is still in progress, 404 when not found |
 
 **Supporting files:**
 
@@ -294,7 +295,7 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 **Rate limiting:** Global 60 req/min via timestamp array (no per-IP tracking, no external dependency).
 
-**SSE model:** Legacy mode uses post-completion replay. Pipeline mode (`useMultiAgent=true`) emits `pipeline` events at stage transitions alongside legacy `thought`/`action`/`observation` events from the Retriever's inner ReAct loop. Frontend `RagService` includes retry logic, heartbeat detection, visibility-aware reconnection for mobile resilience, and a stall-detection watchdog (120s timeout) that surfaces a user-facing error if the server stops sending events. The `ChatComponent` supports explicit query cancellation (tearing down the SSE subscription and resetting UI state while preserving any partially received content) and handles page backgrounding gracefully -- when the browser throttles the connection in the background, the component detects this on return and offers a retry prompt rather than showing a cryptic error.
+**SSE model:** Legacy mode uses post-completion replay. Pipeline mode (`useMultiAgent=true`) emits `pipeline` events at stage transitions alongside legacy `thought`/`action`/`observation` events from the Retriever's inner ReAct loop. Frontend `RagService` includes retry logic, heartbeat detection, visibility-aware reconnection for mobile resilience, and a stall-detection watchdog (120s timeout) that surfaces a user-facing error if the server stops sending events. The `ChatComponent` supports explicit query cancellation (tearing down the SSE subscription and resetting UI state while preserving any partially received content). SSE event handling is centralized in the `handleStreamEvent()` method, which is shared by the initial `submit()` flow and the `reconnectStream()` recovery path. Background tab handling uses a fetch-on-return strategy: `handleVisibilityChange()` kills the stale SSE connection when the page becomes visible again, fetches the stored result from the `getResult` endpoint by queryId, and if the agent is still running reconnects the SSE stream via `reconnectStream()`. Backend query deduplication ensures that reconnecting does not spawn a duplicate agent run.
 
 ### 5.8 ConfigModule (`apps/api/src/config/`)
 
