@@ -1,24 +1,123 @@
 # VoxPopuli — Product Specification
 
-**Version:** 3.1.0
+**Version:** 3.2.0
 **Status:** Final Draft
-**Last Updated:** April 13, 2026
+**Last Updated:** April 15, 2026
 **Author:** Abhishek Juneja
 
 > _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
 
 ---
 
+## Table of Contents
+
+- [Revision Log](#revision-log)
+- [1. What is VoxPopuli?](#1-what-is-voxpopuli)
+- [2. Why This Exists](#2-why-this-exists)
+  - [The Problem](#the-problem)
+  - [The Opportunity](#the-opportunity)
+  - [Who Is This For?](#who-is-this-for)
+  - [Sample Use Cases (20)](#sample-use-cases-20)
+- [3. Core Capabilities](#3-core-capabilities)
+  - [3.1 Intelligent Search](#31-intelligent-search)
+  - [3.2 Deep Comment Thread Analysis](#32-deep-comment-thread-analysis)
+  - [3.3 Multi-Agent Pipeline](#33-multi-agent-pipeline)
+  - [3.4 Sourced Answers](#34-sourced-answers)
+  - [3.5 Live Reasoning Visualization](#35-live-reasoning-visualization)
+  - [3.6 Response Caching](#36-response-caching)
+  - [3.7 Rate Limiting](#37-rate-limiting)
+  - [3.8 Voice Output (Podcast Mode)](#38-voice-output-podcast-mode)
+- [4. Architecture](#4-architecture)
+  - [4.1 High-Level Overview](#41-high-level-overview)
+  - [4.2 Tech Stack](#42-tech-stack)
+  - [4.3 Design System: "Data Noir Editorial"](#43-design-system-data-noir-editorial)
+  - [4.4 Module Dependency Graph](#44-module-dependency-graph)
+- [5. LLM Provider Architecture](#5-llm-provider-architecture)
+  - [5.1 Why Triple-Stack?](#51-why-triple-stack)
+  - [5.2 Provider Comparison](#52-provider-comparison)
+  - [5.3 Provider Interface (LangChain)](#53-provider-interface-langchain)
+  - [5.4 Provider Selection](#54-provider-selection)
+- [6. Data Flow](#6-data-flow)
+  - [6.1 Single Query Lifecycle](#61-single-query-lifecycle)
+  - [6.1.1 Multi-Agent Pipeline Flow (v3.0)](#611-multi-agent-pipeline-flow-v30)
+  - [6.2 Token Budget Management](#62-token-budget-management)
+  - [6.3 Comment Fetching Strategy](#63-comment-fetching-strategy)
+- [7. API Specification](#7-api-specification)
+  - [7.1 POST /api/rag/query](#71-post-apiragquery)
+  - [7.2 GET /api/rag/stream](#72-get-apiragstream)
+  - [7.3 POST /api/tts/speak](#73-post-apittsspeak)
+  - [7.4 GET /api/health](#74-get-apihealth)
+- [8. Agent Tool Specifications](#8-agent-tool-specifications)
+  - [8.1 search_hn](#81-search_hn)
+  - [8.2 get_story](#82-get_story)
+  - [8.3 get_comments](#83-get_comments)
+- [9. Tool Use Protocol (via LangChain)](#9-tool-use-protocol-via-langchain)
+  - [9.1 How Tool Calling Works](#91-how-tool-calling-works)
+  - [9.2 What LangChain Handles Per Provider](#92-what-langchain-handles-per-provider)
+  - [9.3 Why This Matters](#93-why-this-matters)
+  - [9.4 What We Still Own](#94-what-we-still-own)
+  - [9.5 Pipeline Configuration (v3.0)](#95-pipeline-configuration-v30)
+- [10. Project Structure](#10-project-structure)
+- [11. Key Design Decisions](#11-key-design-decisions)
+  - [11.1 Why ReAct over simple RAG?](#111-why-react-over-simple-rag)
+  - [11.2 Why SSE over WebSockets?](#112-why-sse-over-websockets)
+  - [11.3 Why Nx monorepo?](#113-why-nx-monorepo)
+  - [11.4 Why triple-stack LLM instead of one?](#114-why-triple-stack-llm-instead-of-one)
+  - [11.5 Why not vector embeddings?](#115-why-not-vector-embeddings)
+  - [11.6 Why cache in v1?](#116-why-cache-in-v1)
+  - [11.7 Why Multi-Agent Pipeline over Single ReAct?](#117-why-multi-agent-pipeline-over-single-react)
+  - [11.8 Why Compaction as a Separate Step?](#118-why-compaction-as-a-separate-step)
+- [12. Evaluation Harness](#12-evaluation-harness)
+  - [12.1 Why?](#121-why)
+  - [12.2 Test Query Format](#122-test-query-format)
+  - [12.3 Scoring](#123-scoring)
+  - [12.4 Running Evals](#124-running-evals)
+  - [12.5 Test Suite (27 queries: 20 general + 7 trust)](#125-test-suite-27-queries-20-general--7-trust)
+- [13. Trustworthiness Framework](#13-trustworthiness-framework)
+  - [13.1 Layer 1: Agent Trustworthiness](#131-layer-1-agent-trustworthiness)
+  - [13.2 Layer 2: HN Crowd Trustworthiness](#132-layer-2-hn-crowd-trustworthiness)
+  - [13.3 Layer 3: Podcast Rewrite Trustworthiness](#133-layer-3-podcast-rewrite-trustworthiness)
+  - [13.4 Trust Pipeline (Runtime)](#134-trust-pipeline-runtime)
+  - [13.5 Trust Indicators in the UI](#135-trust-indicators-in-the-ui)
+  - [13.6 Trust-Specific Eval Queries](#136-trust-specific-eval-queries)
+  - [13.7 New Shared Types](#137-new-shared-types)
+  - [13.8 Fact vs Opinion Distinction](#138-fact-vs-opinion-distinction)
+  - [13.9 Pipeline Types (v3.0)](#139-pipeline-types-v30)
+- [14. Non-Functional Requirements](#14-non-functional-requirements)
+  - [14.1 Performance](#141-performance)
+  - [14.2 Reliability](#142-reliability)
+  - [14.3 Cost](#143-cost)
+  - [14.4 Security](#144-security)
+- [15. Roadmap](#15-roadmap)
+- [16. Success Metrics](#16-success-metrics)
+- [17. Getting Started](#17-getting-started)
+- [18. Contributing](#18-contributing)
+- [19. Voice Output (ElevenLabs TTS)](#19-voice-output-elevenlabs-tts)
+  - [19.1 Overview](#191-overview)
+  - [19.2 Pipeline](#192-pipeline)
+  - [19.3 Signature Voice](#193-signature-voice)
+  - [19.4 API Endpoints](#194-api-endpoints)
+  - [19.5 Podcast Rewrite Example](#195-podcast-rewrite-example)
+  - [19.6 Frontend: Audio Player](#196-frontend-audio-player)
+  - [19.7 New Module](#197-new-module)
+  - [19.8 New Dependencies and Config](#198-new-dependencies-and-config)
+  - [19.9 Cost Impact](#199-cost-impact)
+  - [19.10 Risks](#1910-risks)
+- [20. License](#20-license)
+
+---
+
 ## Revision Log
 
-| Version | Date       | Changes                                                                                                                                                                                                                                                                                                                                              |
-| ------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1.0   | 2026-04-13 | Pipeline promoted to default mode (frontend always sends useMultiAgent: true); LangGraph StateGraph replaces hand-rolled orchestrator; shared invokeWithRetry utility; default provider changed to mistral; frontend UX hardening (sticky header, cancel, stall detection, background-resilient timer); Data Noir Editorial design system documented |
-| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout                                                                                                  |
-| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                                                                                                                     |
-| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                                                                                                                            |
-| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                                                                                                                   |
-| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                                                                                                                        |
+| Version | Date       | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.2.0   | 2026-04-15 | SSE background tab recovery (kill stale subscription, fetch stored result by queryId, reconnect if still running); backend query deduplication; 3-state SSE connection machine (streaming/done/error) replaces 8-state machine; stall timeout raised to 300s; pipeline fallback tracks completed stages and only marks incomplete stages as error; query result endpoint 202 response returns full QueryResult shape with compile-time enforcement; frontend event handling shared between submit() and reconnectStream() via handleStreamEvent() |
+| 3.1.0   | 2026-04-13 | Pipeline promoted to default mode (frontend always sends useMultiAgent: true); LangGraph StateGraph replaces hand-rolled orchestrator; shared invokeWithRetry utility; default provider changed to mistral; frontend UX hardening (sticky header, cancel, stall detection, background-resilient timer); Data Noir Editorial design system documented                                                                                                                                                                                              |
+| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout                                                                                                                                                                                                                                                                                               |
+| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                                                                                                                                                                                                                                                                                                                |
+| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ---
 
@@ -175,7 +274,7 @@ Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is
 
 **Retry logic:** All three pipeline nodes share an `invokeWithRetry` utility that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. On JSON parse failure, the Synthesizer and Writer retry with a "respond with valid JSON only" instruction before falling back.
 
-**Legacy compatibility:** The original ReAct agent remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path.
+**Legacy compatibility:** The original ReAct agent remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path. When a fallback occurs, the method tracks which pipeline stages completed successfully and only marks the remaining incomplete stages with an error status, avoiding contradictory done-then-error sequences in the SSE event stream.
 
 ### 3.4 Sourced Answers
 
@@ -197,7 +296,7 @@ The frontend streams the agent's thinking process in real time via Server-Sent E
 - The final answer with source cards
 - A cancel button to abort the active stream (preserving already-collected steps and events)
 
-**UX hardening:** The frontend includes a sticky header with query display during streaming, a background-resilient elapsed timer that uses wall-clock comparison (so it stays accurate even if the browser tab is backgrounded), and a 45-second stall detection watchdog in RagService that surfaces a user-friendly error when the server stops responding.
+**UX hardening:** The frontend includes a sticky header with query display during streaming, a background-resilient elapsed timer that uses wall-clock comparison (so it stays accurate even if the browser tab is backgrounded), and a 300-second stall detection watchdog in RagService that surfaces a user-friendly error when the server stops responding. The SSE connection state machine uses three states -- streaming, done, and error -- replacing the earlier eight-state model. When the browser tab is backgrounded during a stream, the frontend recovers gracefully on return: it kills the stale SSE subscription, fetches the stored result by queryId from the backend, and reconnects to the SSE stream if the query is still running. Backend query deduplication prevents duplicate agent runs when a client reconnects to an in-flight query. Event handling logic is shared between the initial submit and the reconnection path via a single handleStreamEvent method, eliminating duplicated parsing code in the frontend.
 
 This isn't just a UX feature. It's a trust mechanism.
 
@@ -1618,7 +1717,13 @@ export interface Claim {
 - [x] Pipeline is default mode: frontend always passes `useMultiAgent: true`
 - [x] Fallback to legacy ReAct on pipeline error
 - [x] Angular: PipelineEvent SSE integration in agent steps timeline
-- [x] Frontend UX hardening: sticky header, cancel button, stall detection (45s), background-resilient timer
+- [x] Frontend UX hardening: sticky header, cancel button, stall detection (300s), background-resilient timer
+- [x] SSE background tab recovery: kill stale subscription, fetch stored result by queryId, reconnect if still running
+- [x] Backend query deduplication for in-flight agent runs
+- [x] 3-state SSE connection machine (streaming/done/error) replacing 8-state model
+- [x] Shared handleStreamEvent() for submit and reconnect paths
+- [x] Query result endpoint 202 response returns full QueryResult shape with compile-time enforcement
+- [x] Pipeline fallback tracks completed stages, only marks incomplete stages as error
 - [x] Integration tests: 60+ new tests
 - [ ] Eval harness: multi-agent vs single-agent comparison
 
