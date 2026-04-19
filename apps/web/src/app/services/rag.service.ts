@@ -236,17 +236,17 @@ export class RagService {
         }
 
         es.onerror = () => {
-          // Connection error — set to error state, no retry.
           es.close();
           activeEventSource = null;
           clearStallTimer();
+          // If the stream already completed (answer/error received), the
+          // connection close is expected — don't overwrite the terminal state.
+          if (subscriber.closed) return;
           this.connectionState.set('error');
           const message = 'Connection lost — please check your network and retry.';
           this.error.set(message);
           this.loading.set(false);
-          if (!subscriber.closed) {
-            subscriber.error(new Error(message));
-          }
+          subscriber.error(new Error(message));
         };
       };
 
