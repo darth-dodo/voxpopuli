@@ -308,27 +308,6 @@ describe('ChatComponent', () => {
   // ---------------------------------------------------------------------------
 
   describe('handleVisibilityChange()', () => {
-    it('should set wasBackgrounded when hidden during streaming', () => {
-      ragServiceStub.stream.mockReturnValue(NEVER);
-      component.query.set('test');
-      component.submit();
-      expect(component.isStreaming()).toBe(true);
-
-      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-      document.dispatchEvent(new Event('visibilitychange'));
-
-      expect(component.wasBackgrounded()).toBe(true);
-      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    });
-
-    it('should not set wasBackgrounded when hidden but not streaming', () => {
-      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-      document.dispatchEvent(new Event('visibilitychange'));
-
-      expect(component.wasBackgrounded()).toBe(false);
-      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
-    });
-
     it('should fetch result on return from background when queryId is set', () => {
       const completeResult = {
         queryId: 'q1',
@@ -342,10 +321,8 @@ describe('ChatComponent', () => {
       };
       ragServiceStub.fetchResult.mockReturnValue(of(completeResult));
 
-      // Set up streaming state
-      component.wasBackgrounded.set(true);
+      // Simulate in-flight query (queryId set, no response yet)
       component.queryId.set('q1');
-      component.isStreaming.set(true);
 
       // Return from background
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
@@ -370,14 +347,12 @@ describe('ChatComponent', () => {
       };
       ragServiceStub.fetchResult.mockReturnValue(of(runningResult));
 
-      component.wasBackgrounded.set(true);
       component.queryId.set('q1');
-      component.isStreaming.set(true);
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
 
-      // Still running — streaming state should be preserved
+      // Still running — streaming state should be restored
       expect(component.isStreaming()).toBe(true);
       expect(component.pipelineEvents().length).toBe(1);
     });
@@ -395,9 +370,7 @@ describe('ChatComponent', () => {
       };
       ragServiceStub.fetchResult.mockReturnValue(of(errorResult));
 
-      component.wasBackgrounded.set(true);
       component.queryId.set('q1');
-      component.isStreaming.set(true);
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -409,9 +382,7 @@ describe('ChatComponent', () => {
     it('should handle fetch error on return (expired result)', () => {
       ragServiceStub.fetchResult.mockReturnValue(throwError(() => new Error('Not found')));
 
-      component.wasBackgrounded.set(true);
       component.queryId.set('q1');
-      component.isStreaming.set(true);
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
@@ -421,8 +392,17 @@ describe('ChatComponent', () => {
     });
 
     it('should not fetch when returning without queryId', () => {
-      component.wasBackgrounded.set(true);
       component.queryId.set(null);
+
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(ragServiceStub.fetchResult).not.toHaveBeenCalled();
+    });
+
+    it('should not fetch when response already exists', () => {
+      component.queryId.set('q1');
+      component.response.set(mockAgentResponse());
 
       Object.defineProperty(document, 'hidden', { value: false, configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));

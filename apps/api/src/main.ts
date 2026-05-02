@@ -38,10 +38,11 @@ async function bootstrap() {
     }),
   );
 
-  // CORS: allow Angular frontend (dev or production via FRONTEND_URL)
+  // CORS: allow Angular frontend (dev, production, or Render preview)
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:4200');
+  const corsOrigin = frontendUrl === 'onrender.com' ? /\.onrender\.com$/ : frontendUrl;
   app.enableCors({
-    origin: frontendUrl,
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
     exposedHeaders: ['X-TTS-Characters'],

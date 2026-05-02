@@ -52,10 +52,7 @@ const MAX_QUERY_LENGTH = 500;
 export class ChatComponent implements OnInit, OnDestroy {
   private readonly ragService = inject(RagService);
 
-  /** Whether the page was backgrounded while a stream was active. */
-  readonly wasBackgrounded = signal(false);
-
-  /** Query ID from the init SSE event, used for fetch-on-return. */
+  /** Query ID from the init SSE event, used for background recovery. */
   readonly queryId = signal<string | null>(null);
 
   /** Bound reference to the visibility-change handler for cleanup. */
@@ -106,79 +103,57 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.stopElapsedTimer();
   }
 
+  // -------------------------------------------------------------------------
+  // Background recovery
+  // -------------------------------------------------------------------------
+
   /**
-   * Handle transitions between foreground and background.
+   * Recover query state when the page returns from background.
    *
-   * When the page is hidden during an active stream, a flag is set so that
-   * on return we can recover: fetch the stored result if complete, or
-   * reconnect SSE if still running (backend dedup prevents a duplicate
-   * agent run).
+   * Uses `queryId` + incomplete response as the guard — no separate
+   * `wasBackgrounded` flag needed. If the query completed while the tab
+   * was hidden the result is fetched directly; if still running the SSE
+   * stream is reconnected (backend dedup prevents a duplicate agent run).
    */
   private handleVisibilityChange(): void {
-    if (document.hidden) {
-      if (this.isStreaming()) {
-        this.wasBackgrounded.set(true);
-      }
-      return;
-    }
+    if (document.hidden) return;
 
-    // Returning to foreground
-    if (!this.wasBackgrounded()) return;
-    this.wasBackgrounded.set(false);
-
+    // Only recover if there's an in-flight query with no response yet
     const qid = this.queryId();
-    if (!qid) return;
+    if (!qid || this.response()) return;
 
-    // Kill the stale SSE connection
-    if (this.streamSub) {
-      this.streamSub.unsubscribe();
-      this.streamSub = null;
-    }
+    this.teardownStream();
+    this.error.set(null);
 
-    // Fetch stored result — if already complete we're done, otherwise
-    // reconnect the SSE stream (backend findRunning dedup prevents a
-    // duplicate agent run and polls the existing query server-side).
     this.ragService.fetchResult(qid).subscribe({
       next: (result) => {
+        if (result.pipelineEvents?.length) {
+          this.pipelineEvents.set(result.pipelineEvents);
+        }
+        if (result.steps?.length) {
+          this.steps.set(result.steps);
+        }
+
         if (result.status === 'complete' && result.response) {
           this.response.set(result.response);
-          this.pipelineEvents.set(result.pipelineEvents ?? []);
-          if (result.steps?.length) {
-            this.steps.set(result.steps);
-          }
-          this.isStreaming.set(false);
-          this.loading.set(false);
-          this.stopElapsedTimer();
-          this.activeTab.set('answer');
+          this.finishStream();
         } else if (result.status === 'running') {
-          // Update UI with partial progress collected so far
-          if (result.pipelineEvents?.length) {
-            this.pipelineEvents.set(result.pipelineEvents);
-          }
-          if (result.steps?.length) {
-            this.steps.set(result.steps);
-          }
-          // Reconnect SSE — backend dedup routes to pollExistingQuery
+          this.isStreaming.set(true);
+          this.loading.set(true);
           this.reconnectStream();
         } else if (result.status === 'error') {
-          this.error.set(result.error ?? 'Query failed while in background.');
-          this.isStreaming.set(false);
-          this.loading.set(false);
-          this.stopElapsedTimer();
-          this.stopActiveStages('Error');
-          this.activeTab.set('answer');
+          this.finishStream(result.error ?? 'Query failed while in background.', 'Error');
         }
       },
       error: () => {
-        this.error.set('Query result expired. Tap retry to start a new query.');
-        this.isStreaming.set(false);
-        this.loading.set(false);
-        this.stopElapsedTimer();
-        this.stopActiveStages('Expired');
-        this.activeTab.set('answer');
+        this.finishStream('Query result expired. Tap retry to start a new query.', 'Expired');
       },
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Stream lifecycle
+  // -------------------------------------------------------------------------
 
   /**
    * Open (or reconnect) the SSE stream for the current query.
@@ -195,17 +170,39 @@ export class ChatComponent implements OnInit, OnDestroy {
       error: (err: unknown) => {
         const message =
           err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-        this.error.set(message);
-        this.isStreaming.set(false);
-        this.loading.set(false);
-        this.stopElapsedTimer();
-        this.stopActiveStages('Connection lost');
-        this.activeTab.set('answer');
+        this.finishStream(message, 'Connection lost');
       },
       complete: () => {
         this.isStreaming.set(false);
       },
     });
+  }
+
+  /**
+   * Stop streaming and transition the UI to the answer tab.
+   *
+   * @param errorMsg   - If provided, shown as the error state.
+   * @param stageLabel - If provided, marks in-progress pipeline stages with this label.
+   */
+  private finishStream(errorMsg?: string, stageLabel?: string): void {
+    this.isStreaming.set(false);
+    this.loading.set(false);
+    this.stopElapsedTimer();
+    if (stageLabel) {
+      this.stopActiveStages(stageLabel);
+    }
+    if (errorMsg) {
+      this.error.set(errorMsg);
+    }
+    this.activeTab.set('answer');
+  }
+
+  /** Unsubscribe the active SSE stream without changing UI state. */
+  private teardownStream(): void {
+    if (this.streamSub) {
+      this.streamSub.unsubscribe();
+      this.streamSub = null;
+    }
   }
 
   /** Route a single SSE event to the appropriate signal update. */
@@ -237,10 +234,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         break;
       case 'answer':
         this.response.set(event.response);
-        this.isStreaming.set(false);
-        this.loading.set(false);
-        this.stopElapsedTimer();
-        this.activeTab.set('answer');
+        this.finishStream();
         break;
       case 'pipeline':
         this.isPipelineMode.set(true);
@@ -261,15 +255,14 @@ export class ChatComponent implements OnInit, OnDestroy {
         this.queryId.set(event.queryId);
         break;
       case 'error':
-        this.error.set(event.message);
-        this.isStreaming.set(false);
-        this.loading.set(false);
-        this.stopElapsedTimer();
-        this.stopActiveStages('Error');
-        this.activeTab.set('answer');
+        this.finishStream(event.message, 'Error');
         break;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Signals
+  // -------------------------------------------------------------------------
 
   /** Current query string bound to the input field. */
   readonly query = signal('');
@@ -415,6 +408,10 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.loading() || this.query().trim().length === 0 || this.query().length > MAX_QUERY_LENGTH,
   );
 
+  // -------------------------------------------------------------------------
+  // User actions
+  // -------------------------------------------------------------------------
+
   /**
    * Submit the current query to the RAG pipeline via SSE streaming.
    * Accumulates agent steps as they arrive and renders the final
@@ -428,7 +425,6 @@ export class ChatComponent implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.isStreaming.set(true);
-    this.wasBackgrounded.set(false);
     this.queryId.set(null);
     this.error.set(null);
     this.response.set(null);
@@ -506,16 +502,8 @@ export class ChatComponent implements OnInit, OnDestroy {
    * preserved so the fallback UI can display what was gathered before cancel.
    */
   cancel(): void {
-    if (this.streamSub) {
-      this.streamSub.unsubscribe();
-      this.streamSub = null;
-    }
-    this.isStreaming.set(false);
-    this.loading.set(false);
-    this.stopElapsedTimer();
-    this.stopActiveStages('Cancelled');
-    this.error.set('Query cancelled.');
-    this.activeTab.set('answer');
+    this.teardownStream();
+    this.finishStream('Query cancelled.', 'Cancelled');
   }
 
   /** Retry the current query. */
@@ -530,8 +518,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   /** Reset to the landing page state. */
   goHome(): void {
-    this.streamSub?.unsubscribe();
-    this.streamSub = null;
+    this.teardownStream();
     this.query.set('');
     this.response.set(null);
     this.error.set(null);
