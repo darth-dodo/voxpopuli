@@ -1,3 +1,6 @@
+previewsEnabled: true
+previewsExpireAfterDays: 3
+
 services:
   # NestJS API — Docker container (persistent process for SSE + cache)
   - type: web
@@ -7,17 +10,23 @@ services:
     dockerContext: .
     plan: starter
     healthCheckPath: /api/health
+    previews:
+      generation: automatic
     envVars:
       - key: NODE_ENV
         value: production
+      - key: FRONTEND_URL
+        previewValue: onrender.com
       - fromGroup: voxpopuli-secrets
 
   # Angular frontend — static site via Render CDN
   - type: web
     name: voxpopuli-web
     runtime: static
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && npx nx build web --configuration=production
+    buildCommand: bash scripts/set-api-url.sh && corepack enable && pnpm install --frozen-lockfile && npx nx build web --configuration=production
     staticPublishPath: dist/apps/web/browser
+    previews:
+      generation: automatic
     headers:
       - path: /assets/*
         name: Cache-Control
@@ -26,6 +35,12 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    envVars:
+      - key: API_URL
+        fromService:
+          name: voxpopuli-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
 
 envVarGroups:
   - name: voxpopuli-secrets
