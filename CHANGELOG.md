@@ -4,6 +4,13 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Groq replaced by OpenRouter** — The `groq` LLM provider is now `openrouter`: `OpenRouterProvider` uses LangChain `ChatOpenAI` against OpenRouter's OpenAI-compatible API, serving `qwen/qwen3-235b-a22b-2507` (override with `OPENROUTER_MODEL`). Set `OPENROUTER_API_KEY` (replaces `GROQ_API_KEY`) and `LLM_PROVIDER=openrouter`. `@langchain/groq` removed. First step toward routing all providers through OpenRouter.
+- **Clearer incomplete-answer messaging** — When the agent stops early (step limit, timeout, model error), the answer now explains why in plain language, lists only the unique findings that succeeded, summarizes malformed tool calls in one sentence instead of dumping raw errors, and suggests a next step.
+- **Agent tools accept numeric strings** — `search_hn`/`get_story`/`get_comments` numeric args use `z.coerce.number()`, so models that send `"10"` instead of `10` no longer burn steps on schema errors.
+- **Server default provider is now `mistral`** — `LLM_PROVIDER` defaults to `mistral` (matching the frontend selector and docs) instead of `groq`.
+
 ### Added
 
 - **Homepage UX polish** — Hero gradient with noise texture, masthead rule, editorial timeline component, preview cards matching real answer format, footer CTA, search focus refinements, light theme fixes, and 3x2 numbered example card grid.

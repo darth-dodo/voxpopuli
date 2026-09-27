@@ -6,7 +6,7 @@ import {
 } from './pipeline-graph';
 import type { EvidenceBundle, AnalysisResult, AgentResponseV2 } from '@voxpopuli/shared-types';
 
-jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 

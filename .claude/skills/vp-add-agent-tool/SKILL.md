@@ -25,7 +25,7 @@ AgentService (createAgent from 'langchain')
         └── get_comments → HnService.getCommentTree() → ChunkerService.chunkComments()
 ```
 
-LangChain handles tool protocol translation per provider (tool_use blocks for Claude, tool role for Mistral/Groq). We define tools once.
+LangChain handles tool protocol translation per provider (tool_use blocks for Claude, tool role for Mistral/OpenRouter). We define tools once.
 
 ## Implementation Pattern
 
@@ -98,7 +98,7 @@ expect(mockHnService.search).toHaveBeenCalledWith('rust vs go', expect.any(Objec
 **Jest ESM note:** Test files that import from AgentService or tools must mock the LLM providers to avoid ESM resolution failures:
 
 ```typescript
-jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 jest.mock('langchain', () => ({ createAgent: jest.fn(), tool: jest.fn() }));

@@ -20,7 +20,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4    |
 | LLM (quality)   | Claude Haiku 4.5        | Anthropic SDK via LangChain `@langchain/anthropic`      |
 | LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`        |
-| LLM (speed)     | Groq Qwen3 32B          | OpenAI-compatible via LangChain `@langchain/groq`       |
+| LLM (speed)     | OpenRouter Qwen3 32B    | OpenAI-compatible via LangChain `@langchain/openai`     |
 | Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas         |
 | TTS             | ElevenLabs              | Planned -- podcast-style voice narration                |
 | Cache           | node-cache              | In-memory TTL cache with typed get/set                  |
@@ -86,7 +86,7 @@ voxpopuli/
 |   |       +-- hn/                  # HnModule, HnService, HnController, hn.service.spec.ts
 |   |       +-- llm/                 # LlmModule, LlmService, llm-provider.interface.ts
 |   |       |   +-- invoke-with-retry.ts  # Shared LLM invoke helper with exponential backoff retry
-|   |       |   +-- providers/       # groq.provider.ts, claude.provider.ts, mistral.provider.ts
+|   |       |   +-- providers/       # openrouter.provider.ts, claude.provider.ts, mistral.provider.ts
 |   |       +-- rag/                 # RagModule, RagController, rate limiting, input validation
 |   |           +-- rag.controller.ts         # POST /query, GET /stream (SSE)
 |   |           +-- rag.controller.spec.ts    # 7 integration tests
@@ -210,11 +210,11 @@ voxpopuli/
 
 **Providers:**
 
-| Provider | Class             | LangChain Model | Model ID                    | Context Window |
-| -------- | ----------------- | --------------- | --------------------------- | -------------- |
-| Groq     | `GroqProvider`    | `ChatGroq`      | `qwen/qwen3-32b`            | 128,000 tokens |
-| Claude   | `ClaudeProvider`  | `ChatAnthropic` | `claude-haiku-4-5-20251001` | 200,000 tokens |
-| Mistral  | `MistralProvider` | `ChatMistralAI` | `mistral-large-latest`      | 262,000 tokens |
+| Provider   | Class                | LangChain Model | Model ID                    | Context Window |
+| ---------- | -------------------- | --------------- | --------------------------- | -------------- |
+| OpenRouter | `OpenRouterProvider` | `ChatOpenAI`    | `qwen/qwen3-235b-a22b-2507` | 128,000 tokens |
+| Claude     | `ClaudeProvider`     | `ChatAnthropic` | `claude-haiku-4-5-20251001` | 200,000 tokens |
+| Mistral    | `MistralProvider`    | `ChatMistralAI` | `mistral-large-latest`      | 262,000 tokens |
 
 All providers implement `LlmProviderInterface` with three members: `name`, `maxContextTokens`, and `getModel()`. Each wraps a LangChain `BaseChatModel` instance that is lazily created on first access.
 
@@ -299,14 +299,14 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 ### 5.8 ConfigModule (`apps/api/src/config/`)
 
-| Attribute          | Value                                                                                                                                                    |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Purpose            | Environment variable validation at application startup                                                                                                   |
-| Key export         | `validate()` function used by `ConfigModule.forRoot()`                                                                                                   |
-| Validation library | `class-validator` + `class-transformer`                                                                                                                  |
-| Key class          | `EnvironmentVariables` with decorated fields                                                                                                             |
-| Required vars      | `LLM_PROVIDER` (default: `groq`)                                                                                                                         |
-| Optional vars      | `GROQ_API_KEY`, `MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `PORT`, `LOG_LEVEL`, `NODE_ENV` |
+| Attribute          | Value                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose            | Environment variable validation at application startup                                                                                                         |
+| Key export         | `validate()` function used by `ConfigModule.forRoot()`                                                                                                         |
+| Validation library | `class-validator` + `class-transformer`                                                                                                                        |
+| Key class          | `EnvironmentVariables` with decorated fields                                                                                                                   |
+| Required vars      | `LLM_PROVIDER` (default: `mistral`)                                                                                                                            |
+| Optional vars      | `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL`, `PORT`, `LOG_LEVEL`, `NODE_ENV` |
 
 ### 5.9 AppModule (`apps/api/src/app/`)
 
@@ -424,18 +424,18 @@ All pipeline types use Zod schemas with runtime validation and inferred TypeScri
 
 ### Environment Variables
 
-| Variable              | Required              | Default                  | Purpose                                                                                                                                                                      |
-| --------------------- | --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_PROVIDER`        | Yes                   | `groq`                   | Active LLM provider (`groq`, `claude`, or `mistral`). Note: the frontend provider selector defaults to `mistral`, which overrides this server-side default for SSE requests. |
-| `GROQ_API_KEY`        | When provider=groq    | --                       | Groq API authentication                                                                                                                                                      |
-| `MISTRAL_API_KEY`     | When provider=mistral | --                       | Mistral API authentication                                                                                                                                                   |
-| `ANTHROPIC_API_KEY`   | When provider=claude  | --                       | Anthropic API authentication                                                                                                                                                 |
-| `ELEVENLABS_API_KEY`  | For M5 (TTS)          | --                       | ElevenLabs TTS authentication                                                                                                                                                |
-| `ELEVENLABS_VOICE_ID` | For M5 (TTS)          | `nPczCjzI2devNBz1zQrb`   | ElevenLabs narrator voice (Brian)                                                                                                                                            |
-| `ELEVENLABS_MODEL`    | For M5 (TTS)          | `eleven_multilingual_v2` | ElevenLabs model selection                                                                                                                                                   |
-| `PORT`                | No                    | `3000`                   | HTTP server port                                                                                                                                                             |
-| `LOG_LEVEL`           | No                    | `info`                   | Pino log level                                                                                                                                                               |
-| `NODE_ENV`            | No                    | `development`            | Enables pretty-printed logs in non-production                                                                                                                                |
+| Variable              | Required                 | Default                  | Purpose                                                                                                                                                                            |
+| --------------------- | ------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`        | Yes                      | `mistral`                | Active LLM provider (`openrouter`, `claude`, or `mistral`). Note: the frontend provider selector defaults to `mistral`, which overrides this server-side default for SSE requests. |
+| `OPENROUTER_API_KEY`  | When provider=openrouter | --                       | OpenRouter API authentication                                                                                                                                                      |
+| `MISTRAL_API_KEY`     | When provider=mistral    | --                       | Mistral API authentication                                                                                                                                                         |
+| `ANTHROPIC_API_KEY`   | When provider=claude     | --                       | Anthropic API authentication                                                                                                                                                       |
+| `ELEVENLABS_API_KEY`  | For M5 (TTS)             | --                       | ElevenLabs TTS authentication                                                                                                                                                      |
+| `ELEVENLABS_VOICE_ID` | For M5 (TTS)             | `nPczCjzI2devNBz1zQrb`   | ElevenLabs narrator voice (Brian)                                                                                                                                                  |
+| `ELEVENLABS_MODEL`    | For M5 (TTS)             | `eleven_multilingual_v2` | ElevenLabs model selection                                                                                                                                                         |
+| `PORT`                | No                       | `3000`                   | HTTP server port                                                                                                                                                                   |
+| `LOG_LEVEL`           | No                       | `info`                   | Pino log level                                                                                                                                                                     |
+| `NODE_ENV`            | No                       | `development`            | Enables pretty-printed logs in non-production                                                                                                                                      |
 
 ### Validation
 

@@ -55,7 +55,7 @@ const mockAnalysis: AnalysisResult = {
 };
 
 const mockMeta = {
-  provider: 'groq',
+  provider: 'openrouter',
   durationMs: 5000,
   totalInputTokens: 800,
   totalOutputTokens: 400,
@@ -105,7 +105,7 @@ describe('buildFallbackResponse', () => {
   it('should pass through meta with error flag', () => {
     const result = buildFallbackResponse(mockAnalysis, mockBundle, mockMeta);
     expect(result.meta).toMatchObject({
-      provider: 'groq',
+      provider: 'openrouter',
       durationMs: 5000,
       totalInputTokens: 800,
       totalOutputTokens: 400,

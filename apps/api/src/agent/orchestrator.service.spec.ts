@@ -15,7 +15,7 @@ import { buildPipelineGraph } from './pipeline-graph';
 
 jest.mock('langchain', () => ({ createAgent: jest.fn() }));
 jest.mock('./tools', () => ({ createAgentTools: jest.fn(() => []) }));
-jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
@@ -97,7 +97,7 @@ function makeLegacyEvents() {
         steps: [],
         sources: [],
         meta: {
-          provider: 'groq',
+          provider: 'openrouter',
           totalInputTokens: 0,
           totalOutputTokens: 0,
           durationMs: 100,
@@ -161,7 +161,7 @@ describe('OrchestratorService', () => {
 
   const mockLlm = {
     getModel: jest.fn(() => ({ invoke: jest.fn(), stream: jest.fn() })),
-    getProviderName: jest.fn(() => 'groq'),
+    getProviderName: jest.fn(() => 'openrouter'),
   };
 
   beforeEach(async () => {
@@ -281,7 +281,7 @@ describe('OrchestratorService', () => {
       };
 
       expect(complete.response.meta).toBeDefined();
-      expect(complete.response.meta.provider).toBe('groq');
+      expect(complete.response.meta.provider).toBe('openrouter');
       expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
       expect(complete.response.trust).toBeDefined();
     });
@@ -465,7 +465,7 @@ describe('OrchestratorService', () => {
       expect(complete.response.sources).toBeDefined();
       expect(complete.response.sources.length).toBeGreaterThan(0);
       expect(complete.response.meta).toBeDefined();
-      expect(complete.response.meta.provider).toBe('groq');
+      expect(complete.response.meta.provider).toBe('openrouter');
       expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
       expect(complete.response.trust).toBeDefined();
     });

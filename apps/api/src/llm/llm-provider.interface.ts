@@ -7,7 +7,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
  * its context-window budget so the chunker can size prompts correctly.
  */
 export interface LlmProviderInterface {
-  /** Provider identifier, e.g. "groq", "claude", "mistral". */
+  /** Provider identifier, e.g. "openrouter", "claude", "mistral". */
   readonly name: string;
 
   /** Total context window size in tokens for this provider's model. */

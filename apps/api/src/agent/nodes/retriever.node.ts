@@ -129,7 +129,7 @@ export type RetrieverResult = {
 };
 
 export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
-  // Wrap with retry for Groq TPM rate-limits — waits 15s then retries.
+  // Wrap with retry for TPM rate-limits — waits 15s then retries.
   const retryModel =
     typeof model.withRetry === 'function'
       ? model.withRetry({

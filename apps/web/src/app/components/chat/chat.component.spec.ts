@@ -30,7 +30,7 @@ function mockAgentResponse(overrides: Partial<AgentResponse> = {}): AgentRespons
       },
     ],
     meta: {
-      provider: 'groq',
+      provider: 'openrouter',
       totalInputTokens: 500,
       totalOutputTokens: 200,
       durationMs: 1234,
@@ -1011,7 +1011,7 @@ describe('ChatComponent', () => {
     it('should show partial result warning for error responses', () => {
       const resp = mockAgentResponse({
         meta: {
-          provider: 'groq',
+          provider: 'openrouter',
           totalInputTokens: 500,
           totalOutputTokens: 200,
           durationMs: 1234,
@@ -1035,7 +1035,7 @@ describe('ChatComponent', () => {
       fixture.detectChanges();
 
       const el = fixture.nativeElement as HTMLElement;
-      expect(el.textContent).toContain('Partial results');
+      expect(el.textContent).toContain('Incomplete answer');
     });
 
     it('should render theme toggle with correct aria-label', () => {

@@ -20,7 +20,7 @@ function makeResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
     steps: [],
     sources: [makeSource()],
     meta: {
-      provider: 'groq',
+      provider: 'openrouter',
       totalInputTokens: 100,
       totalOutputTokens: 50,
       durationMs: 1000,

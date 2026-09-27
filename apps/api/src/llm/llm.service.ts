@@ -2,19 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { LlmProviderInterface } from './llm-provider.interface';
-import { GroqProvider } from './providers/groq.provider';
+import { OpenRouterProvider } from './providers/openrouter.provider';
 import { ClaudeProvider } from './providers/claude.provider';
 import { MistralProvider } from './providers/mistral.provider';
 
 /** Valid provider name literals. */
-type ProviderName = 'groq' | 'claude' | 'mistral';
+type ProviderName = 'openrouter' | 'claude' | 'mistral';
 
 /** Provider constructor signature for the factory map. */
 type ProviderFactory = (config: ConfigService) => LlmProviderInterface;
 
 /** Registry mapping provider names to their factory functions. */
 const PROVIDER_FACTORIES: Record<ProviderName, ProviderFactory> = {
-  groq: (cfg) => new GroqProvider(cfg),
+  openrouter: (cfg) => new OpenRouterProvider(cfg),
   claude: (cfg) => new ClaudeProvider(cfg),
   mistral: (cfg) => new MistralProvider(cfg),
 };
@@ -33,7 +33,7 @@ export class LlmService {
   private readonly providers = new Map<string, LlmProviderInterface>();
 
   constructor(private readonly config: ConfigService) {
-    const providerName = this.config.get<string>('LLM_PROVIDER', 'groq');
+    const providerName = this.config.get<string>('LLM_PROVIDER', 'mistral');
 
     if (!this.isValidProvider(providerName)) {
       throw new Error(
@@ -76,7 +76,7 @@ export class LlmService {
   /**
    * Return the name of the currently active LLM provider.
    *
-   * @returns The active provider identifier (e.g. "groq", "claude", "mistral")
+   * @returns The active provider identifier (e.g. "openrouter", "claude", "mistral")
    */
   getProviderName(): string {
     return this.activeProvider;

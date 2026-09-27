@@ -23,7 +23,11 @@ const program = new Command()
   .name('voxpopuli-eval')
   .description('Evaluation harness for the VoxPopuli RAG agent')
   .version('1.0.0')
-  .option('-p, --provider <name>', 'LLM provider to evaluate', process.env.LLM_PROVIDER || 'groq')
+  .option(
+    '-p, --provider <name>',
+    'LLM provider to evaluate',
+    process.env.LLM_PROVIDER || 'mistral',
+  )
   .option('-c, --compare <providers>', 'compare multiple providers (comma-separated)', (val) =>
     val.split(',').map((s) => s.trim()),
   )

@@ -23,7 +23,7 @@ function makeResponse(
     steps: [],
     sources,
     meta: {
-      provider: 'groq',
+      provider: 'openrouter',
       totalInputTokens: 100,
       totalOutputTokens: 50,
       durationMs: 1000,

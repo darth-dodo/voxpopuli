@@ -409,17 +409,17 @@ describe('ChunkerService', () => {
     });
 
     it('works with provider-specific budgets', () => {
-      // Claude: 80k, Mistral: 100k, Groq/Qwen3: 131k (minus 7.5k reserved)
+      // Claude: 80k, Mistral: 100k, OpenRouter/Qwen3: 131k (minus 7.5k reserved)
       const claudeBudget = 80000 - 7500;
-      const groqBudget = 131000 - 7500;
+      const openrouterBudget = 131000 - 7500;
 
       const claudeCtx = service.buildContext([smallStory], [topComment], claudeBudget);
-      const groqCtx = service.buildContext([smallStory], [topComment], groqBudget);
+      const openrouterCtx = service.buildContext([smallStory], [topComment], openrouterBudget);
 
       // Both should fit everything since chunks are small
       expect(claudeCtx.truncated).toBe(false);
-      expect(groqCtx.truncated).toBe(false);
-      expect(claudeCtx.totalTokens).toBe(groqCtx.totalTokens);
+      expect(openrouterCtx.truncated).toBe(false);
+      expect(claudeCtx.totalTokens).toBe(openrouterCtx.totalTokens);
     });
   });
 

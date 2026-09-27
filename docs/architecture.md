@@ -83,7 +83,7 @@ graph TB
     subgraph Providers ["LLM Providers"]
         CLAUDE["Claude Haiku 4.5"]
         MISTRAL["Mistral Large 3"]
-        GROQ["Groq Qwen3 32B"]
+        OPENROUTER["OpenRouter (Qwen3 32B)"]
     end
 
     subgraph External ["External APIs"]
@@ -114,7 +114,7 @@ graph TB
     HN --> FIREBASE
     LLM --> CLAUDE
     LLM --> MISTRAL
-    LLM --> GROQ
+    LLM --> OPENROUTER
 
     style Frontend fill:#dbeafe,stroke:#1e40af,color:#1e40af
     style Backend fill:#f8f9fa,stroke:#343a40,color:#343a40
@@ -163,17 +163,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology       | Version                               |
-| --------------- | ---------------- | ------------------------------------- |
-| Monorepo        | Nx               | Latest                                |
-| Backend         | NestJS           | 10+                                   |
-| Frontend        | Angular          | 21                                    |
-| LLM (quality)   | Claude Haiku 4.5 | LangChain.js (`@langchain/anthropic`) |
-| LLM (cost)      | Mistral Large 3  | LangChain.js (`@langchain/mistralai`) |
-| LLM (speed/dev) | Groq Qwen3 32B   | LangChain.js (`@langchain/groq`)      |
-| TTS             | ElevenLabs       | elevenlabs SDK                        |
-| Cache           | node-cache       | Latest                                |
-| Shared Types    | TypeScript lib   | `@voxpopuli/shared-types`             |
+| Layer           | Technology           | Version                                                 |
+| --------------- | -------------------- | ------------------------------------------------------- |
+| Monorepo        | Nx                   | Latest                                                  |
+| Backend         | NestJS               | 10+                                                     |
+| Frontend        | Angular              | 21                                                      |
+| LLM (quality)   | Claude Haiku 4.5     | LangChain.js (`@langchain/anthropic`)                   |
+| LLM (cost)      | Mistral Large 3      | LangChain.js (`@langchain/mistralai`)                   |
+| LLM (speed/dev) | OpenRouter Qwen3 32B | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
+| TTS             | ElevenLabs           | elevenlabs SDK                                          |
+| Cache           | node-cache           | Latest                                                  |
+| Shared Types    | TypeScript lib       | `@voxpopuli/shared-types`                               |
 
 ### 1.4 Project Structure
 
@@ -292,7 +292,7 @@ Transforms raw HN data into token-budgeted context for the LLM. Implemented in M
 3. Top-level comments (depth 0-1) -- highest priority comments
 4. Nested comments (depth 2+) -- included with remaining budget
 
-**Token budgets** (passed by caller, sourced from provider): Claude 80k, Mistral 100k, Groq 50k.
+**Token budgets** (passed by caller, sourced from provider): Claude 80k, Mistral 100k, OpenRouter 50k.
 
 **Prompt format** (`formatForPrompt()`): Renders `=== STORIES ===` and `=== COMMENTS ===` sections with story IDs, metadata, and indented comments by depth. Appends a truncation notice when the context window was trimmed.
 
@@ -304,20 +304,20 @@ Provider interface + facade pattern, implemented via LangChain.js. Implemented i
 
 All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangChain handles tool-calling protocols (tool_use/tool_result content blocks, OpenAI-compatible function calls) internally, so the provider interface is simpler than originally specified -- no `formatTools()` or `buildToolResultMessage()` methods are needed.
 
-| Component              | Responsibility                                                                      |
-| ---------------------- | ----------------------------------------------------------------------------------- |
-| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                   |
-| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                 |
-| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                      |
-| `GroqProvider`         | `ChatGroq` wrapping `qwen/qwen3-32b` (131k context)                                 |
-| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override |
+| Component              | Responsibility                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                              |
+| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                            |
+| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                                 |
+| `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-235b-a22b-2507` (128k budget) |
+| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override            |
 
 **Key implementation details:**
 
 - **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. The `ChatModel` instance within each provider is also lazily created on the first `getModel()` call.
 - **API key validation:** Each provider validates its API key at construction time and throws immediately if missing.
 - **Per-request override:** `LlmService.getModel(providerOverride?)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call.
-- **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `groq`, `claude`, `mistral`.
+- **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `openrouter`, `claude`, `mistral`.
 
 **Tests:** 22 unit tests covering provider resolution, lazy instantiation, API key validation, override support, and error handling. See `docs/adr/003-llm-provider-architecture.md` for design rationale.
 
@@ -785,7 +785,7 @@ Epic (Linear Project or Cycle)
 ### Milestone 6: Eval Harness -- COMPLETE
 
 **Goal:** Automated quality checks catch regressions in agent behavior.
-**Demo:** Run `npx tsx evals/run-eval.ts --provider groq` and get a scored report with per-query pass/fail, weighted scores, and timing. View traces and experiment comparisons in LangSmith dashboard.
+**Demo:** Run `npx tsx evals/run-eval.ts --provider openrouter` and get a scored report with per-query pass/fail, weighted scores, and timing. View traces and experiment comparisons in LangSmith dashboard.
 **Status:** DONE -- first real run: 52% pass rate (13/25 passed), 32 evaluator unit tests.
 
 **Approach:** Hybrid -- local `queries.json` (version-controlled) + LangSmith for tracing, feedback sync, and dashboard. Results saved both to LangSmith and locally in `evals/results/`.
@@ -799,7 +799,7 @@ Epic (Linear Project or Cycle)
 npx tsx evals/run-eval.ts
 
 # Run against a specific provider
-npx tsx evals/run-eval.ts --provider groq
+npx tsx evals/run-eval.ts --provider openrouter
 
 # Run a single query by ID
 npx tsx evals/run-eval.ts --query q01
@@ -808,7 +808,7 @@ npx tsx evals/run-eval.ts --query q01
 npx tsx evals/run-eval.ts --category trust
 
 # Compare two providers side-by-side
-npx tsx evals/run-eval.ts --compare groq,mistral
+npx tsx evals/run-eval.ts --compare openrouter,mistral
 
 # Fast mode (skip LLM-as-judge)
 npx tsx evals/run-eval.ts --no-judge
@@ -1146,10 +1146,10 @@ As a solo developer, this is the recommended build order. Each milestone builds 
 
 ```env
 # LLM Provider (required)
-LLM_PROVIDER=mistral                        # claude | mistral | groq
+LLM_PROVIDER=mistral                        # claude | mistral | openrouter
 
 # API Keys (only active provider required)
-GROQ_API_KEY=gsk_...
+OPENROUTER_API_KEY=sk-or-...
 MISTRAL_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
 
@@ -1190,10 +1190,10 @@ EVAL_JUDGE_PROVIDER=mistral
 | Cache TTL (query result)        | 10 min                      | Token savings                                    |
 | Context window (Claude)         | 200k tokens                 | `claude-haiku-4-5-20251001` via LangChain        |
 | Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
-| Context window (Groq)           | 131k tokens                 | `qwen/qwen3-32b` via LangChain                   |
+| Context window (OpenRouter)     | 128k tokens                 | `qwen/qwen3-235b-a22b-2507` (smallest host cap)  |
 | Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
 | Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
-| Token budget (Groq)             | 50k of 131k                 | Conservative headroom                            |
+| Token budget (OpenRouter)       | 50k of 131k                 | Conservative headroom                            |
 | Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
 | TTS max chars                   | 2500                        | ElevenLabs streaming limit                       |
 | Eval query count                | 27                          | 20 general + 7 trust-specific                    |

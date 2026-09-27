@@ -5,7 +5,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { Readable } from 'node:stream';
 
 // Mock LLM provider modules to avoid ESM resolution issues
-jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 

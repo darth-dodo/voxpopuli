@@ -6,7 +6,7 @@ interface LatencyThreshold {
 }
 
 const PROVIDER_THRESHOLDS: Record<string, LatencyThreshold[]> = {
-  groq: [
+  openrouter: [
     { maxMs: 15_000, score: 1.0 },
     { maxMs: 30_000, score: 0.7 },
     { maxMs: 60_000, score: 0.3 },

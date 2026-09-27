@@ -5,11 +5,15 @@ import { Type } from 'class-transformer';
 export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
-  LLM_PROVIDER = 'groq';
+  LLM_PROVIDER = 'mistral';
 
   @IsString()
   @IsOptional()
-  GROQ_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  OPENROUTER_MODEL?: string;
 
   @IsString()
   @IsOptional()
