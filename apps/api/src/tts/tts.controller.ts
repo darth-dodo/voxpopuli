@@ -1,32 +1,38 @@
 import { Controller, Post, Get, Body, Res, HttpException, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
-import { TtsService } from './tts.service';
+import { ConfigService } from '@nestjs/config';
+import { TtsService, TtsUpstreamError } from './tts.service';
 import { TtsRequest, VoiceConfig } from '@voxpopuli/shared-types';
-import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
+import { MISTRAL_TTS_DEFAULT_VOICE, MISTRAL_TTS_MODEL_ID } from '../llm/model-ids';
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
 const MAX_INPUT_LENGTH = 10_000;
+/** Voxtral voice ids are preset slugs (en_paul_neutral) or custom-voice UUIDs. */
+const VOICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Controller for TTS (text-to-speech) endpoints.
  *
- * Provides a streaming narration endpoint that pipes chunked MP3 audio
- * directly to the response, and a voice configuration endpoint.
+ * Provides a narration endpoint that returns MP3 audio synthesised by
+ * Mistral Voxtral TTS, and a voice configuration endpoint.
  */
 @Controller('tts')
 export class TtsController {
   private readonly requestTimestamps: number[] = [];
 
-  constructor(private readonly ttsService: TtsService) {}
+  constructor(
+    private readonly ttsService: TtsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * Generate narrated audio for the given text.
    *
    * Optionally rewrites the text into a podcast-style script before
-   * synthesising speech via ElevenLabs. The audio stream is buffered
-   * into a complete response with Content-Length for compatibility
-   * with reverse proxies (Render, Cloudflare) that drop chunked streams.
+   * synthesising speech via Mistral Voxtral. The audio is returned as one
+   * complete response with Content-Length for compatibility with
+   * reverse proxies (Render, Cloudflare) that drop chunked streams.
    */
   @Post('narrate')
   async narrate(@Body() body: TtsRequest, @Res() res: Response): Promise<void> {
@@ -40,37 +46,32 @@ export class TtsController {
       );
     }
 
+    if (body.voiceId !== undefined && !VOICE_ID_PATTERN.test(body.voiceId)) {
+      throw new HttpException('Invalid voiceId', HttpStatus.BAD_REQUEST);
+    }
+
     this.enforceRateLimit();
 
     try {
-      const { stream, characterCount } = await this.ttsService.narrate(body.text, {
+      const { audio, contentType, characterCount } = await this.ttsService.narrate(body.text, {
         rewrite: body.rewrite,
         voiceId: body.voiceId,
       });
 
-      // Buffer the stream into a single Buffer for reliable delivery
-      // through reverse proxies that don't support chunked transfer.
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      const audioBuffer = Buffer.concat(chunks);
-
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Length', audioBuffer.length);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', audio.length);
       res.setHeader('X-TTS-Characters', String(characterCount));
       res.setHeader('Cache-Control', 'no-cache');
-      res.end(audioBuffer);
+      res.end(audio);
     } catch (error) {
       if (error instanceof HttpException) throw error;
 
       const message = error instanceof Error ? error.message : 'TTS narration failed';
-      const isUpstream =
-        message.toLowerCase().includes('elevenlabs') || message.toLowerCase().includes('upstream');
-
       throw new HttpException(
         message,
-        isUpstream ? HttpStatus.BAD_GATEWAY : HttpStatus.INTERNAL_SERVER_ERROR,
+        error instanceof TtsUpstreamError
+          ? HttpStatus.BAD_GATEWAY
+          : HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -80,16 +81,11 @@ export class TtsController {
    */
   @Get('voices')
   voices(): VoiceConfig {
+    const voice = this.configService.get<string>('MISTRAL_TTS_VOICE', MISTRAL_TTS_DEFAULT_VOICE);
     return {
-      id: ELEVENLABS_DEFAULT_VOICE_ID,
-      name: 'Brian',
-      model: ELEVENLABS_MODEL_ID,
-      settings: {
-        stability: 0.65,
-        similarityBoost: 0.75,
-        style: 0.35,
-        useSpeakerBoost: true,
-      },
+      id: voice,
+      name: voice,
+      model: this.configService.get<string>('MISTRAL_TTS_MODEL', MISTRAL_TTS_MODEL_ID),
     };
   }
 

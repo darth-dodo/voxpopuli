@@ -53,12 +53,10 @@ envVarGroups:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: ELEVENLABS_VOICE_ID
-        value: nPczCjzI2devNBz1zQrb
-      - key: ELEVENLABS_MODEL
-        value: eleven_multilingual_v2
+      - key: MISTRAL_TTS_MODEL
+        value: voxtral-mini-tts-latest
+      - key: MISTRAL_TTS_VOICE
+        value: en_paul_neutral
       - key: SENTRY_DSN
         sync: false
       - key: FRONTEND_URL
