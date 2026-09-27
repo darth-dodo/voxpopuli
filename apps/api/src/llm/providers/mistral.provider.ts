@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatMistralAI } from '@langchain/mistralai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface } from '../llm-provider.interface';
+import type { LlmProviderInterface, ModelOptions } from '../llm-provider.interface';
 import { MISTRAL_MODEL_ID } from '../model-ids';
 
 /** Mistral context window size in tokens. */
@@ -20,7 +20,7 @@ export class MistralProvider implements LlmProviderInterface {
   readonly maxContextTokens = MAX_CONTEXT_TOKENS;
 
   private readonly apiKey: string;
-  private model: BaseChatModel | null = null;
+  private readonly models = new Map<number | undefined, BaseChatModel>();
 
   constructor(private readonly config: ConfigService) {
     const key = this.config.get<string>('MISTRAL_API_KEY');
@@ -31,13 +31,16 @@ export class MistralProvider implements LlmProviderInterface {
   }
 
   /** Return (or lazily create) the ChatMistralAI instance. */
-  getModel(): BaseChatModel {
-    if (!this.model) {
-      this.model = new ChatMistralAI({
+  getModel(options: ModelOptions = {}): BaseChatModel {
+    let model = this.models.get(options.maxTokens);
+    if (!model) {
+      model = new ChatMistralAI({
         apiKey: this.apiKey,
         model: MISTRAL_MODEL_ID,
+        ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
       });
+      this.models.set(options.maxTokens, model);
     }
-    return this.model;
+    return model;
   }
 }

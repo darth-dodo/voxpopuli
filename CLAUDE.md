@@ -81,6 +81,7 @@ npx tsx evals/run-eval.ts -C trust       # Run only trust category
 npx tsx evals/run-eval.ts -q q01         # Single query for debugging
 npx tsx evals/run-eval.ts --dry-run      # Preview without calling API
 npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
+npx tsx evals/run-eval.ts --multi-agent --stream -n 1 --baseline <results.json>  # Latency A/B (ADR-009)
 ```
 
 ## Code Conventions
@@ -159,7 +160,7 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 
 1. **Don't import between NestJS modules directly.** Use module imports and DI.
 2. **Don't assume LLM provider.** Always go through `LlmService`, never instantiate providers directly.
-3. **Comment tree fetching is slow.** Each Firebase comment is an individual HTTP call. Always respect the 30-comment cap and parallel batching.
+3. **Comment tree fetching is slow.** Each Firebase comment is an individual HTTP call. Always respect the 30-comment cap. `getCommentTree()` fetches one depth level at a time with all parents in parallel — don't reintroduce per-comment `await`s.
 4. **Token budgets vary by provider.** Always use `ChunkerService.buildContext()` with the active provider's budget, not a hardcoded number.
 5. **SSE events have specific types.** Use `thought`, `action`, `observation`, `answer`, `error` -- don't invent new event types.
 6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`. Speech itself comes from **Mistral Voxtral TTS** (`POST https://api.mistral.ai/v1/audio/speech`, `MISTRAL_API_KEY`) via a raw `fetch` in `TtsService.synthesize()`: model `MISTRAL_TTS_MODEL` (default `voxtral-mini-tts-latest`), voice `MISTRAL_TTS_VOICE` (default preset `en_paul_neutral`; list presets with `GET /v1/audio/voices`, custom cloned voices are UUIDs). The response is JSON `{ audio_data: <base64 MP3> }`, returned to the client as one `audio/mpeg` body. Upstream failures throw `TtsUpstreamError` → HTTP 502 with Mistral's reason (e.g. unknown voice).
@@ -181,6 +182,8 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 22. **SSE stall detection in RagService.** A 300s watchdog (`STALL_TIMEOUT_MS`) fires `handleStall()` if no events arrive while the page is visible. Don't remove the `lastEventTime = Date.now()` bump in the event handler — it resets the watchdog on every received event.
 23. **Pipeline stage timer cap.** AgentStepsComponent caps live elapsed at 180s (`MAX_STAGE_ELAPSED_MS`) to prevent runaway counters on stalled connections. The timer stops updating for a stage once it hits the cap.
 24. **Query result 202 response is a full QueryResult shape.** The `getResult` endpoint returns a complete `QueryResult` object (enforced via `satisfies QueryResult`) even when the query is still running (202). Do not assume any fields are missing from the 202 response body.
+25. **Don't make the LLM transcribe structured data (ADR-009).** Output tokens dominate latency (~5s per 1k). Source metadata comes from the `SourceRegistry` filled by the tools; the compactor emits only `themes` and the writer only prose. Never add `sources`/`allSources` back to an LLM output schema.
+26. **The Retriever ReAct model is output-capped** (`RETRIEVER_REACT_MAX_TOKENS`, via `LlmService.getModel(provider, { maxTokens })`). Hitting the recursion limit compacts what was collected instead of failing into the legacy fallback.
 
 ## Architecture Decision Records
 
@@ -193,6 +196,7 @@ ADRs live in `docs/adr/` and document key design choices. Consult these before p
 - `006-adaptive-query-decomposition.md` — Retriever prompt decomposition for comparison/temporal queries
 - `007-query-id-resilience.md` — Query IDs, stored results, and reconnect/dedup for background tabs
 - `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
+- `009-pipeline-latency.md` — Latency investigation; LLM writes only judgement, code supplies source metadata; eval `--stream`/`--baseline`
 
 ## Linear Project
 

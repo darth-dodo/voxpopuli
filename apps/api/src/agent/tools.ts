@@ -2,8 +2,20 @@ import { tool } from 'langchain';
 import { z } from 'zod';
 import type { HnService } from '../hn/hn.service';
 import type { ChunkerService } from '../chunker/chunker.service';
-import type { HnStory } from '@voxpopuli/shared-types';
+import type { HnStory, SourceMetadata } from '@voxpopuli/shared-types';
 import type { StructuredToolInterface } from '@langchain/core/tools';
+
+/**
+ * Per-request registry of every story the tools surfaced, keyed by storyId.
+ * Lets the pipeline build its source table from structured API data instead
+ * of asking the LLM to transcribe it (slow, and prone to null/invented fields).
+ */
+export type SourceRegistry = Map<number, SourceMetadata>;
+
+/** Canonical HN discussion URL — used when a story has no external link (Ask HN, etc.). */
+export function hnItemUrl(storyId: number): string {
+  return `https://news.ycombinator.com/item?id=${storyId}`;
+}
 
 /**
  * Create the `search_hn` tool for the ReAct agent.
@@ -14,6 +26,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 export function createSearchHnTool(
   hn: HnService,
   chunker: ChunkerService,
+  sources?: SourceRegistry,
 ): StructuredToolInterface {
   return tool(
     async (input: {
@@ -35,6 +48,18 @@ export function createSearchHnTool(
 
       if (result.hits.length === 0) {
         return 'No results found for this search query.';
+      }
+
+      for (const hit of result.hits) {
+        const storyId = parseInt(hit.objectID, 10);
+        sources?.set(storyId, {
+          storyId,
+          title: hit.title,
+          url: hit.url || hnItemUrl(storyId),
+          author: hit.author,
+          points: hit.points ?? 0,
+          commentCount: hit.num_comments ?? 0,
+        });
       }
 
       const chunks = chunker.chunkStories(result.hits);
@@ -72,6 +97,7 @@ export function createSearchHnTool(
 export function createGetStoryTool(
   hn: HnService,
   chunker: ChunkerService,
+  sources?: SourceRegistry,
 ): StructuredToolInterface {
   return tool(
     async (input: { story_id: number }): Promise<string> => {
@@ -82,6 +108,14 @@ export function createGetStoryTool(
       }
 
       const story = item as HnStory;
+      sources?.set(story.id, {
+        storyId: story.id,
+        title: story.title,
+        url: story.url || hnItemUrl(story.id),
+        author: story.by,
+        points: story.score ?? 0,
+        commentCount: story.descendants ?? 0,
+      });
       const text = chunker.stripHtml(story.text ?? null);
       const lines: string[] = [
         `[${story.id}] "${story.title}" by ${story.by} (${story.score} points, ${
@@ -149,15 +183,17 @@ export function createGetCommentsTool(
  *
  * @param hn      - HnService instance for HN API calls
  * @param chunker - ChunkerService instance for token-aware formatting
+ * @param sources - Optional registry that collects every story the tools surface
  * @returns Array of LangChain tool instances
  */
 export function createAgentTools(
   hn: HnService,
   chunker: ChunkerService,
+  sources?: SourceRegistry,
 ): StructuredToolInterface[] {
   return [
-    createSearchHnTool(hn, chunker),
-    createGetStoryTool(hn, chunker),
+    createSearchHnTool(hn, chunker, sources),
+    createGetStoryTool(hn, chunker, sources),
     createGetCommentsTool(hn, chunker),
   ];
 }

@@ -95,7 +95,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
               result.error.issues,
               null,
               2,
-            )}\n\nRespond with valid JSON only.`,
+            )}\n\nRespond with the COMPLETE corrected JSON object only.`,
           ),
         );
         const retryAttempt = await invokeWithRetry(model, messages, {
@@ -113,7 +113,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
       messages.push(
         new AIMessage(firstContent),
         new HumanMessage(
-          'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
+          'Your response was not valid JSON. Respond with the COMPLETE JSON object only, no markdown fencing.',
         ),
       );
       const retryAttempt = await invokeWithRetry(model, messages, {

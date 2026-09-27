@@ -489,4 +489,86 @@ describe('RetrieverNode', () => {
       expect(bundle.tokenCount).toBe(50);
     });
   });
+
+  describe('latency safeguards', () => {
+    const themesJson = JSON.stringify({
+      themes: [
+        { label: 'T', items: [{ sourceId: 7, text: 'x', type: 'evidence', relevance: 0.5 }] },
+      ],
+    });
+    const registeredSource = {
+      storyId: 7,
+      title: 'Ask HN: Rust?',
+      url: 'https://news.ycombinator.com/item?id=7',
+      author: 'a',
+      points: 12,
+      commentCount: 3,
+    };
+
+    it('builds allSources from the tool registry, not from LLM output', async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      // Even if the model still emits a (broken) source table, it is ignored.
+      mockModel.invoke.mockResolvedValue({
+        content: JSON.stringify({ ...JSON.parse(themesJson), allSources: [{ url: null }] }),
+      });
+
+      const sources = new Map([[7, registeredSource]]);
+      const node = createRetrieverNode(mockModel, mockTools, sources);
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(mockModel.invoke).toHaveBeenCalledTimes(1);
+      expect(bundle.allSources).toEqual([registeredSource]);
+      expect(bundle.totalSourcesScanned).toBe(1);
+      expect(EvidenceBundleSchema.safeParse(bundle).success).toBe(true);
+    });
+
+    it('compacts collected evidence instead of failing when the tool budget runs out', async () => {
+      const { GraphRecursionError } = jest.requireActual('@langchain/langgraph');
+      mockReactAgentStream.mockReturnValue(
+        (async function* () {
+          yield { messages: [{ content: RICH_RAW_DATA, role: 'assistant' }] };
+          throw new GraphRecursionError('Recursion limit of 17 reached');
+        })(),
+      );
+      mockModel.invoke.mockResolvedValue({ content: themesJson });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map([[7, registeredSource]]));
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(bundle.themes).toHaveLength(1);
+      expect(bundle.allSources).toEqual([registeredSource]);
+    });
+
+    it('still surfaces unexpected ReAct errors', async () => {
+      mockReactAgentStream.mockReturnValue(
+        (async function* () {
+          yield { messages: [] };
+          throw new Error('401 Invalid API Key');
+        })(),
+      );
+
+      const node = createRetrieverNode(mockModel, mockTools);
+      await expect(node({ query: 'rust' })).rejects.toThrow('401 Invalid API Key');
+    });
+
+    it('runs the ReAct loop on the (token-capped) react model and compacts with the main model', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reactModel = { invoke: jest.fn() } as any;
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      mockModel.invoke.mockResolvedValue({ content: themesJson });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map(), reactModel);
+      await node({ query: 'rust' });
+
+      expect(jest.mocked(createReactAgent)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ llm: reactModel }),
+      );
+      expect(reactModel.invoke).not.toHaveBeenCalled();
+      expect(mockModel.invoke).toHaveBeenCalledTimes(1);
+    });
+  });
 });

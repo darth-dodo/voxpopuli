@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatAnthropic } from '@langchain/anthropic';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface } from '../llm-provider.interface';
+import type { LlmProviderInterface, ModelOptions } from '../llm-provider.interface';
 import { CLAUDE_MODEL_ID } from '../model-ids';
 
 /** Claude context window size in tokens. */
@@ -20,7 +20,7 @@ export class ClaudeProvider implements LlmProviderInterface {
   readonly maxContextTokens = MAX_CONTEXT_TOKENS;
 
   private readonly apiKey: string;
-  private model: BaseChatModel | null = null;
+  private readonly models = new Map<number | undefined, BaseChatModel>();
 
   constructor(private readonly config: ConfigService) {
     const key = this.config.get<string>('ANTHROPIC_API_KEY');
@@ -31,13 +31,16 @@ export class ClaudeProvider implements LlmProviderInterface {
   }
 
   /** Return (or lazily create) the ChatAnthropic instance. */
-  getModel(): BaseChatModel {
-    if (!this.model) {
-      this.model = new ChatAnthropic({
+  getModel(options: ModelOptions = {}): BaseChatModel {
+    let model = this.models.get(options.maxTokens);
+    if (!model) {
+      model = new ChatAnthropic({
         apiKey: this.apiKey,
         model: CLAUDE_MODEL_ID,
+        ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
       });
+      this.models.set(options.maxTokens, model);
     }
-    return this.model;
+    return model;
   }
 }

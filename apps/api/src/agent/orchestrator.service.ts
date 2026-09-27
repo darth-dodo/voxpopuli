@@ -11,13 +11,16 @@ import { AgentService, type AgentStreamEvent } from './agent.service';
 import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
-import { createAgentTools } from './tools';
+import { createAgentTools, type SourceRegistry } from './tools';
 import { computeTrustMetadata } from './trust';
 import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
 import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
+
+/** Output-token cap for the retriever's ReAct turns (see ADR-009). */
+const RETRIEVER_REACT_MAX_TOKENS = 768;
 
 // ---------------------------------------------------------------------------
 // Stream event types
@@ -122,10 +125,17 @@ export class OrchestratorService {
     const getModel = (stage: 'retriever' | 'synthesizer' | 'writer') =>
       this.llm.getModel(config.providerMap[stage]);
 
-    const tools = createAgentTools(this.hn, this.chunker);
+    // Tools record every story they surface; the retriever builds the source table from it.
+    const sources: SourceRegistry = new Map();
+    const tools = createAgentTools(this.hn, this.chunker, sources);
+    // ReAct turns only emit tool calls (~350 tokens max observed); the cap bounds the
+    // occasional closing monologue the model writes instead of "DONE".
+    const reactModel = this.llm.getModel(config.providerMap.retriever, {
+      maxTokens: RETRIEVER_REACT_MAX_TOKENS,
+    });
 
     const graph = buildPipelineGraph({
-      retriever: createRetrieverNode(getModel('retriever'), tools),
+      retriever: createRetrieverNode(getModel('retriever'), tools, sources, reactModel),
       synthesizer: withRetry(createSynthesizerNode(getModel('synthesizer'))),
       writer: withWriterFallback(createWriterNode(getModel('writer')), () => ({
         response: undefined,

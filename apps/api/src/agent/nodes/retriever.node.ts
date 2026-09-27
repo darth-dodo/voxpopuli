@@ -1,10 +1,16 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
-import type { LangGraphRunnableConfig } from '@langchain/langgraph';
+import { GraphRecursionError, type LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
-import { EvidenceBundleSchema, type EvidenceBundle, type AgentStep } from '@voxpopuli/shared-types';
+import {
+  EvidenceBundleSchema,
+  type EvidenceBundle,
+  type AgentStep,
+  type ThemeGroup,
+} from '@voxpopuli/shared-types';
+import type { SourceRegistry } from '../tools';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
@@ -14,6 +20,14 @@ const MAX_REACT_ITERATIONS = 8;
 
 /** Each ReAct "step" is ~2 graph nodes (LLM call + tool execution). Add buffer. */
 const RECURSION_LIMIT = MAX_REACT_ITERATIONS * 2 + 1;
+
+/**
+ * The compactor only generates themes. Source metadata, counts and token
+ * estimates are filled in by code — having the LLM transcribe ~30 source rows
+ * cost thousands of output tokens (the dominant latency term) and produced
+ * schema failures (e.g. `url: null` for Ask HN posts).
+ */
+const CompactedThemesSchema = EvidenceBundleSchema.pick({ themes: true });
 
 /**
  * Produce a short, human-friendly summary of a tool's raw output.
@@ -128,18 +142,23 @@ export type RetrieverResult = {
   outputTokens: number;
 };
 
-export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolInterface[]) {
+export function createRetrieverNode(
+  model: BaseChatModel,
+  tools: StructuredToolInterface[],
+  sources: SourceRegistry = new Map(),
+  reactModel: BaseChatModel = model,
+) {
   // Wrap with retry for TPM rate-limits — waits 15s then retries.
   const retryModel =
-    typeof model.withRetry === 'function'
-      ? model.withRetry({
+    typeof reactModel.withRetry === 'function'
+      ? reactModel.withRetry({
           stopAfterAttempt: 3,
           onFailedAttempt: async (err: unknown) => {
             if (!isTpmError(err)) throw err;
             await new Promise((r) => setTimeout(r, 15_000));
           },
         })
-      : model;
+      : reactModel;
 
   const reactAgent = createReactAgent({
     llm: retryModel,
@@ -173,67 +192,74 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
     );
 
     let prevMessageCount = 0;
-    for await (const chunk of stream) {
-      const messages = chunk.messages ?? [];
-      // Accumulate steps for newly added messages
-      if (messages.length > prevMessageCount) {
-        for (let i = prevMessageCount; i < messages.length; i++) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const msg = messages[i] as any;
-          const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
-          const content = typeof msg.content === 'string' ? msg.content : '';
+    try {
+      for await (const chunk of stream) {
+        const messages = chunk.messages ?? [];
+        // Accumulate steps for newly added messages
+        if (messages.length > prevMessageCount) {
+          for (let i = prevMessageCount; i < messages.length; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const msg = messages[i] as any;
+            const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
+            const content = typeof msg.content === 'string' ? msg.content : '';
 
-          // Track token usage from AI messages
-          if (type === 'ai' && msg.usage_metadata) {
-            if (msg.usage_metadata.input_tokens) inputTokens += msg.usage_metadata.input_tokens;
-            if (msg.usage_metadata.output_tokens) outputTokens += msg.usage_metadata.output_tokens;
-          }
+            // Track token usage from AI messages
+            if (type === 'ai' && msg.usage_metadata) {
+              if (msg.usage_metadata.input_tokens) inputTokens += msg.usage_metadata.input_tokens;
+              if (msg.usage_metadata.output_tokens)
+                outputTokens += msg.usage_metadata.output_tokens;
+            }
 
-          if (type === 'ai' && msg.tool_calls?.length > 0) {
-            for (const tc of msg.tool_calls) {
+            if (type === 'ai' && msg.tool_calls?.length > 0) {
+              for (const tc of msg.tool_calls) {
+                const step: AgentStep = {
+                  type: 'action',
+                  content: `${tc.name}(${JSON.stringify(tc.args)})`,
+                  toolName: tc.name,
+                  toolInput: tc.args,
+                  timestamp: Date.now(),
+                };
+                steps.push(step);
+                config?.writer?.({ type: 'retriever_step', data: step });
+              }
+            } else if (type === 'tool') {
+              const toolName = msg.name as string | undefined;
               const step: AgentStep = {
-                type: 'action',
-                content: `${tc.name}(${JSON.stringify(tc.args)})`,
-                toolName: tc.name,
-                toolInput: tc.args,
+                type: 'observation',
+                content: summarizeToolOutput(toolName, content),
+                toolName,
+                toolOutput: content,
+                timestamp: Date.now(),
+              };
+              steps.push(step);
+              // Stream summary only — toolOutput is kept for trust computation, not the UI
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { toolOutput: _raw, ...streamStep } = step;
+              config?.writer?.({ type: 'retriever_step', data: streamStep });
+            } else if (type === 'ai' && content) {
+              // Skip verbose final-thought monologues (coverage checks, etc.)
+              if (content.length > 300) continue;
+              const step: AgentStep = {
+                type: 'thought',
+                content,
                 timestamp: Date.now(),
               };
               steps.push(step);
               config?.writer?.({ type: 'retriever_step', data: step });
             }
-          } else if (type === 'tool') {
-            const toolName = msg.name as string | undefined;
-            const step: AgentStep = {
-              type: 'observation',
-              content: summarizeToolOutput(toolName, content),
-              toolName,
-              toolOutput: content,
-              timestamp: Date.now(),
-            };
-            steps.push(step);
-            // Stream summary only — toolOutput is kept for trust computation, not the UI
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { toolOutput: _raw, ...streamStep } = step;
-            config?.writer?.({ type: 'retriever_step', data: streamStep });
-          } else if (type === 'ai' && content) {
-            // Skip verbose final-thought monologues (coverage checks, etc.)
-            if (content.length > 300) continue;
-            const step: AgentStep = {
-              type: 'thought',
-              content,
-              timestamp: Date.now(),
-            };
-            steps.push(step);
-            config?.writer?.({ type: 'retriever_step', data: step });
           }
         }
+        prevMessageCount = messages.length;
+        // Keep final messages for rawData extraction
+        if (messages.length > 0) {
+          allMessages.length = 0;
+          allMessages.push(...messages);
+        }
       }
-      prevMessageCount = messages.length;
-      // Keep final messages for rawData extraction
-      if (messages.length > 0) {
-        allMessages.length = 0;
-        allMessages.push(...messages);
-      }
+    } catch (err) {
+      // Tool budget exhausted: keep the evidence gathered so far and compact it,
+      // rather than failing the retriever (which re-runs the whole query via the legacy agent).
+      if (!(err instanceof GraphRecursionError)) throw err;
     }
 
     // Keep only tool results + assistant reasoning; drop system prompt and
@@ -252,12 +278,20 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
       return { bundle: buildDryWellBundle(state.query), steps, inputTokens, outputTokens };
     }
 
-    // Phase 2: Compaction
+    // Phase 2: Compaction (LLM writes themes; code supplies the source table)
     const {
-      bundle,
+      themes,
       inputTokens: compactIn,
       outputTokens: compactOut,
     } = await compactWithRetry(model, state.query, rawData);
+
+    const bundle: EvidenceBundle = {
+      query: state.query,
+      themes,
+      allSources: [...sources.values()],
+      totalSourcesScanned: sources.size,
+      tokenCount: Math.ceil(JSON.stringify(themes).length / 4),
+    };
 
     return {
       bundle,
@@ -268,7 +302,7 @@ export function createRetrieverNode(model: BaseChatModel, tools: StructuredToolI
   };
 }
 
-type CompactResult = { bundle: EvidenceBundle; inputTokens: number; outputTokens: number };
+type CompactResult = { themes: ThemeGroup[]; inputTokens: number; outputTokens: number };
 
 /** Extract token counts from a LangChain AI message response. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -278,7 +312,7 @@ function extractTokens(msg: any): { input: number; output: number } {
 }
 
 /**
- * Compact raw HN data into an EvidenceBundle with one retry on parse failure.
+ * Compact raw HN data into evidence themes with one retry on parse failure.
  */
 async function compactWithRetry(
   model: BaseChatModel,
@@ -304,8 +338,8 @@ async function compactWithRetry(
 
   try {
     const parsed = JSON.parse(cleanLlmOutput(firstContent));
-    const result = EvidenceBundleSchema.safeParse(parsed);
-    if (result.success) return { bundle: result.data, inputTokens, outputTokens };
+    const result = CompactedThemesSchema.safeParse(parsed);
+    if (result.success) return { themes: result.data.themes, inputTokens, outputTokens };
 
     // Retry with error details
     messages.push(
@@ -315,14 +349,14 @@ async function compactWithRetry(
           result.error.issues,
           null,
           2,
-        )}\n\nRespond with valid JSON only, no markdown fencing.`,
+        )}\n\nRespond with the COMPLETE corrected JSON object only, no markdown fencing.`,
       ),
     );
   } catch {
     messages.push(
       new AIMessage(firstContent),
       new HumanMessage(
-        'Your previous response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
+        'Your previous response was not valid JSON. Respond with the COMPLETE JSON object only, no markdown fencing.',
       ),
     );
   }
@@ -336,5 +370,5 @@ async function compactWithRetry(
   outputTokens += t2.output;
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
   const parsed = JSON.parse(cleanLlmOutput(retryContent));
-  return { bundle: EvidenceBundleSchema.parse(parsed), inputTokens, outputTokens };
+  return { themes: CompactedThemesSchema.parse(parsed).themes, inputTokens, outputTokens };
 }

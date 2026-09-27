@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
@@ -9,6 +9,8 @@ import type { EvalRunResult, EvalScore, EvalReport } from './types';
 import { loadQueries, syncToLangSmith } from './dataset';
 import { scoreRun, buildReport, printReport, printComparison } from './score';
 import { postScoresToLangSmith } from './feedback';
+import { runQueryStream } from './stream-client';
+import { printLatencyDiff } from './latency-stats';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,6 +42,11 @@ const program = new Command()
   .option('-n, --concurrency <n>', 'max parallel queries (API supports up to 5)', '3')
   .option('--no-judge', 'skip LLM-as-judge (faster, scores only source/efficiency/latency/cost)')
   .option('--multi-agent', 'use multi-agent pipeline instead of legacy single-agent')
+  .option(
+    '--stream',
+    'run over SSE (the real user path): uncached, records per-stage timings and fallbacks',
+  )
+  .option('--baseline <report>', 'print latency change vs a previous results JSON')
   .parse();
 
 const opts = program.opts<{
@@ -54,6 +61,8 @@ const opts = program.opts<{
   concurrency: string;
   judge: boolean;
   multiAgent?: boolean;
+  stream?: boolean;
+  baseline?: string;
 }>();
 
 // ---------------------------------------------------------------------------
@@ -220,9 +229,9 @@ async function main(): Promise<void> {
 
   for (const p of providers) {
     console.log(
-      `\nRunning eval for provider: ${p}${opts.multiAgent ? ' [pipeline]' : ' [legacy]'} (${
-        queries.length
-      } queries, concurrency=${concurrency}${skipJudge ? ', no-judge' : ''})\n`,
+      `\nRunning eval for provider: ${p}${opts.multiAgent ? ' [pipeline]' : ' [legacy]'}${
+        opts.stream ? ' [sse]' : ''
+      } (${queries.length} queries, concurrency=${concurrency}${skipJudge ? ', no-judge' : ''})\n`,
     );
 
     const scores: EvalScore[] = new Array(queries.length);
@@ -239,13 +248,8 @@ async function main(): Promise<void> {
       const batchResults = await Promise.allSettled(
         batchQueries.map(async (q, batchIdx) => {
           const idx = batch + batchIdx;
-          const result = await runQuery(
-            q.query,
-            p,
-            EVAL_API_URL,
-            timeoutMs,
-            opts.multiAgent ?? false,
-          );
+          const run = opts.stream ? runQueryStream : runQuery;
+          const result = await run(q.query, p, EVAL_API_URL, timeoutMs, opts.multiAgent ?? false);
           result.queryId = q.id;
 
           const score = await scoreRun(result, q, p, skipJudge);
@@ -306,6 +310,11 @@ async function main(): Promise<void> {
 
     const report = buildReport(scores, p);
     printReport(report);
+
+    if (opts.baseline) {
+      const baseline = JSON.parse(readFileSync(opts.baseline, 'utf8')) as EvalReport;
+      printLatencyDiff(baseline, report);
+    }
 
     const savedPath = saveReport(report, p);
     console.log(`Results saved to ${savedPath}`);

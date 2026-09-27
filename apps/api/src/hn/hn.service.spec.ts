@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
-import { of, throwError } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { HnService } from './hn.service';
 import { CacheService } from '../cache/cache.service';
@@ -267,6 +267,76 @@ describe('HnService', () => {
     expect(byId(501)?.depth).toBe(0);
     expect(byId(502)?.depth).toBe(1);
     expect(byId(503)?.depth).toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // 7b. getCommentTree() fetches level by level but keeps depth-first order
+  // -------------------------------------------------------------------------
+  it('getCommentTree() returns comments in depth-first order', async () => {
+    const tree: Record<number, number[]> = { 100: [1, 2], 1: [11, 12], 11: [111], 2: [21] };
+    jest.spyOn(httpService, 'get').mockImplementation((url: string) => {
+      const id = Number(url.match(/item\/(\d+)\.json/)?.[1]);
+      if (id === 100) return of(axiosResponse(fakeStory({ id: 100, kids: tree[100] })));
+      return of(axiosResponse(fakeFirebaseComment(id, { kids: tree[id] ?? [] })));
+    });
+
+    const comments = await service.getCommentTree(100);
+
+    expect(comments.map((c) => c.id)).toEqual([1, 11, 111, 12, 2, 21]);
+    expect(comments.map((c) => c.depth)).toEqual([0, 1, 2, 1, 0, 1]);
+  });
+
+  it('getCommentTree() requests sibling reply lists concurrently', async () => {
+    const tree: Record<number, number[]> = { 100: [1, 2, 3], 1: [11], 2: [21], 3: [31] };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    jest.spyOn(httpService, 'get').mockImplementation((url: string) => {
+      const id = Number(url.match(/item\/(\d+)\.json/)?.[1]);
+      const body =
+        id === 100
+          ? fakeStory({ id: 100, kids: tree[100] })
+          : fakeFirebaseComment(id, { kids: tree[id] ?? [] });
+      return new Observable<AxiosResponse<unknown>>((sub) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        setTimeout(() => {
+          inFlight--;
+          sub.next(axiosResponse(body));
+          sub.complete();
+        }, 5);
+      }) as never;
+    });
+
+    await service.getCommentTree(100);
+
+    // All three top-level comments' replies (11, 21, 31) are fetched in one round-trip.
+    expect(maxInFlight).toBeGreaterThanOrEqual(3);
+  });
+
+  it('getCommentTree() skips depth-2 fetches for replies that cannot fit under the cap', async () => {
+    // 15 top-level comments × 3 replies × 3 deep replies each.
+    const top = Array.from({ length: 15 }, (_, i) => 1000 + i);
+    const tree: Record<number, number[]> = { 100: top };
+    for (const t of top) {
+      tree[t] = [t * 10 + 1, t * 10 + 2, t * 10 + 3];
+      for (const r of tree[t]) tree[r] = [r * 10 + 1, r * 10 + 2, r * 10 + 3];
+    }
+    const requested = new Set<number>();
+    jest.spyOn(httpService, 'get').mockImplementation((url: string) => {
+      const id = Number(url.match(/item\/(\d+)\.json/)?.[1]);
+      requested.add(id);
+      if (id === 100) return of(axiosResponse(fakeStory({ id: 100, kids: top })));
+      return of(axiosResponse(fakeFirebaseComment(id, { kids: tree[id] ?? [] })));
+    });
+
+    const comments = await service.getCommentTree(100);
+
+    expect(comments).toHaveLength(30);
+    // The last top-level comment's replies sit far past slot 30, so their subtrees are never fetched.
+    const lastReplies = tree[top[14]];
+    for (const reply of lastReplies) {
+      for (const deep of tree[reply]) expect(requested.has(deep)).toBe(false);
+    }
   });
 
   // -------------------------------------------------------------------------

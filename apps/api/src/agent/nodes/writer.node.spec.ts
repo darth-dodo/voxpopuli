@@ -337,4 +337,44 @@ describe('WriterNode', () => {
       expect(responseSource.commentCount).toBe(bundleSource.commentCount);
     }
   });
+
+  it('attaches sources from the bundle when the LLM omits them (latency: no transcription)', async () => {
+    mockModel.invoke.mockResolvedValue({
+      content: JSON.stringify({
+        headline: 'H',
+        context: 'C',
+        sections: [
+          { heading: 'A', body: 'a [1]', citedSources: [1] },
+          { heading: 'B', body: 'b [1]', citedSources: [1] },
+        ],
+        bottomLine: 'B',
+      }),
+    });
+
+    const node = createWriterNode(mockModel);
+    const result = await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS });
+
+    expect(mockModel.invoke).toHaveBeenCalledTimes(1);
+    expect(result.response.sources).toEqual(SAMPLE_BUNDLE.allSources);
+  });
+
+  it('ignores sources the LLM invents instead of trusting them', async () => {
+    mockModel.invoke.mockResolvedValue({
+      content: JSON.stringify({
+        headline: 'H',
+        context: 'C',
+        sections: [
+          { heading: 'A', body: 'a', citedSources: [] },
+          { heading: 'B', body: 'b', citedSources: [] },
+        ],
+        bottomLine: 'B',
+        sources: [{ storyId: 999, title: 'made up', url: null }],
+      }),
+    });
+
+    const node = createWriterNode(mockModel);
+    const result = await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS });
+
+    expect(result.response.sources).toEqual(SAMPLE_BUNDLE.allSources);
+  });
 });

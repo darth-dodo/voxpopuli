@@ -22,6 +22,13 @@ export const WriterInputSchema = z.object({
 type WriterInput = z.infer<typeof WriterInputSchema>;
 
 /**
+ * What the LLM actually generates. `sources` is attached from the bundle by
+ * code — copying the citation table back out cost ~1-2k output tokens per run.
+ */
+const WriterOutputSchema = AgentResponseV2Schema.omit({ sources: true });
+type WriterOutput = z.infer<typeof WriterOutputSchema>;
+
+/**
  * Creates the Writer node function for the pipeline.
  * Single-pass: AnalysisResult + citation table → AgentResponseV2.
  */
@@ -62,13 +69,13 @@ export function createWriterNode(model: BaseChatModel) {
     outputTokens += t1.output;
     const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
-    let response: AgentResponseV2;
+    let output: WriterOutput;
 
     try {
       const parsed = JSON.parse(cleanLlmOutput(firstContent));
-      const result = AgentResponseV2Schema.safeParse(parsed);
+      const result = WriterOutputSchema.safeParse(parsed);
       if (result.success) {
-        response = result.data;
+        output = result.data;
       } else {
         messages.push(
           new AIMessage(firstContent),
@@ -77,7 +84,7 @@ export function createWriterNode(model: BaseChatModel) {
               result.error.issues,
               null,
               2,
-            )}\n\nRespond with valid JSON only.`,
+            )}\n\nRespond with the COMPLETE corrected JSON object only.`,
           ),
         );
         const retryAttempt = await invokeWithRetry(model, messages, {
@@ -88,13 +95,13 @@ export function createWriterNode(model: BaseChatModel) {
         inputTokens += t2.input;
         outputTokens += t2.output;
         const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-        response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
+        output = WriterOutputSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
       }
     } catch {
       messages.push(
         new AIMessage(firstContent),
         new HumanMessage(
-          'Your response was not valid JSON. Respond with valid JSON only, no markdown fencing.',
+          'Your response was not valid JSON. Respond with the COMPLETE JSON object only, no markdown fencing.',
         ),
       );
       const retryAttempt = await invokeWithRetry(model, messages, {
@@ -105,9 +112,10 @@ export function createWriterNode(model: BaseChatModel) {
       inputTokens += t2.input;
       outputTokens += t2.output;
       const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-      response = AgentResponseV2Schema.parse(JSON.parse(cleanLlmOutput(retryContent)));
+      output = WriterOutputSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
+    const response: AgentResponseV2 = { ...output, sources: state.bundle.allSources };
     return { response, inputTokens, outputTokens };
   };
 }
