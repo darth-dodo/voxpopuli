@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { LlmService } from './llm.service';
 import { ChatOpenAI } from '@langchain/openai';
-import { OpenRouterProvider, OPENROUTER_BASE_URL } from './providers/openrouter.provider';
+import {
+  OpenRouterProvider,
+  OPENROUTER_BASE_URL,
+  OPENROUTER_MAX_OUTPUT_TOKENS,
+} from './providers/openrouter.provider';
 import { OPENROUTER_MODEL_ID } from './model-ids';
 import { ClaudeProvider } from './providers/claude.provider';
 import { MistralProvider } from './providers/mistral.provider';
@@ -61,7 +65,7 @@ describe('OpenRouterProvider', () => {
     const provider: LlmProviderInterface = new OpenRouterProvider(config);
 
     expect(provider.name).toBe('openrouter');
-    expect(provider.maxContextTokens).toBe(131_000);
+    expect(provider.maxContextTokens).toBe(128_000);
   });
 
   it('getModel() returns a ChatOpenAI instance pointed at OpenRouter', () => {
@@ -74,6 +78,8 @@ describe('OpenRouterProvider', () => {
       expect.objectContaining({
         apiKey: 'test-key',
         model: OPENROUTER_MODEL_ID,
+        maxTokens: OPENROUTER_MAX_OUTPUT_TOKENS,
+        modelKwargs: { provider: { sort: 'throughput' } },
         configuration: expect.objectContaining({ baseURL: OPENROUTER_BASE_URL }),
       }),
     );
@@ -92,6 +98,18 @@ describe('OpenRouterProvider', () => {
     expect(provider.maxContextTokens).toBe(200_000);
     expect(ChatOpenAI).toHaveBeenCalledWith(
       expect.objectContaining({ model: 'anthropic/claude-haiku-4.5' }),
+    );
+  });
+
+  it('uses OPENROUTER_MODEL env override when no explicit model is passed', () => {
+    const config = mockConfigService({
+      OPENROUTER_API_KEY: 'test-key',
+      OPENROUTER_MODEL: 'openai/gpt-oss-120b',
+    });
+    new OpenRouterProvider(config).getModel();
+
+    expect(ChatOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'openai/gpt-oss-120b' }),
     );
   });
 
@@ -238,7 +256,7 @@ describe('LlmService', () => {
 
   it('getMaxContextTokens() returns correct budget for openrouter', async () => {
     const service = await buildService({ LLM_PROVIDER: 'openrouter' });
-    expect(service.getMaxContextTokens()).toBe(131_000);
+    expect(service.getMaxContextTokens()).toBe(128_000);
   });
 
   it('getMaxContextTokens() returns correct budget for claude', async () => {

@@ -51,8 +51,8 @@ export function createSearchHnTool(
           .enum(['relevance', 'date'])
           .optional()
           .describe('Sort order: relevance (default) or date'),
-        min_points: z.number().optional().describe('Minimum points filter'),
-        max_results: z
+        min_points: z.coerce.number().optional().describe('Minimum points filter'),
+        max_results: z.coerce
           .number()
           .min(1)
           .max(20)
@@ -99,7 +99,7 @@ export function createGetStoryTool(
       description:
         'Fetch a single Hacker News story by its ID. Returns full story details including title, author, points, URL, and text body.',
       schema: z.object({
-        story_id: z.number().describe('The HN story ID'),
+        story_id: z.coerce.number().describe('The HN story ID'),
       }),
     },
   );
@@ -132,8 +132,8 @@ export function createGetCommentsTool(
       description:
         'Fetch comments for a Hacker News story. Returns up to 30 comments with author, depth, and text. Use to find insights and opinions from the HN community.',
       schema: z.object({
-        story_id: z.number().describe('The parent story ID'),
-        max_depth: z
+        story_id: z.coerce.number().describe('The parent story ID'),
+        max_depth: z.coerce
           .number()
           .min(1)
           .max(5)

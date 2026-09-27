@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { HnStory } from '@voxpopuli/shared-types';
+import { toJsonSchema } from '@langchain/core/utils/json_schema';
 
 // ---------------------------------------------------------------------------
 // Mock langchain *before* importing the tools module
@@ -108,6 +109,29 @@ describe('createSearchHnTool', () => {
       minPoints: 50,
       hitsPerPage: 5,
     });
+  });
+
+  it('should coerce numeric strings sent by some models', async () => {
+    hn.search.mockResolvedValue({ hits: [{ id: 1 }] });
+
+    // Some OpenRouter-hosted models emit numbers as strings, e.g. "10".
+    // `tool()` is mocked here, so run the schema parse LangChain would do.
+    const args = searchTool.schema.parse({ query: 'test', min_points: '10', max_results: '20' });
+    await searchTool.invoke(args);
+
+    expect(hn.search).toHaveBeenCalledWith('test', {
+      minPoints: 10,
+      hitsPerPage: 20,
+    });
+  });
+
+  it('should advertise numeric params as numbers in the JSON schema', () => {
+    const jsonSchema = toJsonSchema(searchTool.schema) as {
+      properties: Record<string, { type?: string }>;
+    };
+
+    expect(jsonSchema.properties['min_points'].type).toBe('number');
+    expect(jsonSchema.properties['max_results'].type).toBe('number');
   });
 
   it('should return "No results found" on empty hits', async () => {

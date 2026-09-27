@@ -13,6 +13,10 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  OPENROUTER_MODEL?: string;
+
+  @IsString()
+  @IsOptional()
   MISTRAL_API_KEY?: string;
 
   @IsString()

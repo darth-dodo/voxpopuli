@@ -304,13 +304,13 @@ Provider interface + facade pattern, implemented via LangChain.js. Implemented i
 
 All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangChain handles tool-calling protocols (tool_use/tool_result content blocks, OpenAI-compatible function calls) internally, so the provider interface is simpler than originally specified -- no `formatTools()` or `buildToolResultMessage()` methods are needed.
 
-| Component              | Responsibility                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                    |
-| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                  |
-| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                       |
-| `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-32b` (131k context) |
-| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override  |
+| Component              | Responsibility                                                                                 |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                              |
+| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                            |
+| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                                 |
+| `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-235b-a22b-2507` (128k budget) |
+| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override            |
 
 **Key implementation details:**
 
@@ -1190,7 +1190,7 @@ EVAL_JUDGE_PROVIDER=mistral
 | Cache TTL (query result)        | 10 min                      | Token savings                                    |
 | Context window (Claude)         | 200k tokens                 | `claude-haiku-4-5-20251001` via LangChain        |
 | Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
-| Context window (OpenRouter)     | 131k tokens                 | `qwen/qwen3-32b` via LangChain                   |
+| Context window (OpenRouter)     | 128k tokens                 | `qwen/qwen3-235b-a22b-2507` (smallest host cap)  |
 | Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
 | Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
 | Token budget (OpenRouter)       | 50k of 131k                 | Conservative headroom                            |

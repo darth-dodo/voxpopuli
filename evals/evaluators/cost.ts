@@ -6,8 +6,8 @@ interface TokenRates {
 }
 
 const PROVIDER_RATES: Record<string, TokenRates> = {
-  // OpenRouter qwen/qwen3-32b list price
-  openrouter: { inputPerMillion: 0.08, outputPerMillion: 0.28 },
+  // OpenRouter qwen/qwen3-235b-a22b-2507 lowest-price host
+  openrouter: { inputPerMillion: 0.087, outputPerMillion: 0.35 },
   claude: { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   mistral: { inputPerMillion: 2.0, outputPerMillion: 6.0 },
 };

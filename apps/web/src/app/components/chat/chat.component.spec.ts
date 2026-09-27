@@ -1035,7 +1035,7 @@ describe('ChatComponent', () => {
       fixture.detectChanges();
 
       const el = fixture.nativeElement as HTMLElement;
-      expect(el.textContent).toContain('Partial results');
+      expect(el.textContent).toContain('Incomplete answer');
     });
 
     it('should render theme toggle with correct aria-label', () => {

@@ -212,7 +212,7 @@ voxpopuli/
 
 | Provider   | Class                | LangChain Model | Model ID                    | Context Window |
 | ---------- | -------------------- | --------------- | --------------------------- | -------------- |
-| OpenRouter | `OpenRouterProvider` | `ChatOpenAI`    | `qwen/qwen3-32b`            | 131,000 tokens |
+| OpenRouter | `OpenRouterProvider` | `ChatOpenAI`    | `qwen/qwen3-235b-a22b-2507` | 128,000 tokens |
 | Claude     | `ClaudeProvider`     | `ChatAnthropic` | `claude-haiku-4-5-20251001` | 200,000 tokens |
 | Mistral    | `MistralProvider`    | `ChatMistralAI` | `mistral-large-latest`      | 262,000 tokens |
 

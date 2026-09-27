@@ -4,8 +4,8 @@ import { evaluateCost } from '../cost';
 describe('evaluateCost', () => {
   it('returns high score for openrouter with low tokens', () => {
     // 1000 input tokens, 500 output tokens
-    // cost = (1000/1e6)*0.08 + (500/1e6)*0.28 = 0.00008 + 0.00014 = 0.00022
-    // score = max(0, 1 - 0.00022/0.05) = ~0.9956
+    // cost = (1000/1e6)*0.087 + (500/1e6)*0.35 = 0.000087 + 0.000175 = 0.000262
+    // score = max(0, 1 - 0.000262/0.05) = ~0.9948
     const result = evaluateCost(1000, 500, 'openrouter');
 
     expect(result.key).toBe('cost');

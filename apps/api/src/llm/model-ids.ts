@@ -5,7 +5,7 @@
 
 // ── LLM Providers ──
 /** OpenRouter model slug (`vendor/model`), see https://openrouter.ai/models */
-export const OPENROUTER_MODEL_ID = 'qwen/qwen3-32b';
+export const OPENROUTER_MODEL_ID = 'qwen/qwen3-235b-a22b-2507';
 export const CLAUDE_MODEL_ID = 'claude-haiku-4-5-20251001';
 export const MISTRAL_MODEL_ID = 'mistral-small-latest';
 

@@ -74,8 +74,8 @@ describe('buildPartialResponse', () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result!.answer).toContain('2 steps');
-    expect(result!.answer).toContain('Result data here');
+    expect(result!.answer).toContain("This answer couldn't be completed.");
+    expect(result!.answer).toContain('- **HN search:** Result data here');
     expect(result!.steps).toBe(steps);
     expect(result!.sources).toHaveLength(1);
   });
@@ -176,7 +176,7 @@ describe('buildPartialResponse', () => {
     expect(result!.answer).toContain('an unknown error');
   });
 
-  it('should use "unknown" as toolName when toolName is missing', () => {
+  it('should label findings "Unknown tool" when toolName is missing', () => {
     const steps: AgentStep[] = [
       makeStep({
         type: 'observation',
@@ -187,7 +187,75 @@ describe('buildPartialResponse', () => {
 
     const result = buildPartialResponse(steps, [], provider, startTime, new Error('fail'));
 
-    expect(result!.answer).toContain('[unknown]');
+    expect(result!.answer).toContain('**Unknown tool:** tool data');
+  });
+
+  it('should explain step-limit failures in plain language', () => {
+    const steps: AgentStep[] = [
+      makeStep({ type: 'observation', content: 'data', toolName: 'search_hn', toolOutput: 'data' }),
+    ];
+
+    const result = buildPartialResponse(
+      steps,
+      [],
+      provider,
+      startTime,
+      new Error('Step limit reached (7 actions)'),
+    );
+
+    expect(result!.answer).toContain('used all of its research steps');
+    expect(result!.answer).not.toContain('7 actions');
+  });
+
+  it('should hide raw tool errors, summarize them, and dedupe repeated findings', () => {
+    const toolError =
+      'Error invoking tool \'search_hn\' with kwargs {"min_points":"10"} with error: ' +
+      'Error: Received tool input did not match expected schema';
+    const steps: AgentStep[] = [
+      makeStep({ type: 'observation', content: toolError, toolName: 'search_hn' }),
+      makeStep({ type: 'observation', content: toolError, toolName: 'search_hn' }),
+      makeStep({
+        type: 'observation',
+        content: 'x',
+        toolName: 'search_hn',
+        toolOutput: 'Found 3 stories',
+      }),
+      makeStep({
+        type: 'observation',
+        content: 'x',
+        toolName: 'search_hn',
+        toolOutput: 'Found 3 stories',
+      }),
+    ];
+
+    const result = buildPartialResponse(
+      steps,
+      [],
+      provider,
+      startTime,
+      new Error('Step limit reached (7 actions)'),
+    );
+
+    expect(result!.answer).not.toContain('Error invoking tool');
+    expect(result!.answer).not.toContain('expected schema');
+    expect(result!.answer).toContain('2 of 4 Hacker News lookups failed');
+    expect(result!.answer.match(/Found 3 stories/g)).toHaveLength(1);
+    expect(result!.answer).toContain('Try asking again');
+  });
+
+  it('should say no results were collected when every lookup failed', () => {
+    const steps: AgentStep[] = [
+      makeStep({
+        type: 'observation',
+        content: "Error invoking tool 'get_comments' with kwargs {} with error: boom",
+        toolName: 'get_comments',
+      }),
+    ];
+
+    const result = buildPartialResponse(steps, [], provider, startTime, new Error('fail'));
+
+    expect(result!.answer).toContain('Every Hacker News lookup failed');
+    expect(result!.answer).not.toContain('What was found');
   });
 
   it('should set correct trust metadata', () => {

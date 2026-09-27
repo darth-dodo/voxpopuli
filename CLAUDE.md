@@ -153,7 +153,7 @@ npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
 
 The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), defaulting to `mistral`. Only that provider's API key is required. The frontend also defaults to Mistral via the `selectedProvider` model signal. See `.env.example` for all keys.
 
-**OpenRouter:** `OpenRouterProvider` uses LangChain `ChatOpenAI` pointed at `https://openrouter.ai/api/v1` (requires `OPENROUTER_API_KEY`). The model is an OpenRouter slug in `model-ids.ts` (`OPENROUTER_MODEL_ID`, currently `qwen/qwen3-32b`). The class accepts `{ name, model, maxContextTokens }` so more OpenRouter-backed providers can be registered in `PROVIDER_FACTORIES` without new classes — the long-term plan is to route every provider through OpenRouter. `@langchain/openai` is pinned to `1.4.1` because newer versions require `@langchain/core` >= 1.1.48.
+**OpenRouter:** `OpenRouterProvider` uses LangChain `ChatOpenAI` pointed at `https://openrouter.ai/api/v1` (requires `OPENROUTER_API_KEY`). The model is an OpenRouter slug in `model-ids.ts` (`OPENROUTER_MODEL_ID`, currently `qwen/qwen3-235b-a22b-2507`; override with the `OPENROUTER_MODEL` env var). The class accepts `{ name, model, maxContextTokens }` so more OpenRouter-backed providers can be registered in `PROVIDER_FACTORIES` without new classes — the long-term plan is to route every provider through OpenRouter. `@langchain/openai` is pinned to `1.4.1` because newer versions require `@langchain/core` >= 1.1.48.
 
 ## Common Pitfalls
 

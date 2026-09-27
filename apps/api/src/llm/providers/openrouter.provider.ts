@@ -8,18 +8,36 @@ import { OPENROUTER_MODEL_ID } from '../model-ids';
 /** OpenRouter's OpenAI-compatible API endpoint. */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-/** Context window size in tokens for the default OpenRouter model (Qwen3 32B). */
-const MAX_CONTEXT_TOKENS = 131_000;
+/**
+ * Context window for the default model (Qwen3 235B A22B 2507). The model supports
+ * 262k, but some OpenRouter hosts cap it at 128k, so budget for the smallest.
+ */
+const MAX_CONTEXT_TOKENS = 128_000;
+
+/**
+ * Completion cap sent as `max_tokens`. Without it some OpenRouter hosts default
+ * the completion to the full context window, so input + completion overflows
+ * and the request fails with a 400.
+ */
+export const OPENROUTER_MAX_OUTPUT_TOKENS = 8_192;
+
+/**
+ * OpenRouter provider-routing preferences. Prefer the highest-throughput host:
+ * hosts for the same model differ by 10x in speed, which matters for the
+ * multi-call agent pipeline. See https://openrouter.ai/docs/features/provider-routing
+ */
+export const OPENROUTER_ROUTING = { sort: 'throughput' } as const;
 
 /**
  * LLM provider backed by OpenRouter's OpenAI-compatible gateway.
  *
  * OpenRouter fronts many upstream vendors behind one API key, so the
- * model is just a slug (e.g. `qwen/qwen3-32b`). Additional OpenRouter-backed
+ * model is just a slug (e.g. `qwen/qwen3-235b-a22b-2507`). Additional OpenRouter-backed
  * models can reuse this class by passing a different `model`/`name`.
  *
  * Reads `OPENROUTER_API_KEY` from the environment at construction time
- * and throws immediately if the key is missing.
+ * and throws immediately if the key is missing. The model slug can be
+ * overridden with `OPENROUTER_MODEL` (defaults to `OPENROUTER_MODEL_ID`).
  */
 @Injectable()
 export class OpenRouterProvider implements LlmProviderInterface {
@@ -40,7 +58,8 @@ export class OpenRouterProvider implements LlmProviderInterface {
     }
     this.apiKey = key;
     this.name = options.name ?? 'openrouter';
-    this.modelId = options.model ?? OPENROUTER_MODEL_ID;
+    this.modelId =
+      options.model ?? this.config.get<string>('OPENROUTER_MODEL') ?? OPENROUTER_MODEL_ID;
     this.maxContextTokens = options.maxContextTokens ?? MAX_CONTEXT_TOKENS;
   }
 
@@ -50,6 +69,8 @@ export class OpenRouterProvider implements LlmProviderInterface {
       this.model = new ChatOpenAI({
         apiKey: this.apiKey,
         model: this.modelId,
+        maxTokens: OPENROUTER_MAX_OUTPUT_TOKENS,
+        modelKwargs: { provider: OPENROUTER_ROUTING },
         configuration: {
           baseURL: OPENROUTER_BASE_URL,
           // Optional OpenRouter app attribution header (shows up in their dashboard).
