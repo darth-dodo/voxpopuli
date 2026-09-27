@@ -278,6 +278,20 @@ describe('LlmService', () => {
   // Error handling
   // -------------------------------------------------------------------------
 
+  it('maps deprecated LLM_PROVIDER "groq" to openrouter instead of failing startup', async () => {
+    const service = await buildService({ LLM_PROVIDER: 'groq' });
+
+    expect(service.getProviderName()).toBe('openrouter');
+    expect(service.getModel()).toBeDefined();
+  });
+
+  it('maps a deprecated "groq" provider override to openrouter', async () => {
+    const service = await buildService({ LLM_PROVIDER: 'mistral' });
+
+    expect(service.getModel('groq')).toBe(service.getModel('openrouter'));
+    expect(service.getMaxContextTokens('groq')).toBe(128_000);
+  });
+
   it('throws for unknown LLM_PROVIDER value', async () => {
     await expect(buildService({ LLM_PROVIDER: 'openai' })).rejects.toThrow(
       'Unknown LLM provider "openai"',
