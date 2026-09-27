@@ -4,10 +4,6 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
-### Added
-
-- **Brand favicon and app icons** — Replaces the Nx scaffold favicon with a VoxPopuli mark (amber "V" and masthead rule on the navy surface): `favicon.svg`, a multi-size `favicon.ico` (16/32/48), `apple-touch-icon.png`, 192/512 PNG icons, and a `site.webmanifest`.
-
 ### Changed
 
 - **ElevenLabs replaced by Mistral Voxtral TTS** — Narration audio now comes from Voxtral (`voxtral-mini-tts-latest`, preset voice `en_paul_neutral`) via `POST https://api.mistral.ai/v1/audio/speech` using the existing `MISTRAL_API_KEY`; still returned as MP3 (`audio/mpeg`), so the frontend is unchanged. Configure with `MISTRAL_TTS_MODEL` / `MISTRAL_TTS_VOICE`; `ELEVENLABS_*` env vars and the `elevenlabs` package are removed. `POST /api/tts/narrate` rejects malformed `voiceId`s with 400 and maps Voxtral failures to 502 with the upstream reason; `GET /api/tts/voices` returns `{ id, name, model }` (ElevenLabs `VoiceSettings` removed). A 2,500-character script (the narration cap) produces about 108 s of audio in about 10 s.
@@ -15,9 +11,15 @@ All notable changes to VoxPopuli are documented in this file.
 - **Clearer incomplete-answer messaging** — When the agent stops early (step limit, timeout, model error), the answer now explains why in plain language, lists only the unique findings that succeeded, summarizes malformed tool calls in one sentence instead of dumping raw errors, and suggests a next step.
 - **Agent tools accept numeric strings** — `search_hn`/`get_story`/`get_comments` numeric args use `z.coerce.number()`, so models that send `"10"` instead of `10` no longer burn steps on schema errors.
 - **Server default provider is now `mistral`** — `LLM_PROVIDER` defaults to `mistral` (matching the frontend selector and docs) instead of `groq`.
+- **Default LLM provider switched from Groq to Mistral** — Mistral Large 3 is now the out-of-the-box provider, offering a better balance of cost and synthesis quality for most queries.
+- **Writer input stripped to citation table** — Writer receives `{ analysis, sources }` via Zod-composed `WriterInputSchema` (AnalysisResultSchema + SourceMetadataSchema) instead of full EvidenceBundle, architecturally enforcing the "don't re-analyze" constraint.
+- **Synthesizer input formatted as structured text** — `formatBundleForSynthesizer()` converts raw JSON to token-efficient markdown-style text, stripping unused metadata (url, commentCount, tokenCount).
+- **Retriever compaction input filtered** — Only tool result and assistant messages passed to compactor; system prompts and initial query removed.
+- **Writer prompt updated** — References citation sources table instead of EvidenceBundle.
 
 ### Added
 
+- **Brand favicon and app icons** — Replaces the Nx scaffold favicon with a VoxPopuli mark (amber "V" and masthead rule on the navy surface): `favicon.svg`, a multi-size `favicon.ico` (16/32/48), `apple-touch-icon.png`, 192/512 PNG icons, and a `site.webmanifest`.
 - **Homepage UX polish** — Hero gradient with noise texture, masthead rule, editorial timeline component, preview cards matching real answer format, footer CTA, search focus refinements, light theme fixes, and 3x2 numbered example card grid.
 - **Fallback agent transition in pipeline UI** — When the pipeline falls back to the legacy single-agent path, the frontend now surfaces the transition visibly instead of silently switching modes.
 - **Groq TPM rate-limit handling** — Retry logic for Groq token-per-minute rate limits with user-friendly error messages instead of raw 429 responses.
@@ -35,16 +37,9 @@ All notable changes to VoxPopuli are documented in this file.
 - **Pipeline token tracking** — `usage_metadata` accumulated across all three pipeline nodes via LangGraph state annotation reducers. Meta bar now shows actual token counts instead of zeros. (AI-331)
 - **Source card dates** — `postedDate` extracted from retriever step tool outputs and displayed on source cards. (AI-331)
 
-### Changed
-
-- **Default LLM provider switched from Groq to Mistral** — Mistral Large 3 is now the out-of-the-box provider, offering a better balance of cost and synthesis quality for most queries.
-- **Writer input stripped to citation table** — Writer receives `{ analysis, sources }` via Zod-composed `WriterInputSchema` (AnalysisResultSchema + SourceMetadataSchema) instead of full EvidenceBundle, architecturally enforcing the "don't re-analyze" constraint.
-- **Synthesizer input formatted as structured text** — `formatBundleForSynthesizer()` converts raw JSON to token-efficient markdown-style text, stripping unused metadata (url, commentCount, tokenCount).
-- **Retriever compaction input filtered** — Only tool result and assistant messages passed to compactor; system prompts and initial query removed.
-- **Writer prompt updated** — References citation sources table instead of EvidenceBundle.
-
 ### Fixed
 
+- **CORS blocked the new frontend host** — The API allowed only one origin (`FRONTEND_URL`), still set to `voxpopuli-web-1o3v.onrender.com`, so requests from `voxpopuli-web-embx.onrender.com` were blocked. `FRONTEND_URL` now accepts a comma-separated list of origins (trailing slashes ignored); `onrender.com` still allows any Render subdomain for PR previews.
 - **Horizontal scroll eliminated on results page** — Fixed five overflow root causes: source card text wrapping, markdown table overflow, `min-w-0` on flex children, trust indicator mobile sizing, and source card title word-break.
 - **Pipeline stage timers stop on stall and error** — Timer caps at 180s, resets on retry, and stall detection prevents indefinitely spinning counters on SSE errors or connection drops.
 - **Trust bar all zeros in pipeline mode** — Orchestrator passed empty steps array to `computeTrustMetadata`. Now captures retriever steps (with `toolOutput` for date/ID extraction) and forwards to trust computation. Also fixed recency: chunker now includes `postedDate` from Algolia `created_at` so `search_hn` results feed into recency scoring (previously only `get_story` provided dates). (AI-331)

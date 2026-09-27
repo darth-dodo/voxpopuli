@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app/app.module';
+import { resolveCorsOrigin } from './config/cors';
 import { HttpExceptionFilter } from './rag/filters/http-exception.filter';
 
 async function bootstrap() {
@@ -38,11 +39,11 @@ async function bootstrap() {
     }),
   );
 
-  // CORS: allow Angular frontend (dev, production, or Render preview)
+  // CORS: allow the Angular frontend(s). FRONTEND_URL may list several comma-separated
+  // origins, or be "onrender.com" to allow any Render subdomain (PR previews).
   const frontendUrl = configService.get<string>('FRONTEND_URL', 'http://localhost:4200');
-  const corsOrigin = frontendUrl === 'onrender.com' ? /\.onrender\.com$/ : frontendUrl;
   app.enableCors({
-    origin: corsOrigin,
+    origin: resolveCorsOrigin(frontendUrl),
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
     exposedHeaders: ['X-TTS-Characters'],
