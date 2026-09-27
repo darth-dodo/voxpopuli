@@ -3,33 +3,48 @@
 [![CI](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml/badge.svg)](https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/darth-dodo/voxpopuli/graph/badge.svg)](https://codecov.io/gh/darth-dodo/voxpopuli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
 [![Angular](https://img.shields.io/badge/Angular-21-dd0031?style=flat-square&logo=angular)](https://angular.dev)
-[![Qwen3](https://img.shields.io/badge/Qwen3_32B-via_OpenRouter-6366f1?style=flat-square)](https://openrouter.ai)
-[![Mistral](https://img.shields.io/badge/Mistral_Large_3-ff7000?style=flat-square)](https://console.mistral.ai)
-[![Claude](https://img.shields.io/badge/Claude_Haiku_4.5-d4a574?style=flat-square)](https://console.anthropic.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-JS-1c3c3c?style=flat-square)](https://langchain-ai.github.io/langgraphjs/)
+[![Live demo](https://img.shields.io/badge/demo-live-f59e0b?style=flat-square)](https://voxpopuli-web-embx.onrender.com/)
 
-> _"Voice of the People."_
+> _"Voice of the People."_ Ask a question, get what Hacker News actually thinks: sourced, reasoned, and read aloud if you like.
 
-An **agentic RAG system** that turns 18+ years of [HackerNews](https://news.ycombinator.com) discussion into sourced, reasoned answers. Multi-agent pipeline, real-time streaming, trust verification, and automated evaluation -- built as a technical showcase of modern LLM application architecture.
+VoxPopuli is an **agentic RAG system over Hacker News**. A multi-agent pipeline searches HN, reads the comment threads, weighs contradicting viewpoints, and writes an editorial answer with citations and trust signals, streaming every step to the browser as it happens.
 
 <p align="center">
-  <img src="docs/screenshots/landing-dark-desktop.png" alt="VoxPopuli landing page - dark theme" width="720" />
+  <a href="https://voxpopuli-web-embx.onrender.com/"><strong>Try the live demo →</strong></a>
 </p>
 
----
+<p align="center">
+  <img src="docs/screenshots/landing-dark-desktop.png" alt="VoxPopuli landing page, dark theme" width="760" />
+</p>
 
-## Technical Highlights
+## Contents
 
-- **Multi-agent pipeline** orchestrated by LangGraph StateGraph: Retriever (ReAct + compaction) → Synthesizer → Writer, with per-stage retry, fallback response construction, and dry-well circuit breaker
-- **Triple-stack LLM providers** (Claude / Mistral / OpenRouter) behind a facade pattern -- hot-switchable from the UI, each with provider-specific retry and TPM handling
-- **SSE streaming with query-ID resilience** -- results stored server-side by queryId so mobile background-tab kills don't lose agent runs; automatic SSE reconnect with backend dedup prevents duplicate LLM calls
-- **Trust framework** computing source verification, recency, viewpoint diversity, and bias detection on every answer
-- **Automated eval harness** with 27 queries, 5 evaluators (source accuracy, LLM-as-judge quality, efficiency, latency, cost), and LangSmith tracing integration
-- **536 tests** (293 API + 243 Web) with CI on every push
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [API](#api)
+- [Testing and Quality](#testing-and-quality)
+- [Deployment](#deployment)
+- [Project Status](#project-status)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
----
+## Features
+
+- **Grounded answers.** Every claim comes from real HN stories and comments, with inline links back to the source thread.
+- **Visible reasoning.** Watch the Retriever search, the Synthesizer weigh evidence, and the Writer compose, live, stage by stage.
+- **Trust signals.** Each answer reports how many sources were verified, how recent they are, and whether the discussion is balanced, one-sided, or contested.
+- **Choice of model.** Switch between Mistral, Claude, and Qwen3 (via OpenRouter) per question.
+- **Listen mode.** One click turns an answer into a short podcast-style narration (rewritten for speech, voiced by Mistral Voxtral) with playback speed and MP3 download.
+- **Resilient on mobile.** Results are stored server-side by query ID, so locking your phone or switching tabs doesn't lose a run in progress.
+- **Light and dark themes**, responsive from phone to desktop.
 
 ## How It Works
 
@@ -37,126 +52,213 @@ An **agentic RAG system** that turns 18+ years of [HackerNews](https://news.ycom
 You:   "Is SQLite good enough for production web apps?"
 
 VoxPopuli:
-  [Retriever]   Searching "SQLite production"       5 stories
+  [Retriever]   Searching "SQLite production"        5 stories
   [Retriever]   Searching "SQLite scaling"           3 stories
   [Retriever]   Reading comments #39482731           28 comments
   [Synthesizer] Extracting insights & contradictions
   [Writer]      Composing editorial answer
 
   "HN is broadly positive, with caveats around write-heavy workloads.
-   Specific projects like Litestream and Turso were frequently cited..."
+   Projects like Litestream and Turso were frequently cited..."
 
-  All 4 sources verified · Mostly recent sources · Multiple viewpoints
+  4/4 sources verified · mostly recent · multiple viewpoints
 ```
 
-**Pipeline stages:**
+```mermaid
+flowchart LR
+    Q([Question]) --> R
+    subgraph Pipeline [LangGraph pipeline]
+      R[Retriever<br/>ReAct over HN tools<br/>+ evidence compaction] --> S[Synthesizer<br/>insights, contradictions,<br/>confidence]
+      S --> W[Writer<br/>headline, sections,<br/>citations]
+    end
+    R <-->|search_hn · get_story · get_comments| HN[(HN Algolia +<br/>Firebase APIs)]
+    W --> A([Answer + trust metadata])
+    R -. on failure .-> F[Single-agent<br/>ReAct fallback] --> A
+```
 
-1. **Retriever** -- ReAct agent searches HN via Algolia, crawls Firebase comment threads, then compacts raw data into a structured EvidenceBundle via a second LLM call
-2. **Synthesizer** -- extracts insights, contradictions, confidence scores, and knowledge gaps from the evidence bundle
-3. **Writer** -- produces an editorial answer with headline, sections, citations, and a bottom-line summary
+1. **Retriever**: a ReAct agent decomposes the question (comparisons, temporal questions, multi-faceted topics), searches HN via Algolia, reads Firebase comment trees, then compacts the raw material into a structured `EvidenceBundle`.
+2. **Synthesizer**: extracts insights, contradictions, confidence, and knowledge gaps from the bundle.
+3. **Writer**: produces the editorial answer with a headline, sections, citations, and a bottom line.
+4. **Trust metadata**: computed afterwards by a pure function covering source verification, recency, viewpoint diversity, and Show HN bias.
 
-The pipeline falls back to a single-agent ReAct loop on failure, preserving accurate stage status (only incomplete stages marked as error).
-
----
+Each stage retries once. If the pipeline fails, it falls back to a single-agent ReAct loop and keeps the output of any stage that already completed. Every step streams to the UI over Server-Sent Events.
 
 <details>
-<summary><strong>Query Flow Screenshots</strong> (click to expand)</summary>
+<summary><strong>Query flow screenshots</strong></summary>
 
-|                                                                                                      |                                                                                                 |
-| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **1. Type your question**                                                                            | **2. Retriever searching HN**                                                                   |
-| <img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="360" />                 | <img src="docs/screenshots/flow-02-streaming-steps.png" alt="Pipeline streaming" width="360" /> |
-| **3. All stages complete**                                                                           | **4. Editorial answer with citations**                                                          |
-| <img src="docs/screenshots/flow-05-steps-complete.png" alt="Pipeline stages complete" width="360" /> | <img src="docs/screenshots/flow-06-steps-done.png" alt="Answer with sections" width="360" />    |
-| **5. Sources tab**                                                                                   | **6. Full answer with trust badges**                                                            |
-| <img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="360" />                     | <img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer page" width="360" />       |
+|                                                                                             |                                                                                              |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **1. Ask a question**                                                                       | **2. Retriever searching HN**                                                                |
+| <img src="docs/screenshots/flow-01-query-typed.png" alt="Query typed" width="360" />        | <img src="docs/screenshots/flow-02-streaming-steps.png" alt="Streaming steps" width="360" /> |
+| **3. All stages complete**                                                                  | **4. Editorial answer with citations**                                                       |
+| <img src="docs/screenshots/flow-05-steps-complete.png" alt="Stages complete" width="360" /> | <img src="docs/screenshots/flow-06-steps-done.png" alt="Answer sections" width="360" />      |
+| **5. Sources**                                                                              | **6. Full answer with trust badges**                                                         |
+| <img src="docs/screenshots/flow-08-sources.png" alt="Sources tab" width="360" />            | <img src="docs/screenshots/flow-07-answer-full.png" alt="Full answer" width="360" />         |
 
 </details>
 
----
-
 ## Architecture
 
-| Layer        | Technology                                                                     |
-| ------------ | ------------------------------------------------------------------------------ |
-| Monorepo     | Nx                                                                             |
-| Backend      | NestJS 11 (TypeScript, module-per-domain DI)                                   |
-| Frontend     | Angular 21 (standalone components, signals, Tailwind CSS v4)                   |
-| LLM          | Claude / Mistral / OpenRouter via LangChain.js facade                          |
-| Pipeline     | LangGraph StateGraph with per-stage retry and fallback                         |
-| Streaming    | SSE for live progress + QueryStore for result persistence and reconnect        |
-| Caching      | LRU cache (in-memory, TTL-based) with query deduplication                      |
-| Data         | HN Algolia API (search) + Firebase API (items/comments)                        |
-| Eval         | Custom 5-evaluator harness + LangSmith tracing                                 |
-| TTS          | Mistral Voxtral (`voxtral-mini-tts-latest`) with LLM-rewritten podcast scripts |
-| Shared types | `@voxpopuli/shared-types` consumed by both apps                                |
+| Layer         | Technology                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Monorepo      | Nx, pnpm workspaces                                                                                                 |
+| Backend       | NestJS 11, one module per domain (agent, cache, chunker, hn, llm, rag, tts)                                         |
+| Frontend      | Angular 21: standalone components, signals, Tailwind CSS v4, "Data Noir Editorial" design system                    |
+| Orchestration | LangGraph `StateGraph` with per-stage retry, fallback, and a dry-well circuit breaker                               |
+| LLMs          | LangChain.js facade over Mistral (`mistral-small-latest`, default), Claude (Haiku 4.5), and OpenRouter (Qwen3 235B) |
+| Streaming     | SSE from an `AsyncGenerator`, plus a query store for stored results, reconnect, and dedup                           |
+| Data          | HN Algolia (search) and HN Firebase (items and comments), behind an in-memory LRU cache                             |
+| Voice         | Mistral Voxtral TTS (`voxtral-mini-tts-latest`) with an LLM-rewritten narration script                              |
+| Evaluation    | Custom 5-evaluator harness with LangSmith tracing                                                                   |
+| Contracts     | `@voxpopuli/shared-types`, shared by API and web                                                                    |
 
-### Key Design Decisions
+```
+apps/
+  api/src/        NestJS API: agent (ReAct + pipeline nodes), llm (providers), rag (HTTP + SSE),
+                  hn, chunker, cache, tts, health
+  web/src/app/    Angular app: chat, agent-steps timeline, trust bar, source cards, audio player
+libs/
+  shared-types/   API contracts and trust framework types
+evals/            Evaluation harness: 27 queries, evaluators, LangSmith sync
+docs/             Product spec, architecture, ADRs, screenshots
+```
 
-| Decision            | Approach                                                           | Why                                                                                                             |
-| ------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Streaming primitive | AsyncGenerator yielding discriminated unions                       | Single source of truth -- `run()` wraps `runStream()`, zero duplication between blocking and streaming paths    |
-| Result delivery     | QueryStore decouples results from SSE connection                   | Mobile browsers kill background SSE; storing results server-side eliminates babysitting and duplicate LLM costs |
-| LLM abstraction     | Facade over LangChain providers with interface contract            | Hot-swap providers without touching agent or pipeline code                                                      |
-| Pipeline fallback   | Completed-stage tracking in generator consumer                     | Fallback preserves valid retriever output instead of marking all stages as failed                               |
-| Token budgeting     | Character-based estimation (1 token ≈ 4 chars) with priority tiers | Good enough for context window management without shipping a tokenizer to Node.js                               |
-| Trust computation   | Pure function, post-loop, no NestJS dependencies                   | Testable independently, runs on any agent output regardless of execution path                                   |
+### Key design decisions
 
-See [docs/architecture.md](docs/architecture.md) for the full technical blueprint and [docs/product.md](docs/product.md) for the product specification.
+| Decision            | Approach                                                      | Why                                                                                         |
+| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Streaming primitive | `AsyncGenerator` yielding discriminated unions                | `run()` wraps `runStream()`, so the blocking and streaming paths share one implementation   |
+| Result delivery     | Query store decoupled from the SSE connection                 | Mobile browsers kill background SSE; stored results avoid lost runs and duplicate LLM spend |
+| LLM abstraction     | Provider facade behind `LlmProviderInterface`                 | Swap providers per request without touching agent or pipeline code                          |
+| Provider routing    | OpenRouter for open-weight models                             | One key for many models; routing prefers the highest-throughput host                        |
+| Pipeline fallback   | Track completed stages in the generator consumer              | A fallback keeps valid Retriever output instead of failing the whole run                    |
+| Token budgeting     | Character-based estimate (≈4 chars/token) with priority tiers | Good enough for context management without shipping a tokenizer                             |
+| Trust computation   | Pure function, run after the loop, no framework dependencies  | Unit-testable and applies to any execution path                                             |
 
----
+The full blueprint is in [docs/architecture.md](docs/architecture.md) and the product spec in [docs/product.md](docs/product.md).
 
-## Engineering Quality
+## Getting Started
 
-| Metric          | Value                                                                   |
-| --------------- | ----------------------------------------------------------------------- |
-| Test count      | 536 (293 API + 243 Web)                                                 |
-| Test framework  | Jest (API) + Vitest (Web)                                               |
-| Eval queries    | 27 (20 general + 7 trust-specific)                                      |
-| Eval dimensions | Source accuracy, quality judge, efficiency, latency, cost               |
-| CI              | GitHub Actions on affected projects                                     |
-| ADRs            | 7 architectural decision records                                        |
-| Type safety     | Strict mode, shared types lib, `satisfies` enforcement on API responses |
-
----
-
-## Milestone Progress
-
-| Milestone                  | Status | Highlights                                                             |
-| -------------------------- | ------ | ---------------------------------------------------------------------- |
-| M1: Scaffold & Data Layer  | Done   | Nx monorepo, shared types, HN data + caching                           |
-| M2: LLM & Chunker          | Done   | Triple-stack LLM providers, token budgeting                            |
-| M3: Agent Core             | Done   | ReAct agent, RAG endpoints, trust framework                            |
-| M4: Frontend               | Done   | Chat UI, real-time streaming, design system                            |
-| M5: Voice Output           | Done   | Podcast-style narration (ElevenLabs, now Mistral Voxtral)              |
-| M6: Eval Harness           | Done   | 27 queries, 5 evaluators, LangSmith integration                        |
-| M7: Deploy & Observability | ~87%   | Docker, Render, CORS, structured logging                               |
-| M8: Multi-Agent Pipeline   | Done   | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |
-
----
-
-## Quick Start
+**Prerequisites:** Node.js 22, pnpm 10 (`corepack enable`), and an API key for at least one LLM provider. Mistral is the default and also powers Listen mode.
 
 ```bash
-git clone https://github.com/darth-dodo/voxpopuli.git && cd voxpopuli
+git clone https://github.com/darth-dodo/voxpopuli.git
+cd voxpopuli
 pnpm install
-cp .env.example .env   # Add at least one LLM API key (default: Mistral)
+cp .env.example .env        # add MISTRAL_API_KEY (and optionally other provider keys)
 
-npx nx serve api        # Backend on :3000
-npx nx serve web        # Frontend on :4200 (proxies /api/** to backend)
+pnpm exec nx serve api      # API on http://localhost:3000/api
+pnpm exec nx serve web      # Web on http://localhost:4200 (proxies /api/** to the API)
 ```
+
+Open http://localhost:4200 and ask something like _"What does HN think about htmx?"_
+
+## Configuration
+
+All configuration is through environment variables (see [`.env.example`](.env.example)). Only the active provider's key is required.
+
+| Variable              | Default                     | Purpose                                                  |
+| --------------------- | --------------------------- | -------------------------------------------------------- |
+| `LLM_PROVIDER`        | `mistral`                   | Default provider: `mistral`, `claude`, or `openrouter`   |
+| `MISTRAL_API_KEY`     | —                           | Mistral LLM, and Voxtral TTS for Listen mode             |
+| `ANTHROPIC_API_KEY`   | —                           | Claude provider                                          |
+| `OPENROUTER_API_KEY`  | —                           | OpenRouter provider                                      |
+| `OPENROUTER_MODEL`    | `qwen/qwen3-235b-a22b-2507` | OpenRouter model slug                                    |
+| `MISTRAL_TTS_MODEL`   | `voxtral-mini-tts-latest`   | Voxtral TTS model                                        |
+| `MISTRAL_TTS_VOICE`   | `en_paul_neutral`           | Narrator voice: a Voxtral preset slug or custom voice ID |
+| `PORT`                | `3000`                      | API port                                                 |
+| `FRONTEND_URL`        | `http://localhost:4200`     | Allowed CORS origin                                      |
+| `LOG_LEVEL`           | `info`                      | Pino log level                                           |
+| `SENTRY_DSN`          | —                           | Error reporting (optional)                               |
+| `LANGSMITH_API_KEY`   | —                           | Tracing and eval dashboards (optional)                   |
+| `EVAL_JUDGE_PROVIDER` | `mistral`                   | Provider for the LLM-as-judge evaluator                  |
+
+## API
+
+All routes are served under `/api`.
+
+| Method | Route                                                 | Description                                                                            |
+| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`  | `/rag/stream`                                         | SSE stream of pipeline, step, and answer events (`query`, `provider`, `useMultiAgent`) |
+| `POST` | `/rag/query`                                          | Blocking query that returns the full answer, sources, trust, and metadata              |
+| `GET`  | `/rag/query/:id/result`                               | Stored result for a query ID (`202` while still running)                               |
+| `POST` | `/tts/narrate`                                        | Narrate text as MP3 (`{ text, rewrite?, voiceId? }`)                                   |
+| `GET`  | `/tts/voices`                                         | Active narrator voice and model                                                        |
+| `GET`  | `/hn/search`, `/hn/item/:id`, `/hn/comments/:storyId` | Cached HN data access                                                                  |
+| `GET`  | `/health`                                             | Status, uptime, cache stats, and memory                                                |
+
+Queries are limited to 500 characters and rate-limited to 60 requests per minute. Security headers are set with Helmet.
+
+## Testing and Quality
 
 ```bash
-npx nx test              # All tests
-npx nx test api          # Backend (Jest)
-npx nx test web          # Frontend (Vitest)
-npx tsx evals/run-eval.ts               # Eval harness (requires running API)
-npx tsx evals/run-eval.ts -p openrouter -n 5  # OpenRouter provider, 5 concurrent
-npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
+pnpm exec nx run-many -t test lint build   # everything CI runs, except the format check
+pnpm exec nx test api                      # API unit tests (Jest)
+pnpm exec nx test web                      # web unit tests (Vitest)
+pnpm exec prettier --check .               # format check
 ```
 
----
+| Area        | Details                                                                            |
+| ----------- | ---------------------------------------------------------------------------------- |
+| Unit tests  | 556 (314 API, 242 web); external APIs and LLM providers are always mocked          |
+| CI          | GitHub Actions on affected projects: lint, test with coverage, format check, build |
+| Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses             |
+| Git hooks   | lint-staged on commit; lint, test, and format checks on push                       |
+
+**Evaluation harness.** 27 benchmark queries (20 general, 7 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API:
+
+```bash
+pnpm eval                                  # all queries, default provider
+pnpm exec tsx evals/run-eval.ts -p openrouter -n 5 --no-judge   # one provider, 5 concurrent, no judge
+pnpm eval:compare                          # compare openrouter, mistral, claude
+```
+
+See [evals/README.md](evals/README.md) for every option.
+
+## Deployment
+
+VoxPopuli ships as a [Render Blueprint](render.yaml):
+
+- **`voxpopuli-api`**: a Docker web service built from the multi-stage [`Dockerfile`](Dockerfile) (Node 22). It is a long-running process, which the SSE streams and in-memory cache need.
+- **`voxpopuli-web`**: a static site on Render's CDN, live at [voxpopuli-web-embx.onrender.com](https://voxpopuli-web-embx.onrender.com/). The API URL is injected at build time.
+- **Secrets** live in the `voxpopuli-secrets` env group, shared by production and automatic PR preview environments.
+
+> Values already set in a Render env group are not overwritten by `render.yaml`. After renaming or removing a variable, update the group in the dashboard.
+
+## Project Status
+
+| Milestone                    | Status | Highlights                                           |
+| ---------------------------- | ------ | ---------------------------------------------------- |
+| M1: Scaffold and data layer  | Done   | Nx monorepo, shared types, HN clients, caching       |
+| M2: LLMs and chunker         | Done   | Provider facade, token budgeting                     |
+| M3: Agent core               | Done   | ReAct agent, RAG endpoints, trust framework          |
+| M4: Frontend                 | Done   | Chat UI, live streaming, design system               |
+| M5: Voice output             | Done   | Podcast-style narration (now Mistral Voxtral)        |
+| M6: Eval harness             | Done   | 27 queries, 5 evaluators, LangSmith                  |
+| M7: Deploy and observability | ~87%   | Docker, Render, structured logging, Sentry           |
+| M8: Multi-agent pipeline     | Done   | LangGraph pipeline, per-stage retry, circuit breaker |
+
+## Documentation
+
+| Document                                             | Contents                                                                                                      |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [docs/product.md](docs/product.md)                   | Product specification: features, API contracts, roadmap                                                       |
+| [docs/architecture.md](docs/architecture.md)         | Technical blueprint, module specs, milestones                                                                 |
+| [docs/codebase-summary.md](docs/codebase-summary.md) | Module inventory and environment reference                                                                    |
+| [docs/design-system.md](docs/design-system.md)       | "Data Noir Editorial" design system                                                                           |
+| [docs/adr/](docs/adr/)                               | Architecture Decision Records: chunking, providers, ReAct, SSE, query decomposition, query-ID resilience, TTS |
+| [CHANGELOG.md](CHANGELOG.md)                         | Release notes                                                                                                 |
+
+## Contributing
+
+1. Branch from `main` (`feat/…`, `fix/…`).
+2. Keep changes covered by tests, and mock all external HTTP and LLM calls.
+3. Before opening a PR, run `pnpm exec nx run-many -t test lint build` and `pnpm exec prettier --check .`.
+4. Use [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `docs:`, …) and update `CHANGELOG.md` for user-visible changes.
+5. Record significant design decisions as an ADR in `docs/adr/`.
+
+Project conventions for AI-assisted development are in [CLAUDE.md](CLAUDE.md) and [`.claude/skills/`](.claude/skills/).
 
 ## License
 
-MIT
+[MIT](LICENSE)
