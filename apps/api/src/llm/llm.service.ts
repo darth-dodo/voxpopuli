@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface } from './llm-provider.interface';
+import type { LlmProviderInterface, ModelOptions } from './llm-provider.interface';
 import { OpenRouterProvider } from './providers/openrouter.provider';
 import { ClaudeProvider } from './providers/claude.provider';
 import { MistralProvider } from './providers/mistral.provider';
@@ -63,14 +63,15 @@ export class LlmService {
    * or for an explicit override.
    *
    * @param providerOverride - Optional provider name to use instead of the default
+   * @param options - Optional model tuning (e.g. an output-token cap)
    * @returns The LangChain BaseChatModel instance
    * @throws Error if the provider name is unknown or the required API key is missing
    */
-  getModel(providerOverride?: string): BaseChatModel {
+  getModel(providerOverride?: string, options?: ModelOptions): BaseChatModel {
     const name = providerOverride
       ? this.normalizeProviderName(providerOverride)
       : this.activeProvider;
-    return this.resolveProvider(name).getModel();
+    return this.resolveProvider(name).getModel(options);
   }
 
   /**

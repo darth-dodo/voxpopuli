@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface } from '../llm-provider.interface';
+import type { LlmProviderInterface, ModelOptions } from '../llm-provider.interface';
 import { OPENROUTER_BASE_URL, OPENROUTER_MODEL_ID } from '../model-ids';
 
 export { OPENROUTER_BASE_URL };
@@ -45,7 +45,7 @@ export class OpenRouterProvider implements LlmProviderInterface {
 
   private readonly apiKey: string;
   private readonly modelId: string;
-  private model: BaseChatModel | null = null;
+  private readonly models = new Map<number | undefined, BaseChatModel>();
 
   constructor(
     private readonly config: ConfigService,
@@ -63,12 +63,14 @@ export class OpenRouterProvider implements LlmProviderInterface {
   }
 
   /** Return (or lazily create) the ChatOpenAI instance pointed at OpenRouter. */
-  getModel(): BaseChatModel {
-    if (!this.model) {
-      this.model = new ChatOpenAI({
+  getModel(options: ModelOptions = {}): BaseChatModel {
+    let model = this.models.get(options.maxTokens);
+    if (!model) {
+      model = new ChatOpenAI({
         apiKey: this.apiKey,
         model: this.modelId,
-        maxTokens: OPENROUTER_MAX_OUTPUT_TOKENS,
+        // A call-site cap (e.g. the Retriever's ReAct turns) replaces the default ceiling.
+        maxTokens: options.maxTokens ?? OPENROUTER_MAX_OUTPUT_TOKENS,
         modelKwargs: { provider: OPENROUTER_ROUTING },
         configuration: {
           baseURL: OPENROUTER_BASE_URL,
@@ -76,7 +78,8 @@ export class OpenRouterProvider implements LlmProviderInterface {
           defaultHeaders: { 'X-Title': 'VoxPopuli' },
         },
       });
+      this.models.set(options.maxTokens, model);
     }
-    return this.model;
+    return model;
   }
 }

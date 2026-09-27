@@ -4,6 +4,7 @@ import { evaluateQualityChecklist } from './evaluators/quality-judge';
 import { evaluateEfficiency } from './evaluators/efficiency';
 import { evaluateLatency } from './evaluators/latency';
 import { evaluateCost } from './evaluators/cost';
+import { summarizeLatency } from './latency-stats';
 
 /** Weight distribution across evaluator dimensions. */
 export const WEIGHTS = {
@@ -36,6 +37,8 @@ export async function scoreRun(
       latency: 0,
       cost: 0,
       weighted: 0,
+      durationMs: result.durationMs,
+      timings: result.timings,
       details: { error: result.error ?? 'No response' },
     };
   }
@@ -83,6 +86,8 @@ export async function scoreRun(
     latency,
     cost,
     weighted,
+    durationMs: result.durationMs,
+    timings: result.timings,
     details,
   };
 }
@@ -107,6 +112,7 @@ export function buildReport(scores: EvalScore[], provider: string): EvalReport {
         avgLatency: 0,
         avgCost: 0,
         passRate: 0,
+        latency: summarizeLatency(scores),
       },
     };
   }
@@ -136,6 +142,7 @@ export function buildReport(scores: EvalScore[], provider: string): EvalReport {
       avgLatency,
       avgCost,
       passRate,
+      latency: summarizeLatency(scores),
     },
   };
 }
@@ -184,6 +191,18 @@ export function printReport(report: EvalReport): void {
     pad(fmt(summary.avgCost), 8) +
     pad(fmt(summary.avgWeighted), 8);
   console.log(avg);
+
+  const lat = summary.latency;
+  if (lat && lat.samples > 0) {
+    const sec = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+    const stages = Object.entries(lat.stageMeanMs)
+      .map(([stage, ms]) => `${stage} ${sec(ms)}`)
+      .join(', ');
+    console.log(
+      `\nWall-clock: mean ${sec(lat.meanMs)} | p50 ${sec(lat.p50Ms)} | p95 ${sec(lat.p95Ms)}` +
+        ` | fallbacks ${lat.fallbacks}/${lat.samples}${stages ? ` | stages: ${stages}` : ''}`,
+    );
+  }
   console.log('');
 }
 

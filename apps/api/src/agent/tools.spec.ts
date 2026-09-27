@@ -343,3 +343,78 @@ describe('createAgentTools', () => {
     expect(tools.map((t: any) => t.name)).toEqual(['search_hn', 'get_story', 'get_comments']);
   });
 });
+
+describe('source registry', () => {
+  it('records every search hit with structured metadata and an HN fallback URL', async () => {
+    const hn = createMockHnService();
+    hn.search.mockResolvedValue({
+      hits: [
+        {
+          objectID: '11',
+          title: 'Show HN: thing',
+          url: 'https://thing.dev',
+          author: 'a',
+          points: 50,
+          num_comments: 7,
+        },
+        {
+          objectID: '12',
+          title: 'Ask HN: why?',
+          url: null,
+          author: 'b',
+          points: 9,
+          num_comments: 3,
+        },
+      ],
+    });
+    const sources = new Map();
+    const tool: any = createSearchHnTool(hn as any, createMockChunkerService() as any, sources);
+
+    await tool.invoke({ query: 'x' });
+
+    expect([...sources.values()]).toEqual([
+      {
+        storyId: 11,
+        title: 'Show HN: thing',
+        url: 'https://thing.dev',
+        author: 'a',
+        points: 50,
+        commentCount: 7,
+      },
+      {
+        storyId: 12,
+        title: 'Ask HN: why?',
+        url: 'https://news.ycombinator.com/item?id=12',
+        author: 'b',
+        points: 9,
+        commentCount: 3,
+      },
+    ]);
+  });
+
+  it('records fetched stories via get_story', async () => {
+    const hn = createMockHnService();
+    hn.getItem.mockResolvedValue({
+      id: 5,
+      type: 'story',
+      by: 'pg',
+      time: 1700000000,
+      title: 'Story',
+      score: 120,
+      descendants: 40,
+    });
+    const sources = new Map();
+    const tool: any = createGetStoryTool(hn as any, createMockChunkerService() as any, sources);
+
+    await tool.invoke({ story_id: 5 });
+
+    expect(sources.get(5)).toEqual({
+      storyId: 5,
+      title: 'Story',
+      url: 'https://news.ycombinator.com/item?id=5',
+      author: 'pg',
+      points: 120,
+      commentCount: 40,
+    });
+  });
+});

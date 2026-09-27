@@ -13,11 +13,14 @@ const TTL_COMMENT = 1800; // 30 min
 /** Maximum comments returned by getCommentTree */
 const MAX_COMMENTS = 30;
 
-/** Maximum concurrent Firebase item fetches per batch */
-const BATCH_SIZE = 10;
-
 /** Maximum top-level comments to fetch */
 const MAX_TOP_LEVEL = 15;
+
+/** Maximum concurrent Firebase item fetches per batch (covers all top-level comments in one round-trip) */
+const BATCH_SIZE = MAX_TOP_LEVEL;
+
+/** Maximum replies fetched per comment */
+const MAX_REPLIES = 3;
 
 /** Algolia search base URL */
 const ALGOLIA_BASE = 'https://hn.algolia.com/api/v1';
@@ -129,50 +132,33 @@ export class HnService {
       return [];
     }
 
-    const comments: HnComment[] = [];
-    const topLevelIds = kidIds.slice(0, MAX_TOP_LEVEL);
+    // Fetch level by level with every parent's replies requested concurrently,
+    // so the tree costs one round-trip per depth instead of one per comment.
+    const topLevel = await this.fetchCommentBatch(kidIds.slice(0, MAX_TOP_LEVEL), 0);
+    const repliesOf = new Map<number, HnComment[]>();
+    const fetchReplies = (parents: HnComment[], depth: number) =>
+      Promise.all(
+        parents.map(async (parent) => {
+          if (!parent.kids || parent.kids.length === 0) return;
+          const replies = await this.fetchCommentBatch(parent.kids.slice(0, MAX_REPLIES), depth);
+          repliesOf.set(parent.id, replies);
+        }),
+      );
 
-    // Fetch top-level comments in batches
-    const topLevel = await this.fetchCommentBatch(topLevelIds, 0);
+    if (maxDepth > 1) {
+      await fetchReplies(topLevel.slice(0, MAX_COMMENTS), 1);
 
-    for (const comment of topLevel) {
-      if (comments.length >= MAX_COMMENTS) break;
-      comments.push(comment);
-
-      // Fetch replies if within depth and cap
-      if (
-        maxDepth > 1 &&
-        comment.kids &&
-        comment.kids.length > 0 &&
-        comments.length < MAX_COMMENTS
-      ) {
-        const replyIds = comment.kids.slice(0, 3);
-        const replies = await this.fetchCommentBatch(replyIds, 1);
-
-        for (const reply of replies) {
-          if (comments.length >= MAX_COMMENTS) break;
-          comments.push(reply);
-
-          // Third level of depth
-          if (
-            maxDepth > 2 &&
-            reply.kids &&
-            reply.kids.length > 0 &&
-            comments.length < MAX_COMMENTS
-          ) {
-            const deepReplyIds = reply.kids.slice(0, 3);
-            const deepReplies = await this.fetchCommentBatch(deepReplyIds, 2);
-
-            for (const deepReply of deepReplies) {
-              if (comments.length >= MAX_COMMENTS) break;
-              comments.push(deepReply);
-            }
-          }
-        }
+      if (maxDepth > 2) {
+        // Adding depth-2 comments only pushes later entries further past the cap,
+        // so replies already beyond it in the depth-0/1 ordering can be skipped.
+        const replyParents = this.flattenCommentTree(topLevel, repliesOf).filter(
+          (c) => c.depth === 1,
+        );
+        await fetchReplies(replyParents, 2);
       }
     }
 
-    return comments;
+    return this.flattenCommentTree(topLevel, repliesOf);
   }
 
   // ---------------------------------------------------------------------------
@@ -237,6 +223,24 @@ export class HnService {
     }
 
     throw lastError;
+  }
+
+  /**
+   * Flatten a fetched comment tree into depth-first (pre-order) order,
+   * truncated at {@link MAX_COMMENTS}.
+   */
+  private flattenCommentTree(
+    topLevel: HnComment[],
+    repliesOf: Map<number, HnComment[]>,
+  ): HnComment[] {
+    const out: HnComment[] = [];
+    const visit = (comment: HnComment): void => {
+      if (out.length >= MAX_COMMENTS) return;
+      out.push(comment);
+      for (const reply of repliesOf.get(comment.id) ?? []) visit(reply);
+    };
+    for (const comment of topLevel) visit(comment);
+    return out;
   }
 
   /**

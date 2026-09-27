@@ -31,6 +31,10 @@ npx tsx evals/run-eval.ts --dry-run
 
 # List all available queries
 npx tsx evals/run-eval.ts --list
+
+# Latency A/B: run over SSE, then compare a later run against the saved baseline
+npx tsx evals/run-eval.ts --multi-agent --stream -n 1
+npx tsx evals/run-eval.ts --multi-agent --stream -n 1 --baseline evals/results/<baseline>.json
 ```
 
 ## CLI Options
@@ -48,6 +52,8 @@ npx tsx evals/run-eval.ts --list
 | `-t, --timeout <sec>`   | Per-query timeout                                       | `300`                             |
 | `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                       | `3`                               |
 | `--multi-agent`         | Use multi-agent pipeline instead of legacy single-agent | legacy (single-agent)             |
+| `--stream`              | Run over SSE (uncached; records per-stage timings)      | `POST /rag/query` (cached 10 min) |
+| `--baseline <file>`     | Print latency change vs a previous results JSON         | —                                 |
 
 ## Scoring System
 
@@ -70,6 +76,19 @@ Each query is scored across five dimensions with fixed weights:
 | OpenRouter | < 15s           | < 30s          | < 60s            | >= 60s     |
 | Mistral    | < 30s           | < 60s          | < 90s            | >= 90s     |
 | Claude     | < 30s           | < 60s          | < 120s           | >= 120s    |
+
+### Measuring Latency (ADR-009)
+
+The banded latency score hides the actual numbers, so every report also stores raw
+`durationMs` per query and a `summary.latency` block: mean, p50, p95, per-stage means
+(`retriever`/`synthesizer`/`writer`, from the pipeline's `done` events) and the number of runs
+that **fell back to the legacy agent** — the most expensive failure mode.
+
+- Use `--stream` for latency work. `POST /rag/query` serves repeat queries from a 10-minute cache,
+  so a re-run inside that window measures cache hits. Stage timings only exist over SSE.
+- Use `-n 1` for A/B comparisons. Mistral's limit is 100k tokens/minute and one pipeline query can
+  consume most of it; concurrent runs measure provider backoff, not the code.
+- Errored runs are excluded from the latency summary so fast failures don't look like fast answers.
 
 ### Source Accuracy
 

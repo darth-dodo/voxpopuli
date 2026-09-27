@@ -1,5 +1,14 @@
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 
+/** Per-call-site model tuning. */
+export interface ModelOptions {
+  /**
+   * Hard cap on generated tokens. Output tokens dominate latency (~5s per 1k),
+   * so call sites whose useful output is small should bound it.
+   */
+  maxTokens?: number;
+}
+
 /**
  * Contract that every LLM provider must implement.
  *
@@ -13,6 +22,6 @@ export interface LlmProviderInterface {
   /** Total context window size in tokens for this provider's model. */
   readonly maxContextTokens: number;
 
-  /** Return the LangChain ChatModel instance for this provider. */
-  getModel(): BaseChatModel;
+  /** Return the LangChain ChatModel instance for this provider (cached per options). */
+  getModel(options?: ModelOptions): BaseChatModel;
 }
