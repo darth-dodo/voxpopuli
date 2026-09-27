@@ -89,7 +89,7 @@ graph TB
     subgraph External ["External APIs"]
         ALGOLIA["HN Algolia"]
         FIREBASE["HN Firebase"]
-        ELEVEN["ElevenLabs TTS"]
+        VOXTRAL["Mistral Voxtral TTS"]
     end
 
     CHAT <-->|SSE / HTTP| RAG
@@ -108,7 +108,7 @@ graph TB
     AGENT_LEGACY --> CHUNKER
     AGENT_LEGACY --> LLM
     TTS_S --> LLM
-    TTS_S --> ELEVEN
+    TTS_S --> VOXTRAL
     HN --> CACHE
     HN --> ALGOLIA
     HN --> FIREBASE
@@ -163,17 +163,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology           | Version                                                 |
-| --------------- | -------------------- | ------------------------------------------------------- |
-| Monorepo        | Nx                   | Latest                                                  |
-| Backend         | NestJS               | 10+                                                     |
-| Frontend        | Angular              | 21                                                      |
-| LLM (quality)   | Claude Haiku 4.5     | LangChain.js (`@langchain/anthropic`)                   |
-| LLM (cost)      | Mistral Large 3      | LangChain.js (`@langchain/mistralai`)                   |
-| LLM (speed/dev) | OpenRouter Qwen3 32B | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
-| TTS             | ElevenLabs           | elevenlabs SDK                                          |
-| Cache           | node-cache           | Latest                                                  |
-| Shared Types    | TypeScript lib       | `@voxpopuli/shared-types`                               |
+| Layer           | Technology                                  | Version                                                 |
+| --------------- | ------------------------------------------- | ------------------------------------------------------- |
+| Monorepo        | Nx                                          | Latest                                                  |
+| Backend         | NestJS                                      | 10+                                                     |
+| Frontend        | Angular                                     | 21                                                      |
+| LLM (quality)   | Claude Haiku 4.5                            | LangChain.js (`@langchain/anthropic`)                   |
+| LLM (cost)      | Mistral Large 3                             | LangChain.js (`@langchain/mistralai`)                   |
+| LLM (speed/dev) | OpenRouter Qwen3 32B                        | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
+| TTS             | Mistral Voxtral (`voxtral-mini-tts-latest`) | native `fetch` → `/v1/audio/speech`, base64 MP3         |
+| Cache           | node-cache                                  | Latest                                                  |
+| Shared Types    | TypeScript lib                              | `@voxpopuli/shared-types`                               |
 
 ### 1.4 Project Structure
 
@@ -524,7 +524,7 @@ See product.md Section 18 for full pipeline, voice config, and cost analysis.
 | ----------------------------------- | ---------------------------------------------- |
 | `TtsService.narrate(text, sources)` | Full pipeline: rewrite + stream audio          |
 | `TtsService.rewriteForSpeech(text)` | LLM call to convert markdown to podcast script |
-| `TtsService.streamAudio(script)`    | ElevenLabs streaming TTS                       |
+| `TtsService.synthesize(script)`     | Voxtral TTS → MP3 buffer                       |
 
 | Endpoint           | Method | Description                  |
 | ------------------ | ------ | ---------------------------- |
@@ -1153,10 +1153,9 @@ OPENROUTER_API_KEY=sk-or-...
 MISTRAL_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
 
-# ElevenLabs TTS (required for voice output)
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=nPczCjzI2devNBz1zQrb   # Brian (default narrator)
-ELEVENLABS_MODEL=eleven_multilingual_v2
+# TTS via Mistral Voxtral (uses MISTRAL_API_KEY)
+MISTRAL_TTS_MODEL=voxtral-mini-tts-latest    # optional override
+MISTRAL_TTS_VOICE=en_paul_neutral            # preset slug or custom voice UUID
 
 # Server
 PORT=3000
@@ -1195,7 +1194,7 @@ EVAL_JUDGE_PROVIDER=mistral
 | Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
 | Token budget (OpenRouter)       | 50k of 131k                 | Conservative headroom                            |
 | Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
-| TTS max chars                   | 2500                        | ElevenLabs streaming limit                       |
+| TTS max chars                   | 2500                        | Narration script cap (cost + latency)            |
 | Eval query count                | 27                          | 20 general + 7 trust-specific                    |
 | Eval default timeout            | 300s                        | Per-query timeout (configurable via CLI)         |
 | Eval concurrency                | 3 (max 5)                   | Parallel queries, capped at API semaphore        |

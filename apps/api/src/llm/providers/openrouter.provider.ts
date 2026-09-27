@@ -3,10 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { LlmProviderInterface } from '../llm-provider.interface';
-import { OPENROUTER_MODEL_ID } from '../model-ids';
+import { OPENROUTER_BASE_URL, OPENROUTER_MODEL_ID } from '../model-ids';
 
-/** OpenRouter's OpenAI-compatible API endpoint. */
-export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+export { OPENROUTER_BASE_URL };
 
 /**
  * Context window for the default model (Qwen3 235B A22B 2507). The model supports
