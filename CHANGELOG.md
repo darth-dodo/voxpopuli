@@ -4,6 +4,10 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CORS blocked the new frontend host** — The API allowed only one origin (`FRONTEND_URL`), still set to `voxpopuli-web-1o3v.onrender.com`, so requests from `voxpopuli-web-embx.onrender.com` were blocked. `FRONTEND_URL` now accepts a comma-separated list of origins (trailing slashes ignored); `onrender.com` still allows any Render subdomain for PR previews.
+
 ### Changed
 
 - **ElevenLabs replaced by Mistral Voxtral TTS** — Narration audio now comes from Voxtral (`voxtral-mini-tts-latest`, preset voice `en_paul_neutral`) via `POST https://api.mistral.ai/v1/audio/speech` using the existing `MISTRAL_API_KEY`; still returned as MP3 (`audio/mpeg`), so the frontend is unchanged. Configure with `MISTRAL_TTS_MODEL` / `MISTRAL_TTS_VOICE`; `ELEVENLABS_*` env vars and the `elevenlabs` package are removed. `POST /api/tts/narrate` rejects malformed `voiceId`s with 400 and maps Voxtral failures to 502 with the upstream reason; `GET /api/tts/voices` returns `{ id, name, model }` (ElevenLabs `VoiceSettings` removed). A 2,500-character script (the narration cap) produces about 108 s of audio in about 10 s.
