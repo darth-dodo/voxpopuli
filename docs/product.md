@@ -45,7 +45,7 @@
 - [7. API Specification](#7-api-specification)
   - [7.1 POST /api/rag/query](#71-post-apiragquery)
   - [7.2 GET /api/rag/stream](#72-get-apiragstream)
-  - [7.3 POST /api/tts/speak](#73-post-apittsspeak)
+  - [7.3 POST /api/tts/narrate](#73-post-apittsnarrate)
   - [7.4 GET /api/health](#74-get-apihealth)
 - [8. Agent Tool Specifications](#8-agent-tool-specifications)
   - [8.1 search_hn](#81-search_hn)
@@ -92,7 +92,7 @@
 - [16. Success Metrics](#16-success-metrics)
 - [17. Getting Started](#17-getting-started)
 - [18. Contributing](#18-contributing)
-- [19. Voice Output (ElevenLabs TTS)](#19-voice-output-elevenlabs-tts)
+- [19. Voice Output (Mistral Voxtral TTS)](#19-voice-output-mistral-voxtral-tts)
   - [19.1 Overview](#191-overview)
   - [19.2 Pipeline](#192-pipeline)
   - [19.3 Signature Voice](#193-signature-voice)
@@ -260,13 +260,13 @@ The Retriever collects raw HN data and **compacts** it into themed evidence grou
 
 By default, all three agents use the **globally selected provider** (the `LLM_PROVIDER` env var or the UI provider selector). This keeps behavior consistent with the single-agent path and avoids requiring multiple API keys.
 
-| Agent       | Default Provider        | `optimized` Preset Provider            | Why (optimized)                                                |
-| ----------- | ----------------------- | -------------------------------------- | -------------------------------------------------------------- |
-| Retriever   | Global (`LLM_PROVIDER`) | **Groq** (Llama 3.3 70B)               | Speed. Multiple tool calls need fast inference.                |
-| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-haiku-4-5-20251001) | Reasoning depth. Pattern extraction needs the strongest model. |
-| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-large-latest)     | Cost-optimized. Structured prose from structured input.        |
+| Agent       | Default Provider        | `optimized` Preset Provider            | Why (optimized)                                                  |
+| ----------- | ----------------------- | -------------------------------------- | ---------------------------------------------------------------- |
+| Retriever   | Global (`LLM_PROVIDER`) | **OpenRouter** (Qwen3 235B A22B)       | Speed and price. Multiple tool calls need fast, cheap inference. |
+| Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-haiku-4-5-20251001) | Reasoning depth. Pattern extraction needs the strongest model.   |
+| Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-small-latest)     | Cost-optimized. Structured prose from structured input.          |
 
-Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (Groq/Claude/Mistral split), `speed` (all Groq), `cost` (all Mistral).
+Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (OpenRouter/Claude/Mistral split), `speed` (all OpenRouter), `cost` (all Mistral).
 
 **Default mode:** The pipeline is the default execution path. The frontend always passes `useMultiAgent: true`. The `PipelineConfig.useMultiAgent` flag remains available for per-request toggling, but normal usage always runs the pipeline.
 
@@ -342,15 +342,15 @@ Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-lim
 
 **New in v1.2.**
 
-VoxPopuli can read its answers aloud using ElevenLabs TTS. The name means "voice of the people" -- it should literally have a voice.
+VoxPopuli can read its answers aloud using Mistral Voxtral TTS. The name means "voice of the people" -- it should literally have a voice.
 
 **How it works:**
 
 1. Agent finishes and returns a text answer.
 2. User clicks the **Listen** button on the answer bubble.
 3. Backend rewrites the answer into a **podcast-style script** (conversational tone, no markdown, no raw URLs, natural transitions).
-4. Backend streams the script to ElevenLabs TTS API.
-5. Frontend receives audio chunks and plays them through an `<audio>` element.
+4. Backend sends the script to the Mistral Voxtral speech endpoint (`POST https://api.mistral.ai/v1/audio/speech`). The response is non-streaming JSON with the full MP3 as base64 (`audio_data`), which the backend decodes to a buffer.
+5. Backend returns the complete MP3 in a single response; the frontend plays it through an `<audio>` element.
 
 **Podcast Script Rewriting:**
 
@@ -378,33 +378,35 @@ Rules for the rewrite:
 
 **Signature Voice:**
 
-VoxPopuli uses a single, fixed narrator voice. This gives the project a recognizable identity, like a podcast host. The voice ID is configured in `.env`:
+VoxPopuli uses a single, fixed narrator voice. This gives the project a recognizable identity, like a podcast host. TTS reuses the Mistral key already used for the LLM; the model and voice are configured in `.env`:
 
 ```env
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM   # Rachel (stock, warm/professional)
-ELEVENLABS_MODEL_ID=eleven_multilingual_v2   # Best for long-form narration
+MISTRAL_API_KEY=...                            # Shared with the Mistral LLM provider
+MISTRAL_TTS_MODEL=voxtral-mini-tts-latest      # Default
+MISTRAL_TTS_VOICE=en_paul_neutral              # Default: preset "Paul - Neutral"
 ```
 
-The voice should be: warm, clear, authoritative but not stiff, slightly conversational. Think "tech podcast host who respects your time."
+The default voice, `en_paul_neutral` ("Paul - Neutral"), is a relaxed, balanced, neutral US English voice. The target character: clear, authoritative but not stiff, slightly conversational. Think "tech podcast host who respects your time."
 
-**ElevenLabs Model Choice:**
+**Voxtral TTS at a glance:**
 
-| Model           | Use Case                              | Latency              | Credits/char |
-| --------------- | ------------------------------------- | -------------------- | ------------ |
-| Multilingual v2 | Default. Best quality for narration.  | ~300ms to first byte | 1.0          |
-| Flash v2.5      | Fallback if latency is critical.      | ~75ms to first byte  | 0.5          |
-| Eleven v3       | Stretch goal. Maximum expressiveness. | ~300ms               | ~1.0         |
+| Property      | Value                                                                                              |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| Model         | `voxtral-mini-tts-latest`                                                                          |
+| Preset voices | 30 (e.g. `en_paul_*`, `gb_oliver_*`, `gb_jane_*`, `fr_marie_*`), listed via `GET /v1/audio/voices` |
+| Custom voices | Zero-shot cloning from a 2-3 s sample; referenced by UUID                                          |
+| Languages     | 9                                                                                                  |
+| Output        | MP3, 22.05 kHz mono, returned as base64 in a JSON body (non-streaming)                             |
 
-**Cost per voiced answer:**
+**Measured performance:**
 
-| Answer Length | Characters | Credits (Multilingual v2) | Cost (Starter $5/mo)         |
-| ------------- | ---------- | ------------------------- | ---------------------------- |
-| Short         | ~500       | 500                       | ~30k credits = 60 answers/mo |
-| Medium        | ~1000      | 1,000                     | ~30 answers/mo               |
-| Long          | ~1500      | 1,500                     | ~20 answers/mo               |
+| Input                                                 | Audio length | MP3 size | Generation time |
+| ----------------------------------------------------- | ------------ | -------- | --------------- |
+| Short line                                            | --           | --       | ~0.6 s          |
+| 2,500-char script (max rewrite length)                | ~108 s       | ~960 KB  | ~10 s           |
+| Full `/api/tts/narrate` (short answer, incl. rewrite) | --           | --       | ~4 s            |
 
-Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/text-to-speech), [ElevenLabs Streaming](https://elevenlabs.io/docs/api-reference/streaming), [ElevenLabs Pricing](https://elevenlabs.io/pricing)
+**Cost per voiced answer:** One small LLM rewrite call plus Voxtral usage for the script characters, billed per [Mistral pricing](https://mistral.ai/pricing).
 
 ---
 
@@ -433,7 +435,7 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 |  |              RAG Controller                           |   |
 |  |   POST /api/rag/query    (full response)              |   |
 |  |   GET  /api/rag/stream   (SSE streaming)              |   |
-|  |   POST /api/tts/speak    (audio stream)               |   |
+|  |   POST /api/tts/narrate  (MP3 audio)                  |   |
 |  +---------------------------+---------------------------+   |
 |                              |                               |
 |  +---------------------------+---------------------------+   |
@@ -454,7 +456,7 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 |     |+Cache|        |Service |        |Service |              |
 |     +--+---+        +--+----+        +--+----+               |
 |        |               |                |                     |
-|     Algolia       Claude/Groq      Mistral/Groq              |
+|     Algolia     Claude/OpenRouter Mistral/OpenRouter         |
 |     Firebase       (provider       (provider                  |
 |                    per stage)       per stage)                 |
 +------+------------------------------------------------------+
@@ -462,18 +464,18 @@ Source: [ElevenLabs TTS API](https://elevenlabs.io/docs/overview/capabilities/te
 
 ### 4.2 Tech Stack
 
-| Layer                    | Technology                   | Why                                                    |
-| ------------------------ | ---------------------------- | ------------------------------------------------------ |
-| **Monorepo**             | Nx                           | Shared types, unified builds, dependency graph         |
-| **Backend**              | NestJS (Node.js)             | Modular DI, first-class TypeScript, SSE support        |
-| **Frontend**             | Angular 21                   | Standalone components, signals, SSE via EventSource    |
-| **LLM (production)**     | Claude (Anthropic API)       | Best synthesis quality, 200k context                   |
-| **LLM (cost-optimized)** | Mistral Large 3              | 262k context, $0.50/$1.50 per M tokens                 |
-| **LLM (speed/dev)**      | Groq (Llama 3.3 70B)         | 300+ t/s inference, free tier for dev                  |
-| **Voice (TTS)**          | ElevenLabs (Multilingual v2) | Best voice quality, streaming, podcast-grade narration |
-| **Caching**              | node-cache (in-memory)       | Zero-infrastructure, sufficient for single-node v1     |
-| **Shared Types**         | TypeScript library           | Single source of truth for API contracts               |
-| **Data Sources**         | HN Algolia + Firebase APIs   | Full-text search + structured item/comment data        |
+| Layer                    | Technology                                  | Why                                                             |
+| ------------------------ | ------------------------------------------- | --------------------------------------------------------------- |
+| **Monorepo**             | Nx                                          | Shared types, unified builds, dependency graph                  |
+| **Backend**              | NestJS (Node.js)                            | Modular DI, first-class TypeScript, SSE support                 |
+| **Frontend**             | Angular 21                                  | Standalone components, signals, SSE via EventSource             |
+| **LLM (production)**     | Claude (Anthropic API)                      | Best synthesis quality, 200k context                            |
+| **LLM (cost-optimized)** | Mistral Small 4 (`mistral-small-latest`)    | 262k context; default provider; see mistral.ai/pricing          |
+| **LLM (speed/dev)**      | OpenRouter (Qwen3 235B A22B)                | Lowest per-token price, 128k context, throughput-sorted routing |
+| **Voice (TTS)**          | Mistral Voxtral (`voxtral-mini-tts-latest`) | Reuses the Mistral key, no extra SDK, MP3 narration             |
+| **Caching**              | node-cache (in-memory)                      | Zero-infrastructure, sufficient for single-node v1              |
+| **Shared Types**         | TypeScript library                          | Single source of truth for API contracts                        |
+| **Data Sources**         | HN Algolia + Firebase APIs                  | Full-text search + structured item/comment data                 |
 
 ### 4.3 Design System: "Data Noir Editorial"
 
@@ -507,7 +509,7 @@ AppModule
 |   +-- LlmProviderInterface (abstract)
 |   +-- ClaudeProvider (implements LlmProviderInterface)
 |   +-- MistralProvider (implements LlmProviderInterface)
-|   +-- GroqProvider (implements LlmProviderInterface)
+|   +-- OpenRouterProvider (implements LlmProviderInterface)
 |   +-- LlmService (facade, delegates to active provider)
 +-- AgentModule
 |   +-- AgentService
@@ -524,7 +526,7 @@ AppModule
 |       +-- GET  /api/rag/stream (SSE)
 |       +-- imports: AgentModule
 +-- TtsModule
-    +-- TtsService (ElevenLabs SDK + podcast rewrite via LlmService)
+    +-- TtsService (Mistral Voxtral via native fetch + podcast rewrite via LlmService)
     +-- TtsController
         +-- POST /api/tts/narrate
         +-- GET  /api/tts/voices
@@ -539,27 +541,29 @@ AppModule
 
 No single LLM wins on every axis. Different stages of the project need different things:
 
-| Stage                      | Best Provider        | Why                                                    |
-| -------------------------- | -------------------- | ------------------------------------------------------ |
-| **Development**            | Groq (Llama 3.3 70B) | Free tier, 300+ t/s speed, instant feedback loops      |
-| **Testing/CI**             | Groq or Mistral      | Cheap, fast, good enough for regression detection      |
-| **Cost-optimized prod**    | Mistral Large 3      | Best quality-per-dollar, 262k context                  |
-| **Quality-optimized prod** | Claude (Haiku 4.5)   | Best multi-source synthesis, strongest agent reasoning |
+| Stage                      | Best Provider         | Why                                                    |
+| -------------------------- | --------------------- | ------------------------------------------------------ |
+| **Development**            | OpenRouter (Qwen3)    | Lowest per-token price, throughput-sorted routing      |
+| **Testing/CI**             | OpenRouter or Mistral | Cheap, fast, good enough for regression detection      |
+| **Cost-optimized prod**    | Mistral Small 4       | Best quality-per-dollar, 262k context                  |
+| **Quality-optimized prod** | Claude (Haiku 4.5)    | Best multi-source synthesis, strongest agent reasoning |
+
+**Long-term direction:** route every provider through OpenRouter, so a single key and a single OpenAI-compatible client cover all models.
 
 ### 5.2 Provider Comparison
 
-| Factor                | Claude (Haiku 4.5)       | Mistral Large 3             | Groq (Llama 3.3 70B)              |
-| --------------------- | ------------------------ | --------------------------- | --------------------------------- |
-| **Context window**    | 200k                     | 262k                        | 128k                              |
-| **Output speed**      | ~50 t/s                  | ~80 t/s                     | 300+ t/s                          |
-| **Input pricing**     | ~$3.00/M                 | $0.50/M                     | ~$0.59/M                          |
-| **Output pricing**    | ~$15.00/M                | $1.50/M                     | ~$0.79/M                          |
-| **Est. cost/query**   | $0.02-0.08               | $0.003-0.015                | $0.004-0.016                      |
-| **Tool calling**      | Native (tool_use blocks) | Native (OpenAI-compatible)  | Native (OpenAI-compatible)        |
-| **Free tier**         | No                       | Limited                     | Yes (1,000 req/day for Llama 3.3) |
-| **Synthesis quality** | Excellent                | Strong                      | Good                              |
-| **Agent reasoning**   | Excellent                | Strong                      | Adequate                          |
-| **API format**        | Anthropic SDK            | Mistral SDK / OpenAI-compat | OpenAI-compatible                 |
+| Factor                | Claude (Haiku 4.5)       | Mistral Small 4             | OpenRouter (Qwen3 235B A22B 2507)                      |
+| --------------------- | ------------------------ | --------------------------- | ------------------------------------------------------ |
+| **Context window**    | 200k                     | 262k                        | 128k (model supports 262k; some hosts cap at 128k)     |
+| **Output speed**      | ~50 t/s                  | ~80 t/s                     | Varies by upstream; routed with `sort: throughput`     |
+| **Input pricing**     | ~$3.00/M                 | See mistral.ai/pricing      | ~$0.087/M                                              |
+| **Output pricing**    | ~$15.00/M                | See mistral.ai/pricing      | ~$0.35/M                                               |
+| **Est. cost/query**   | $0.02-0.08               | $0.003-0.015                | Not yet measured                                       |
+| **Tool calling**      | Native (tool_use blocks) | Native (OpenAI-compatible)  | Native (OpenAI-compatible)                             |
+| **Free tier**         | No                       | Limited                     | No (pay-as-you-go)                                     |
+| **Synthesis quality** | Excellent                | Strong                      | Not yet evaluated                                      |
+| **Agent reasoning**   | Excellent                | Strong                      | Not yet evaluated                                      |
+| **API format**        | Anthropic SDK            | Mistral SDK / OpenAI-compat | OpenAI-compatible (`ChatOpenAI` + OpenRouter base URL) |
 
 ### 5.3 Provider Interface (LangChain)
 
@@ -577,7 +581,7 @@ VoxPopuli uses **LangChain.js** as the LLM abstraction layer. Each provider is a
 
 ```typescript
 export interface LlmProviderInterface {
-  /** Human-readable provider name (e.g., "groq", "claude", "mistral") */
+  /** Human-readable provider name (e.g., "openrouter", "claude", "mistral") */
   readonly name: string;
 
   /** Maximum context window tokens for this provider */
@@ -596,7 +600,7 @@ export interface LlmProviderInterface {
 **What LangChain handles (we don't touch):**
 
 - Native tool_use / tool_result content blocks (Claude)
-- OpenAI-compatible tool role messages (Mistral, Groq)
+- OpenAI-compatible tool role messages (Mistral, OpenRouter)
 - Message serialization per provider
 - Streaming token delivery
 - Tool call parsing from model responses
@@ -611,11 +615,13 @@ export interface LlmProviderInterface {
 
 **Provider implementations:**
 
-| Provider    | LangChain Class | Package                | Config              |
-| ----------- | --------------- | ---------------------- | ------------------- |
-| **Claude**  | `ChatAnthropic` | `@langchain/anthropic` | `ANTHROPIC_API_KEY` |
-| **Mistral** | `ChatMistralAI` | `@langchain/mistralai` | `MISTRAL_API_KEY`   |
-| **Groq**    | `ChatGroq`      | `@langchain/groq`      | `GROQ_API_KEY`      |
+| Provider       | LangChain Class                                       | Package                | Config                                               |
+| -------------- | ----------------------------------------------------- | ---------------------- | ---------------------------------------------------- |
+| **Claude**     | `ChatAnthropic`                                       | `@langchain/anthropic` | `ANTHROPIC_API_KEY`                                  |
+| **Mistral**    | `ChatMistralAI`                                       | `@langchain/mistralai` | `MISTRAL_API_KEY`                                    |
+| **OpenRouter** | `ChatOpenAI` (baseURL `https://openrouter.ai/api/v1`) | `@langchain/openai`    | `OPENROUTER_API_KEY` (+ optional `OPENROUTER_MODEL`) |
+
+The OpenRouter provider defaults to `qwen/qwen3-235b-a22b-2507`, sends `max_tokens: 8192`, and passes OpenRouter provider routing `{ sort: 'throughput' }`. The frontend provider selector labels it "Qwen3".
 
 Source: [LangChain.js ChatModels](https://js.langchain.com/docs/integrations/chat/), [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/)
 
@@ -624,13 +630,14 @@ Source: [LangChain.js ChatModels](https://js.langchain.com/docs/integrations/cha
 Configured via `.env`:
 
 ```env
-# Options: claude, mistral, groq
+# Options: openrouter, claude, mistral
 LLM_PROVIDER=mistral
 
 # Provider-specific keys (only the active provider's key is required)
 ANTHROPIC_API_KEY=sk-ant-...
-MISTRAL_API_KEY=...
-GROQ_API_KEY=gsk_...
+MISTRAL_API_KEY=...          # Also used for Voxtral TTS
+OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=qwen/qwen3-235b-a22b-2507   # Optional override
 ```
 
 The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct provider. Switching providers requires zero code changes. Users can also override per-request via the `provider` query parameter.
@@ -728,7 +735,7 @@ The Chunker enforces a strict token budget. The budget varies by provider:
 ```
 Claude context:     200,000 tokens -> budget: 80,000 (conservative)
 Mistral context:    262,000 tokens -> budget: 100,000
-Groq context:       128,000 tokens -> budget: 50,000
+OpenRouter context: 128,000 tokens (Qwen3 supports 262k; some OpenRouter hosts cap at 128k)
 
 Reserved (all providers):
   System prompt:      2,000 tokens
@@ -813,7 +820,7 @@ Server-Sent Events endpoint. Streams reasoning steps in real time.
 **Query Parameters:**
 
 ```
-?query=...&maxSteps=5&includeComments=true&provider=groq
+?query=...&maxSteps=5&includeComments=true&provider=openrouter
 ```
 
 **Event Types:**
@@ -826,56 +833,49 @@ Server-Sent Events endpoint. Streams reasoning steps in real time.
 | `answer`      | `AgentResponse`              | Final answer ready      |
 | `error`       | `string`                     | Something broke         |
 
-### 7.3 POST `/api/tts/speak`
+### 7.3 POST `/api/tts/narrate`
 
-**New in v1.2.** Converts an agent answer into podcast-style audio.
+**New in v1.2.** Converts an agent answer into podcast-style audio using Mistral Voxtral TTS.
 
 **Request:**
 
 ```typescript
 {
-  text: string;               // Required. The agent's answer text.
+  text: string;               // Required. The agent's answer text. Max 10,000 chars.
   rewrite?: boolean;          // Optional. Default: true. Rewrite to podcast script first.
-  voiceId?: string;           // Optional. Override signature voice.
+  voiceId?: string;           // Optional. Override signature voice. Voxtral preset slug
+                              // (e.g. "en_paul_neutral") or custom voice UUID.
+                              // Must match /^[A-Za-z0-9_-]{1,64}$/.
 }
 ```
 
-**Response:** Streaming audio (`Content-Type: audio/mpeg`). MP3 chunks sent via chunked transfer encoding. The client can begin playback before the full response is received.
+**Response:** A complete MP3 file (`Content-Type: audio/mpeg`), not a chunked stream. The backend buffers the full Voxtral output before responding so the response works behind reverse proxies that mishandle chunked audio. Playback starts once the file has downloaded.
 
 **Headers:**
 
 ```
 Content-Type: audio/mpeg
-Transfer-Encoding: chunked
-X-TTS-Characters: 1042          // Characters sent to ElevenLabs (for cost tracking)
-X-TTS-Model: eleven_multilingual_v2
+Content-Length: <bytes>         // Size of the complete MP3
+X-TTS-Characters: 1042          // Characters sent to Voxtral (for cost tracking)
 ```
 
 **Error Responses:**
 
-| Status | Condition                                         |
-| ------ | ------------------------------------------------- |
-| 400    | Empty or missing `text`                           |
-| 429    | Rate limit exceeded or ElevenLabs quota exhausted |
-| 502    | ElevenLabs API error                              |
+| Status | Condition                                                                                                  |
+| ------ | ---------------------------------------------------------------------------------------------------------- |
+| 400    | Empty or missing `text`, `text` over 10,000 chars, or malformed `voiceId`                                  |
+| 429    | Rate limit exceeded (60 req/min)                                                                           |
+| 502    | Voxtral/Mistral upstream error (`TtsUpstreamError`); message includes Mistral's reason, e.g. unknown voice |
+| 500    | Any other failure                                                                                          |
 
 **Podcast Rewrite Flow:**
 
-When `rewrite: true` (default), the text is first sent through a lightweight LLM call that reformats it for spoken delivery. The system prompt for this rewrite:
+When `rewrite: true` (default), the text is first sent through a lightweight single-turn LLM call (`TtsService.rewriteForSpeech()`, via `LlmService`) that reformats it for spoken delivery. The system prompt lives in `apps/api/src/tts/prompts/narrator.prompt.ts` (`NARRATOR_SYSTEM_PROMPT`). In summary:
 
-```
-You are a podcast script writer. Rewrite the following text for spoken narration.
-
-Rules:
-- Remove all markdown, links, brackets, and formatting.
-- Convert "@username" to just the name spoken naturally.
-- Replace story IDs with natural references ("one popular thread", "a highly upvoted post").
-- Add brief conversational transitions between points.
-- Keep all factual claims and attributions intact.
-- Target 800-1200 characters (60-90 seconds of speech).
-- Sound like a knowledgeable tech podcast host: warm, clear, concise.
-- Do NOT add intro/outro music cues or "[pause]" markers.
-```
+- **Voice:** calm, editorial, slightly opinionated, "like a tech-savvy NPR host"; conversational but efficient.
+- **Structure:** a 1-2 sentence opening hook, a 3-6 sentence body with attributions and transitions, then a punchy closing line followed by a variant of "VoxPopuli, signing off."
+- **Fidelity rules:** no invented claims, statistics or opinions; preserve every attribution; convert markdown citations such as `[Story 12345]` into spoken references.
+- **Length:** output is capped at 2,500 characters (`MAX_NARRATION_CHARS`) before it is sent to Voxtral.
 
 ### 7.4 GET `/api/health`
 
@@ -959,11 +959,11 @@ const searchHnTool = new DynamicTool({
 
 ### 9.2 What LangChain Handles Per Provider
 
-| Provider    | Tool Format (handled by LangChain)        | Our Code                              |
-| ----------- | ----------------------------------------- | ------------------------------------- |
-| **Claude**  | `tool_use` / `tool_result` content blocks | Just provide `ChatAnthropic` instance |
-| **Mistral** | OpenAI-compatible `tool` role messages    | Just provide `ChatMistralAI` instance |
-| **Groq**    | OpenAI-compatible `tool` role messages    | Just provide `ChatGroq` instance      |
+| Provider       | Tool Format (handled by LangChain)        | Our Code                                                 |
+| -------------- | ----------------------------------------- | -------------------------------------------------------- |
+| **Claude**     | `tool_use` / `tool_result` content blocks | Just provide `ChatAnthropic` instance                    |
+| **Mistral**    | OpenAI-compatible `tool` role messages    | Just provide `ChatMistralAI` instance                    |
+| **OpenRouter** | OpenAI-compatible `tool` role messages    | Just provide `ChatOpenAI` instance (OpenRouter base URL) |
 
 LangChain's `AgentExecutor` or `createToolCallingAgent` manages the ReAct loop internally, including:
 
@@ -1016,7 +1016,7 @@ interface PipelineConfig {
 
 **Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
 
-Per-stage provider splitting (e.g., Groq for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
+Per-stage provider splitting (e.g., OpenRouter for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
 
 **SSE event protocol:**
 
@@ -1069,15 +1069,16 @@ voxpopuli/
 |   |       |   +-- providers/
 |   |       |       +-- claude.provider.ts
 |   |       |       +-- mistral.provider.ts
-|   |       |       +-- groq.provider.ts
+|   |       |       +-- openrouter.provider.ts
 |   |       +-- rag/
 |   |       |   +-- rag.module.ts
 |   |       |   +-- rag.controller.ts     # POST + SSE endpoints
 |   |       +-- tts/
 |   |       |   +-- tts.module.ts
 |   |       |   +-- tts.controller.ts     # Narrate + voices endpoints
-|   |       |   +-- tts.service.ts        # ElevenLabs + podcast rewrite
-|   |       |   +-- podcast-rewrite.prompt.ts
+|   |       |   +-- tts.service.ts        # Mistral Voxtral TTS + podcast rewrite
+|   |       |   +-- prompts/
+|   |       |       +-- narrator.prompt.ts # Podcast rewrite prompt, 2500-char cap
 |   |       +-- app/
 |   |       |   +-- app.module.ts         # Root module
 |   |       +-- main.ts
@@ -1093,7 +1094,7 @@ voxpopuli/
 |               |   +-- provider-selector/ # Switch providers in UI
 |               +-- services/
 |               |   +-- rag.service.ts
-|               |   +-- tts.service.ts     # POST to /api/tts/speak, play audio
+|               |   +-- tts.service.ts     # POST to /api/tts/narrate, play audio
 |               +-- app.component.ts
 |
 +-- libs/
@@ -1157,7 +1158,7 @@ Source: [Nx docs > Why Nx](https://nx.dev/getting-started/why-nx)
 
 ### 11.4 Why triple-stack LLM instead of one?
 
-See Section 5.1. Summary: Claude for quality, Mistral for cost, Groq for speed/dev. The provider interface adds ~200 lines of code. The savings justify it on day one.
+See Section 5.1. Summary: Claude for quality, Mistral for cost, OpenRouter (Qwen3) for speed/dev. The provider interface adds ~200 lines of code. The savings justify it on day one.
 
 ### 11.5 Why not vector embeddings?
 
@@ -1177,7 +1178,7 @@ The single ReAct agent handles retrieval, analysis, and composition in one loop.
 
 The pipeline solves this by giving each agent exactly one job, one system prompt, and one output format. The Retriever compacts raw data, so the Synthesizer never sees noise. The Synthesizer structures analysis, so the Writer never has to reason about evidence strength.
 
-**Cost impact:** Three LLM calls instead of one, but each call is smaller and more focused. With Groq (free tier) handling the Retriever and Mistral handling the Writer, only the Synthesizer uses the expensive Claude tier. Net cost is comparable to a single Claude ReAct run.
+**Cost impact:** Three LLM calls instead of one, but each call is smaller and more focused. With OpenRouter (Qwen3, ~$0.087/$0.35 per M tokens) handling the Retriever and Mistral handling the Writer, only the Synthesizer uses the expensive Claude tier. Net cost is comparable to a single Claude ReAct run.
 
 ### 11.8 Why Compaction as a Separate Step?
 
@@ -1258,7 +1259,7 @@ npx tsx evals/run-eval.ts --no-judge -n 5     # Fast mode (skip LLM-as-judge)
 npx tsx evals/run-eval.ts -C trust            # Trust queries only
 npx tsx evals/run-eval.ts -q q01              # Single query debug
 npx tsx evals/run-eval.ts --dry-run           # Preview without running
-npx tsx evals/run-eval.ts -c groq,mistral     # Compare providers
+npx tsx evals/run-eval.ts -c openrouter,mistral # Compare providers
 ```
 
 | Flag                | Default            | Description                               |
@@ -1615,6 +1616,8 @@ export interface Claim {
 
 **Revised in v1.1: Honest latency targets.**
 
+_Measured with Groq before the switch to OpenRouter (2026-09)._
+
 | Metric                  | Groq    | Mistral | Claude  |
 | ----------------------- | ------- | ------- | ------- |
 | Time to first SSE event | < 1s    | < 1.5s  | < 2s    |
@@ -1641,6 +1644,8 @@ export interface Claim {
 | Cost blowout        | Rate limiting + max 5 concurrent agent runs |
 
 ### 14.3 Cost
+
+_Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenRouter (Qwen3) per-query cost has not been measured yet; list price is ~$0.087 in / $0.35 out per M tokens._
 
 | Provider         | Est. Cost/Query | Monthly (100 queries/day)        |
 | ---------------- | --------------- | -------------------------------- |
@@ -1736,7 +1741,7 @@ export interface Claim {
 - [ ] Scheduled digests
 - [ ] Downloadable podcast episodes (batch answers into one MP3)
 - [ ] RSS podcast feed (subscribe in podcast apps)
-- [ ] Voice input (STT via Groq Whisper)
+- [ ] Voice input (STT via Mistral Voxtral transcription)
 - [ ] Two-voice dialogue mode (host + guest debating HN opinions)
 - [ ] Voice: auto-play podcast mode (toggle in settings)
 - [ ] Voice: user-selectable voice library
@@ -1753,6 +1758,8 @@ export interface Claim {
 ---
 
 ## 16. Success Metrics
+
+_Groq latency targets were set before the switch to OpenRouter (2026-09)._
 
 | Metric                   | Target                         | How to Measure              |
 | ------------------------ | ------------------------------ | --------------------------- |
@@ -1775,7 +1782,7 @@ export interface Claim {
 - Node.js >= 18
 - npm >= 9
 - At least one LLM API key:
-  - Groq (free): [console.groq.com](https://console.groq.com)
+  - OpenRouter: [openrouter.ai/keys](https://openrouter.ai/keys)
   - Mistral: [console.mistral.ai](https://console.mistral.ai)
   - Anthropic: [console.anthropic.com](https://console.anthropic.com)
 
@@ -1828,54 +1835,64 @@ npx tsx evals/run-eval.ts
 
 ---
 
-## 19. Voice Output (ElevenLabs TTS)
+## 19. Voice Output (Mistral Voxtral TTS)
 
 ### 19.1 Overview
 
-When the agent finishes an answer, users can press a Listen button to hear it narrated in a podcast-style voice. The answer is rewritten into conversational speech, sent to ElevenLabs TTS, and streamed back as audio.
+When the agent finishes an answer, users can press a Listen button to hear it narrated in a podcast-style voice. The answer is rewritten into conversational speech, sent to Mistral Voxtral TTS, and returned to the browser as a complete MP3.
 
 ### 19.2 Pipeline
 
 ```
 1. Agent produces answer (markdown text with citations)
 2. User clicks "Listen"
-3. POST /api/tts/narrate { text, sources }
-4. TtsService:
-   a) Podcast Rewrite (LLM call):
+3. POST /api/tts/narrate { text, rewrite?, voiceId? }
+4. TtsService.narrate(text, { rewrite, voiceId }):
+   a) Podcast Rewrite (rewriteForSpeech, LLM call via LlmService):
       - Strip markdown, links, code blocks
       - Convert citations to spoken references
-      - Add opening hook + sign-off ("That's the signal from HN. I'm VoxPopuli.")
+      - Add opening hook + sign-off ("VoxPopuli, signing off.")
       - Cap at 2500 characters
-   b) ElevenLabs Streaming TTS:
-      - POST /v1/text-to-speech/{voice_id}/stream
-      - Returns chunked MP3 audio
-5. Frontend: HTML5 <audio> plays as chunks arrive
+   b) Voxtral TTS (synthesize(script, voice?)):
+      - Native fetch: POST https://api.mistral.ai/v1/audio/speech
+        { model, input, voice_id, response_format: "mp3" }
+      - Response: JSON { audio_data: <base64 MP3> } (non-streaming)
+      - Decode base64 -> Buffer
+   c) Return { audio, contentType: "audio/mpeg", characterCount }
+5. Controller sends the complete MP3 (Content-Length set, no chunking)
+6. Frontend: HTML5 <audio> plays the downloaded file
 ```
 
 ### 19.3 Signature Voice
 
-**Primary: "Brian"** (voice ID: `nPczCjzI2devNBz1zQrb`)
+**Default: `en_paul_neutral`** (preset "Paul - Neutral")
 
-- Calm, steady, news-reader pacing
-- Stock voice, available on all ElevenLabs tiers (including free)
+- Relaxed, balanced, neutral delivery; US English
+- One of 30 Voxtral preset voices (e.g. `en_paul_*`, `gb_oliver_*`, `gb_jane_*`, `fr_marie_*`)
+- Override globally with `MISTRAL_TTS_VOICE`, or per request with `voiceId`
 
-**Backup: "Mattie"** (warm, conversational podcast style)
+**Available voices:** List presets with `GET https://api.mistral.ai/v1/audio/voices`. Custom voices, created by zero-shot cloning from a 2-3 second sample, are referenced by UUID. Voxtral supports 9 languages.
 
-**Voice settings:**
+**Request sent to Mistral:**
 
 ```typescript
 {
-  model_id: "eleven_multilingual_v2",
-  voice_settings: {
-    stability: 0.65,
-    similarity_boost: 0.75,
-    style: 0.35,
-    use_speaker_boost: true
-  }
+  model: "voxtral-mini-tts-latest",
+  input: script,                 // Podcast-rewritten text, <= 2500 chars
+  voice_id: "en_paul_neutral",
+  response_format: "mp3"
 }
 ```
 
-Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-speech/convert), [ElevenLabs > Streaming](https://elevenlabs.io/docs/api-reference/streaming)
+**Output:** 22.05 kHz mono MP3.
+
+**Measured performance:**
+
+| Input                                                 | Audio length | MP3 size | Time   |
+| ----------------------------------------------------- | ------------ | -------- | ------ |
+| Short line                                            | --           | --       | ~0.6 s |
+| 2,500-char script                                     | ~108 s       | ~960 KB  | ~10 s  |
+| Full `/api/tts/narrate` (short answer, incl. rewrite) | --           | --       | ~4 s   |
 
 ### 19.4 API Endpoints
 
@@ -1884,14 +1901,25 @@ Source: [ElevenLabs > TTS API](https://elevenlabs.io/docs/api-reference/text-to-
 Request:
 
 ```typescript
-{ text: string; sources?: AgentSource[]; format?: string; }
+{ text: string; rewrite?: boolean; voiceId?: string; }
 ```
 
-Response: `Content-Type: audio/mpeg` (chunked MP3 stream)
+Response: complete MP3 with headers `Content-Type: audio/mpeg`, `Content-Length`, and `X-TTS-Characters`. The audio is buffered rather than chunked for reverse-proxy compatibility.
 
-Errors: 400 (empty/too long text), 429 (credit exhaustion), 502 (ElevenLabs failure)
+Errors:
 
-**GET `/api/tts/voices`** -- Returns active narrator info.
+- 400: empty text, text over 10,000 chars, or `voiceId` not matching `/^[A-Za-z0-9_-]{1,64}$/`
+- 429: rate limit (60 req/min)
+- 502: Voxtral/Mistral upstream error (`TtsUpstreamError`); the message includes Mistral's reason, e.g. unknown voice
+- 500: other failures
+
+See Section 7.3 for the full request/response reference.
+
+**GET `/api/tts/voices`** -- Returns the active narrator as a `VoiceConfig`:
+
+```json
+{ "id": "en_paul_neutral", "name": "en_paul_neutral", "model": "voxtral-mini-tts-latest" }
+```
 
 ### 19.5 Podcast Rewrite Example
 
@@ -1912,12 +1940,12 @@ The reception has been broadly positive. A highly upvoted post by swyx,
 with over 340 points, praised the new Oxide engine for some serious
 speed improvements. But not everyone's on board. A commenter named
 tptacek argued that utility-first CSS creates maintenance debt at scale.
-That's the signal from Hacker News. I'm VoxPopuli.
+That's the signal from Hacker News. VoxPopuli, signing off.
 ```
 
 ### 19.6 Frontend: Audio Player
 
-States: IDLE (Listen button) -> LOADING -> STREAMING (playing) -> PAUSED -> COMPLETE (listen again + download)
+States: `idle` (Listen button) -> `loading` -> `playing` -> `paused` -> `complete` (listen again + download), plus `error`.
 
 Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download MP3.
 
@@ -1926,9 +1954,10 @@ Controls: play/pause, progress bar, speed (0.75x / 1x / 1.25x / 1.5x), download 
 ```
 TtsModule
 +-- TtsService
-|   +-- narrate(text, sources) -> ReadableStream<Buffer>
-|   +-- rewriteForSpeech(text, sources) -> string (LLM call)
-|   +-- streamAudio(script) -> ReadableStream<Buffer> (ElevenLabs)
+|   +-- narrate(text, { rewrite?, voiceId? })
+|   |     -> { audio: Buffer, contentType: 'audio/mpeg', characterCount }
+|   +-- rewriteForSpeech(text) -> string (LLM call via LlmService)
+|   +-- synthesize(script, voice?) -> Buffer (Mistral Voxtral, native fetch)
 +-- TtsController
     +-- POST /api/tts/narrate
     +-- GET  /api/tts/voices
@@ -1936,35 +1965,28 @@ TtsModule
 
 ### 19.8 New Dependencies and Config
 
-```bash
-npm install elevenlabs
-```
+No new npm dependency. `TtsService` calls the Mistral speech endpoint with Node's native `fetch`. (The `elevenlabs` package used by the earlier implementation was removed.)
 
 ```env
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=nPczCjzI2devNBz1zQrb
-ELEVENLABS_MODEL=eleven_multilingual_v2
+MISTRAL_API_KEY=...                         # Same key as the Mistral LLM provider
+MISTRAL_TTS_MODEL=voxtral-mini-tts-latest   # Optional, this is the default
+MISTRAL_TTS_VOICE=en_paul_neutral           # Optional, this is the default
 ```
 
 ### 19.9 Cost Impact
 
-Per narration: ~$0.001 (LLM rewrite) + 1500-2500 ElevenLabs credits.
-
-| Usage (assuming 30% of queries use Listen) | Plan Needed      | Monthly Cost |
-| ------------------------------------------ | ---------------- | ------------ |
-| 20 queries/day, 6 narrations/day           | Starter ($5/mo)  | $5/mo        |
-| 50 queries/day, 15 narrations/day          | Creator ($22/mo) | $22/mo       |
-| 100 queries/day, 30 narrations/day         | Pro ($99/mo)     | $99/mo       |
+Per narration: one small LLM rewrite call plus Voxtral usage for up to 2,500 script characters. Voxtral usage is billed per [Mistral pricing](https://mistral.ai/pricing); there is no separate TTS subscription or credit plan.
 
 ### 19.10 Risks
 
-| Risk                         | Mitigation                                              |
-| ---------------------------- | ------------------------------------------------------- |
-| ElevenLabs cold start (2-4s) | Show "Preparing narration..." loading state             |
-| Credit exhaustion            | Disable Listen button, show "Voice credits used up"     |
-| Rewrite hallucination        | Eval check: compare rewrite against original answer     |
-| Long answers (>3000 chars)   | Chunk with `previous_request_id` for prosody continuity |
-| Voice removed from library   | Fallback voice in config (Mattie)                       |
+| Risk                                       | Mitigation                                                                             |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Generation latency (~10 s for 2,500 chars) | Show "Preparing narration..." loading state                                            |
+| No streaming playback                      | Full MP3 is buffered; acceptable at ~1 MB max per narration                            |
+| Mistral upstream error or quota issue      | Surface as 502 with Mistral's reason; player shows error state                         |
+| Rewrite hallucination                      | Eval check: compare rewrite against original answer                                    |
+| Long answers                               | Rewrite caps script at 2,500 chars; input text capped at 10,000                        |
+| Unknown or removed voice ID                | 502 with Mistral's reason; unset `MISTRAL_TTS_VOICE` to fall back to `en_paul_neutral` |
 
 ---
 

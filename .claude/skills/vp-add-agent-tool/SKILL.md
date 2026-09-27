@@ -1,114 +1,106 @@
 ---
 name: vp-add-agent-tool
-description: Use when adding a new tool to the VoxPopuli ReAct agent - covers tool() definition with Zod schema, HnService integration, chunker output formatting, and test patterns
+description: Use when adding or changing a tool the VoxPopuli ReAct agent or pipeline Retriever can call (search_hn, get_story, get_comments, or a new one), or when agent runs fail with "Received tool input did not match expected schema" or hit the step limit repeating the same tool call
 ---
 
 # Add Agent Tool (VoxPopuli)
 
 ## Overview
 
-Pattern for adding a new tool that the ReAct agent can invoke during its reasoning loop. Tools wrap HnService methods using LangChain's `tool()` helper with Zod-validated input schemas.
-
-## When to Use
-
-- Adding new data retrieval capabilities to the agent
-- Extending the agent's tool set beyond `search_hn`, `get_story`, `get_comments`
-- **Not for:** modifying the agent loop itself, LLM provider changes, frontend work
-
-## Tool Architecture
+Tools wrap `HnService` methods with LangChain's `tool()` helper and a Zod schema. One tool set serves **both** agent paths, so a tool is only "added" when both prompts describe it and its schema accepts what real models send.
 
 ```
-AgentService (createAgent from 'langchain')
-  └── StructuredToolInterface[]
-        ├── search_hn    → HnService.search() → ChunkerService.chunkStories()
-        ├── get_story    → HnService.getItem() → ChunkerService formatting
-        └── get_comments → HnService.getCommentTree() → ChunkerService.chunkComments()
+createAgentTools() (apps/api/src/agent/tools.ts)
+  ├── AgentService           legacy ReAct loop  → prompt: agent/system-prompt.ts
+  └── OrchestratorService    pipeline Retriever → prompt: agent/prompts/retriever.prompt.ts
 ```
 
-LangChain handles tool protocol translation per provider (tool_use blocks for Claude, tool role for Mistral/OpenRouter). We define tools once.
+## Schema Pattern
 
-## Implementation Pattern
-
-Tools are defined in `apps/api/src/agent/tools.ts` using the `tool()` helper from `langchain`:
+Open-weight models served via OpenRouter often send numbers as strings (`"min_points":"10"`). A plain `z.number()` rejects them; the agent retries the same bad call until it hits the 7-step limit and returns a partial answer. Use `z.coerce.number()` for every numeric field. The JSON schema the model sees still says `number`.
 
 ```typescript
 import { tool } from 'langchain';
 import { z } from 'zod';
-import type { StructuredToolInterface } from '@langchain/core/tools';
 
-export function createMyNewTool(hn: HnService, chunker: ChunkerService): StructuredToolInterface {
+export function createGetUserTool(hn: HnService, chunker: ChunkerService): StructuredToolInterface {
   return tool(
-    async (input: { query: string; limit?: number }): Promise<string> => {
-      const results = await hn.search(input.query, { hitsPerPage: input.limit });
-      const chunks = chunker.chunkStories(results.hits);
-      const context = chunker.buildContext(chunks, [], Infinity);
+    async (input: { username: string; max_items?: number }): Promise<string> => {
+      const stories = await hn.getUserSubmissions(input.username, input.max_items ?? 10);
+      const context = chunker.buildContext(chunker.chunkStories(stories), [], Infinity);
       return chunker.formatForPrompt(context);
     },
     {
-      name: 'my_new_tool',
-      description: 'What this tool does (LLM reads this to decide when to use it)',
+      name: 'get_user',
+      description:
+        'Fetch an HN user profile and recent submissions. Use for questions about a specific user.',
       schema: z.object({
-        query: z.string().describe('Search query'),
-        limit: z.number().min(1).max(20).optional().describe('Max results'),
+        username: z.string().describe('HN username'),
+        max_items: z.coerce
+          .number()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe('Submissions to return (1-50, default 10)'),
       }),
     },
   );
 }
 ```
 
-**Important:** Use `tool()` from `langchain`, NOT `new DynamicTool()` from `@langchain/core/tools`. The `DynamicTool` class expects `func(input: string)` which causes TypeScript errors with Zod schemas. The `tool()` helper correctly types the function input.
+Use `tool()` from `langchain`, not `new DynamicTool()` (its `func(input: string)` signature breaks Zod typing).
 
-## Adding a New Tool
+## Files to Touch
 
-1. Add the factory function to `apps/api/src/agent/tools.ts`
-2. Add it to the `createAgentTools()` array at the bottom of the file
-3. Update the system prompt in `apps/api/src/agent/system-prompt.ts` to mention the new tool
-4. Update `apps/api/src/agent/trust.ts` if the tool produces data relevant to trust scoring (dates, source IDs)
-5. Add tests
+1. `apps/api/src/agent/tools.ts`: factory, plus an entry in `createAgentTools()`
+2. `apps/api/src/agent/system-prompt.ts`: tool line for the legacy agent
+3. `apps/api/src/agent/prompts/retriever.prompt.ts`: tool line for the pipeline (**the default path**)
+4. `apps/api/src/hn/hn.service.ts`: new data method, via `CacheService.getOrSet()`
+5. `apps/api/src/agent/trust.ts`: only if the output carries dates or story IDs used for trust scoring
+6. `apps/api/src/agent/tools.spec.ts`: tests below
 
-## Key Rules
+## Testing
 
-| Rule                                   | Why                                                            |
-| -------------------------------------- | -------------------------------------------------------------- |
-| Zod schema on every tool               | LangChain generates JSON schema from it for tool_call protocol |
-| `.describe()` on every Zod field       | LLM needs descriptions to use tools correctly                  |
-| Return chunked string, not raw JSON    | Agent reads the output as text in its reasoning                |
-| Route through ChunkerService           | Ensures token counting and HTML stripping                      |
-| Pass `Infinity` budget to buildContext | Token budgeting happens at the agent level, not per tool       |
-| Cache-aware via HnService              | HnService already wraps calls in CacheService                  |
-| Respect 30-comment cap                 | `getCommentTree` has a max, don't override                     |
-
-## Testing Tools
+`tools.spec.ts` mocks `tool()`, so `tool.invoke()` calls your function **directly and skips the schema**. Test the schema explicitly:
 
 ```typescript
-// Mock HnService and ChunkerService
-const mockHnService = { search: jest.fn().mockResolvedValue({ hits: [...] }) };
-const mockChunkerService = {
-  chunkStories: jest.fn().mockReturnValue([...]),
-  buildContext: jest.fn().mockReturnValue({ stories: [], comments: [], totalTokens: 0, truncated: false }),
-  formatForPrompt: jest.fn().mockReturnValue('formatted output'),
-};
+it('coerces numeric strings sent by some models', () => {
+  const parsed = userTool.schema.parse({ username: 'pg', max_items: '25' });
+  expect(parsed.max_items).toBe(25);
+});
 
-// Test tool invocation via the factory function
-const tool = createMyNewTool(mockHnService as any, mockChunkerService as any);
-const result = await tool.invoke({ query: 'rust vs go' });
-expect(mockHnService.search).toHaveBeenCalledWith('rust vs go', expect.any(Object));
+it('advertises numeric params as numbers', () => {
+  const json = toJsonSchema(userTool.schema) as { properties: Record<string, { type?: string }> };
+  expect(json.properties['max_items'].type).toBe('number'); // from '@langchain/core/utils/json_schema'
+});
 ```
 
-**Jest ESM note:** Test files that import from AgentService or tools must mock the LLM providers to avoid ESM resolution failures:
+Spec files that reach `AgentService`/`LlmService` must mock the providers (Jest can't load `@langchain/*` ESM):
 
 ```typescript
 jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
-jest.mock('langchain', () => ({ createAgent: jest.fn(), tool: jest.fn() }));
 ```
+
+## Quick Reference
+
+| Rule                                     | Why                                                             |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| `z.coerce.number()` for numbers          | Models send `"10"`; plain `z.number()` burns agent steps        |
+| `.describe()` on every field             | The LLM picks arguments from these descriptions                 |
+| Return chunked text via `ChunkerService` | The agent reasons over text; chunker strips HTML, counts tokens |
+| `buildContext(..., Infinity)`            | Budgeting happens per agent, not per tool                       |
+| Data access through `HnService`          | It already caches; respect the 30-comment cap                   |
+
+## Verify With a Real Model
+
+Unit tests can't show how a model calls the tool. Run one query end-to-end on the OpenRouter provider (see vp-e2e-verify) and grep the API log for `did not match expected schema`. There should be zero hits. Failed calls appear as observations starting `Error invoking tool`; `partial-response.ts` filters these out of user-facing answers, so they won't show up in the UI.
 
 ## Common Mistakes
 
-- Using `new DynamicTool()` instead of `tool()` (TypeScript type errors with schemas)
-- Returning raw API responses instead of chunked/formatted text
-- Not adding Zod `.describe()` on parameters (LLM needs descriptions to use tools correctly)
-- Calling LLM provider SDKs directly instead of going through LangChain tool protocol
-- Forgetting to update the system prompt when adding a new tool
-- Hardcoding token budgets instead of passing `Infinity` (budgeting is per-agent, not per-tool)
+- `z.number()` instead of `z.coerce.number()`
+- Updating `system-prompt.ts` but not `retriever.prompt.ts`, so the pipeline never uses the tool
+- Testing only through `tool.invoke()`, which skips the schema in this repo's mocked setup
+- Testing a re-declared copy of the schema; test the factory's own `tool.schema` so the test breaks when the tool changes
+- Returning raw API JSON instead of chunked, formatted text

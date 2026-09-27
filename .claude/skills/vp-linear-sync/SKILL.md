@@ -7,7 +7,7 @@ description: Use when starting work on VoxPopuli issues, querying milestone stat
 
 ## Overview
 
-Patterns for working with Linear issues in the VoxPopuli project. The project uses Linear for all issue tracking with a milestone-based structure (M1-M6).
+Patterns for working with Linear issues in the VoxPopuli project. The project uses Linear for all issue tracking with a milestone-based structure (M1, M2, … — currently past M8; list milestones rather than assuming the range).
 
 ## When to Use
 
@@ -76,4 +76,4 @@ Use parallel tool calls when closing multiple issues.
 - Searching by keyword instead of listing by project + filtering by milestone
 - Forgetting to close epic issues after all children are done
 - Not fetching full issue descriptions (list results truncate at ~200 chars)
-- Updating issues before code actually passes tests
+- Updating issues before code actually passes the vp-complete-milestone verify step

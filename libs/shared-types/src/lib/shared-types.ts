@@ -88,20 +88,14 @@ export interface RewriteTrustMetadata {
   toneAlignment: number;
 }
 
-/** ElevenLabs voice generation settings. */
-export interface VoiceSettings {
-  stability: number;
-  similarityBoost: number;
-  style: number;
-  useSpeakerBoost: boolean;
-}
-
-/** Configuration for an ElevenLabs voice. */
+/** Narration voice configuration (Mistral Voxtral TTS). */
 export interface VoiceConfig {
+  /** Active Voxtral voice id: a preset slug (e.g. "en_paul_neutral") or custom voice UUID. */
   id: string;
+  /** Display name of the active voice. */
   name: string;
+  /** Voxtral TTS model, e.g. "voxtral-mini-tts-latest". */
   model: string;
-  settings: VoiceSettings;
 }
 
 /** A single claim extracted from source material. */

@@ -1,54 +1,92 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Readable } from 'node:stream';
-import { ElevenLabsClient } from 'elevenlabs';
 import { LlmService } from '../llm/llm.service';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { NARRATOR_SYSTEM_PROMPT, MAX_NARRATION_CHARS } from './prompts/narrator.prompt';
-import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
+import {
+  MISTRAL_API_BASE_URL,
+  MISTRAL_TTS_DEFAULT_VOICE,
+  MISTRAL_TTS_MODEL_ID,
+} from '../llm/model-ids';
 
+/** Upper bound for a single speech synthesis request. */
+const TTS_TIMEOUT_MS = 60_000;
+
+/** Content type of the audio returned by {@link TtsService.synthesize}. */
+export const TTS_CONTENT_TYPE = 'audio/mpeg';
+
+/** Failure reported by (or while talking to) the upstream TTS service. */
+export class TtsUpstreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TtsUpstreamError';
+  }
+}
+
+/** Synthesised narration audio. */
+export interface NarrationAudio {
+  audio: Buffer;
+  contentType: string;
+  characterCount: number;
+}
+
+/** Fields we read from a Mistral `/audio/speech` JSON response (success or error). */
+interface SpeechResponseBody {
+  audio_data?: string;
+  message?: string;
+  detail?: unknown;
+}
+
+/**
+ * Narration via Mistral Voxtral text-to-speech.
+ *
+ * Text is optionally rewritten into a podcast script by the active LLM, then
+ * spoken by Voxtral (`MISTRAL_TTS_MODEL`, default `voxtral-mini-tts-latest`)
+ * using `MISTRAL_API_KEY`. The API returns base64 MP3 in a JSON body.
+ */
 @Injectable()
 export class TtsService {
   private readonly logger = new Logger(TtsService.name);
-  private readonly client: ElevenLabsClient;
-  private readonly voiceId: string;
+  private readonly apiKey: string | undefined;
   private readonly model: string;
+  private readonly voice: string;
 
   constructor(
     private readonly llmService: LlmService,
     private readonly configService: ConfigService,
   ) {
-    this.client = new ElevenLabsClient({
-      apiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
-    });
-    this.voiceId = this.configService.get<string>(
-      'ELEVENLABS_VOICE_ID',
-      ELEVENLABS_DEFAULT_VOICE_ID,
-    );
-    this.model = this.configService.get<string>('ELEVENLABS_MODEL', ELEVENLABS_MODEL_ID);
+    this.apiKey = this.configService.get<string>('MISTRAL_API_KEY');
+    this.model = this.configService.get<string>('MISTRAL_TTS_MODEL', MISTRAL_TTS_MODEL_ID);
+    this.voice = this.configService.get<string>('MISTRAL_TTS_VOICE', MISTRAL_TTS_DEFAULT_VOICE);
   }
 
   /**
-   * Full narration pipeline: optionally rewrite text, then stream audio.
+   * Full narration pipeline: optionally rewrite text, then synthesise audio.
+   *
+   * @param text    - Answer text to narrate
+   * @param options - `rewrite` (default true) and an optional `voiceId` override
+   * @returns MP3 audio plus the number of characters spoken
    */
   async narrate(
     text: string,
     options?: { rewrite?: boolean; voiceId?: string },
-  ): Promise<{ stream: Readable; characterCount: number }> {
+  ): Promise<NarrationAudio> {
     const shouldRewrite = options?.rewrite !== false;
     const script = shouldRewrite
       ? await this.rewriteForSpeech(text)
       : text.slice(0, MAX_NARRATION_CHARS);
-    const voiceId = options?.voiceId ?? this.voiceId;
 
     this.logger.log(`Narrating ${script.length} chars (rewrite=${shouldRewrite})`);
 
-    const stream = await this.streamAudio(script, voiceId);
-    return { stream, characterCount: script.length };
+    const audio = await this.synthesize(script, options?.voiceId);
+    return { audio, contentType: TTS_CONTENT_TYPE, characterCount: script.length };
   }
 
   /**
    * Single-turn LLM call to transform answer text into a podcast narration script.
+   *
+   * @param text - Answer text
+   * @returns Narration script, capped at MAX_NARRATION_CHARS
    */
   async rewriteForSpeech(text: string): Promise<string> {
     const chatModel = this.llmService.getModel();
@@ -70,28 +108,48 @@ export class TtsService {
   }
 
   /**
-   * Stream audio from ElevenLabs TTS API.
+   * Speak a script with Voxtral and return MP3 audio.
    *
-   * The ElevenLabs SDK returns a Web ReadableStream (not a Node.js Readable),
-   * so we convert it via Readable.fromWeb() for NestJS response piping.
+   * @param script - Text to speak
+   * @param voice  - Voice override: preset slug or custom voice id (defaults to MISTRAL_TTS_VOICE)
+   * @returns MP3 audio buffer
+   * @throws TtsUpstreamError if Mistral rejects the request or returns no audio
    */
-  async streamAudio(script: string, voiceId?: string): Promise<Readable> {
-    const webStream = await this.client.textToSpeech.convertAsStream(voiceId ?? this.voiceId, {
-      text: script,
-      model_id: this.model,
-      voice_settings: {
-        stability: 0.65,
-        similarity_boost: 0.75,
-        style: 0.35,
-        use_speaker_boost: true,
+  async synthesize(script: string, voice?: string): Promise<Buffer> {
+    if (!this.apiKey) {
+      throw new Error('MISTRAL_API_KEY is required for text-to-speech');
+    }
+
+    const response = await fetch(`${MISTRAL_API_BASE_URL}/audio/speech`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        model: this.model,
+        input: script,
+        voice_id: voice ?? this.voice,
+        response_format: 'mp3',
+      }),
+      signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     });
 
-    // SDK returns Web ReadableStream at runtime despite Node.js Readable type signature;
-    // convert to Node.js Readable for .pipe() compatibility with NestJS response streaming.
-    if (webStream instanceof Readable) {
-      return webStream;
+    const raw = await response.text();
+    let body: SpeechResponseBody = {};
+    try {
+      body = JSON.parse(raw) as SpeechResponseBody;
+    } catch {
+      // Non-JSON body (e.g. gateway error page) — reported below.
     }
-    return Readable.fromWeb(webStream as unknown as import('node:stream/web').ReadableStream);
+
+    if (!response.ok) {
+      const reason = body.message ?? (body.detail ? JSON.stringify(body.detail) : raw);
+      throw new TtsUpstreamError(`Mistral TTS request failed (${response.status}): ${reason}`);
+    }
+    if (!body.audio_data) {
+      throw new TtsUpstreamError('Mistral TTS returned no audio');
+    }
+    return Buffer.from(body.audio_data, 'base64');
   }
 }
