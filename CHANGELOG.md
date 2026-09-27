@@ -4,6 +4,10 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Brand favicon and app icons** — Replaces the Nx scaffold favicon with a VoxPopuli mark (amber "V" and masthead rule on the navy surface): `favicon.svg`, a multi-size `favicon.ico` (16/32/48), `apple-touch-icon.png`, 192/512 PNG icons, and a `site.webmanifest`.
+
 ### Changed
 
 - **ElevenLabs replaced by Mistral Voxtral TTS** — Narration audio now comes from Voxtral (`voxtral-mini-tts-latest`, preset voice `en_paul_neutral`) via `POST https://api.mistral.ai/v1/audio/speech` using the existing `MISTRAL_API_KEY`; still returned as MP3 (`audio/mpeg`), so the frontend is unchanged. Configure with `MISTRAL_TTS_MODEL` / `MISTRAL_TTS_VOICE`; `ELEVENLABS_*` env vars and the `elevenlabs` package are removed. `POST /api/tts/narrate` rejects malformed `voiceId`s with 400 and maps Voxtral failures to 502 with the upstream reason; `GET /api/tts/voices` returns `{ id, name, model }` (ElevenLabs `VoiceSettings` removed). A 2,500-character script (the narration cap) produces about 108 s of audio in about 10 s.
