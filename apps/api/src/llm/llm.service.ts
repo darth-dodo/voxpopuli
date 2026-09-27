@@ -20,6 +20,15 @@ const PROVIDER_FACTORIES: Record<ProviderName, ProviderFactory> = {
 };
 
 /**
+ * Deprecated provider names mapped to their replacements. Keeps deployments
+ * with a stale `LLM_PROVIDER` (e.g. a shared Render env group) and cached
+ * frontends that still send `provider=groq` working after a rename.
+ */
+const PROVIDER_ALIASES: Record<string, ProviderName> = {
+  groq: 'openrouter',
+};
+
+/**
  * Facade service that resolves the active LLM provider based on the
  * `LLM_PROVIDER` environment variable and exposes its LangChain ChatModel.
  *
@@ -33,7 +42,9 @@ export class LlmService {
   private readonly providers = new Map<string, LlmProviderInterface>();
 
   constructor(private readonly config: ConfigService) {
-    const providerName = this.config.get<string>('LLM_PROVIDER', 'mistral');
+    const providerName = this.normalizeProviderName(
+      this.config.get<string>('LLM_PROVIDER', 'mistral'),
+    );
 
     if (!this.isValidProvider(providerName)) {
       throw new Error(
@@ -56,7 +67,9 @@ export class LlmService {
    * @throws Error if the provider name is unknown or the required API key is missing
    */
   getModel(providerOverride?: string): BaseChatModel {
-    const name = providerOverride ?? this.activeProvider;
+    const name = providerOverride
+      ? this.normalizeProviderName(providerOverride)
+      : this.activeProvider;
     return this.resolveProvider(name).getModel();
   }
 
@@ -69,7 +82,9 @@ export class LlmService {
    * @throws Error if the provider name is unknown
    */
   getMaxContextTokens(providerOverride?: string): number {
-    const name = providerOverride ?? this.activeProvider;
+    const name = providerOverride
+      ? this.normalizeProviderName(providerOverride)
+      : this.activeProvider;
     return this.resolveProvider(name).maxContextTokens;
   }
 
@@ -105,6 +120,19 @@ export class LlmService {
       this.providers.set(name, provider);
     }
     return provider;
+  }
+
+  /**
+   * Map a deprecated provider name to its replacement, logging a warning.
+   * Unknown names pass through unchanged so validation can reject them.
+   */
+  private normalizeProviderName(name: string): string {
+    const replacement = PROVIDER_ALIASES[name];
+    if (!replacement) return name;
+    this.logger.warn(
+      `LLM provider "${name}" is deprecated; using "${replacement}". Update LLM_PROVIDER / provider params.`,
+    );
+    return replacement;
   }
 
   /** Type-guard that narrows an arbitrary string to a valid ProviderName. */
