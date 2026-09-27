@@ -77,19 +77,19 @@ The pipeline falls back to a single-agent ReAct loop on failure, preserving accu
 
 ## Architecture
 
-| Layer        | Technology                                                                    |
-| ------------ | ----------------------------------------------------------------------------- |
-| Monorepo     | Nx                                                                            |
-| Backend      | NestJS 11 (TypeScript, module-per-domain DI)                                  |
-| Frontend     | Angular 21 (standalone components, signals, Tailwind CSS v4)                  |
-| LLM          | Claude / Mistral / OpenRouter via LangChain.js facade                         |
-| Pipeline     | LangGraph StateGraph with per-stage retry and fallback                        |
-| Streaming    | SSE for live progress + QueryStore for result persistence and reconnect       |
-| Caching      | LRU cache (in-memory, TTL-based) with query deduplication                     |
-| Data         | HN Algolia API (search) + Firebase API (items/comments)                       |
-| Eval         | Custom 5-evaluator harness + LangSmith tracing                                |
-| TTS          | OpenRouter audio output (`gpt-audio-mini`) with LLM-rewritten podcast scripts |
-| Shared types | `@voxpopuli/shared-types` consumed by both apps                               |
+| Layer        | Technology                                                                     |
+| ------------ | ------------------------------------------------------------------------------ |
+| Monorepo     | Nx                                                                             |
+| Backend      | NestJS 11 (TypeScript, module-per-domain DI)                                   |
+| Frontend     | Angular 21 (standalone components, signals, Tailwind CSS v4)                   |
+| LLM          | Claude / Mistral / OpenRouter via LangChain.js facade                          |
+| Pipeline     | LangGraph StateGraph with per-stage retry and fallback                         |
+| Streaming    | SSE for live progress + QueryStore for result persistence and reconnect        |
+| Caching      | LRU cache (in-memory, TTL-based) with query deduplication                      |
+| Data         | HN Algolia API (search) + Firebase API (items/comments)                        |
+| Eval         | Custom 5-evaluator harness + LangSmith tracing                                 |
+| TTS          | Mistral Voxtral (`voxtral-mini-tts-latest`) with LLM-rewritten podcast scripts |
+| Shared types | `@voxpopuli/shared-types` consumed by both apps                                |
 
 ### Key Design Decisions
 
@@ -128,7 +128,7 @@ See [docs/architecture.md](docs/architecture.md) for the full technical blueprin
 | M2: LLM & Chunker          | Done   | Triple-stack LLM providers, token budgeting                            |
 | M3: Agent Core             | Done   | ReAct agent, RAG endpoints, trust framework                            |
 | M4: Frontend               | Done   | Chat UI, real-time streaming, design system                            |
-| M5: Voice Output           | Done   | Podcast-style narration (ElevenLabs, now OpenRouter audio)             |
+| M5: Voice Output           | Done   | Podcast-style narration (ElevenLabs, now Mistral Voxtral)              |
 | M6: Eval Harness           | Done   | 27 queries, 5 evaluators, LangSmith integration                        |
 | M7: Deploy & Observability | ~87%   | Docker, Render, CORS, structured logging                               |
 | M8: Multi-Agent Pipeline   | Done   | LangGraph StateGraph, per-stage retry, circuit breaker, step streaming |

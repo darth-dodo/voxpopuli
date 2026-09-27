@@ -7,29 +7,29 @@
 
 ## 1. Project Overview
 
-VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns Hacker News into a queryable knowledge base. A user submits a natural-language question; an autonomous research agent searches HN stories via Algolia, crawls comment threads from the Firebase API, reasons about the retrieved content through a ReAct loop, and delivers a sourced, synthesized answer. The system supports three LLM providers (Claude, Mistral, Groq), includes a voice-output layer via OpenRouter audio output, and exposes full transparency into the agent's reasoning steps. The default execution path is the LangGraph multi-agent pipeline (Retriever -> Synthesizer -> Writer), which produces structured editorial responses with per-stage retry and fallback. The legacy single-agent ReAct loop remains available via the `useMultiAgent=false` query parameter but is no longer the primary path. The default LLM provider is Mistral.
+VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns Hacker News into a queryable knowledge base. A user submits a natural-language question; an autonomous research agent searches HN stories via Algolia, crawls comment threads from the Firebase API, reasons about the retrieved content through a ReAct loop, and delivers a sourced, synthesized answer. The system supports three LLM providers (Claude, Mistral, Groq), includes a voice-output layer via Mistral Voxtral TTS, and exposes full transparency into the agent's reasoning steps. The default execution path is the LangGraph multi-agent pipeline (Retriever -> Synthesizer -> Writer), which produces structured editorial responses with per-stage retry and fallback. The legacy single-agent ReAct loop remains available via the `useMultiAgent=false` query parameter but is no longer the primary path. The default LLM provider is Mistral.
 
 ---
 
 ## 2. Tech Stack
 
-| Layer           | Technology              | Role                                                    |
-| --------------- | ----------------------- | ------------------------------------------------------- |
-| Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph |
-| Backend         | NestJS 11+              | API framework with module-based DI                      |
-| Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4    |
-| LLM (quality)   | Claude Haiku 4.5        | Anthropic SDK via LangChain `@langchain/anthropic`      |
-| LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`        |
-| LLM (speed)     | OpenRouter Qwen3 32B    | OpenAI-compatible via LangChain `@langchain/openai`     |
-| Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas         |
-| TTS             | OpenRouter audio output | `openai/gpt-audio-mini`, podcast-style narration (WAV)  |
-| Cache           | node-cache              | In-memory TTL cache with typed get/set                  |
-| Shared types    | TypeScript lib          | `@voxpopuli/shared-types` consumed by both apps         |
-| Logging         | Pino (nestjs-pino)      | Structured JSON logging, pretty-print in dev            |
-| Validation      | class-validator + Zod   | Environment validation + agent tool schemas             |
-| HTTP client     | @nestjs/axios           | Algolia and Firebase API calls with retry + backoff     |
-| Package manager | pnpm                    | Workspace-aware dependency management                   |
-| CI              | GitHub Actions          | Lint and test on affected projects                      |
+| Layer           | Technology              | Role                                                     |
+| --------------- | ----------------------- | -------------------------------------------------------- |
+| Monorepo        | Nx                      | Workspace orchestration, task running, dependency graph  |
+| Backend         | NestJS 11+              | API framework with module-based DI                       |
+| Frontend        | Angular 17+             | SPA with standalone components, signals, Tailwind v4     |
+| LLM (quality)   | Claude Haiku 4.5        | Anthropic SDK via LangChain `@langchain/anthropic`       |
+| LLM (cost)      | Mistral Large 3         | Mistral SDK via LangChain `@langchain/mistralai`         |
+| LLM (speed)     | OpenRouter Qwen3 32B    | OpenAI-compatible via LangChain `@langchain/openai`      |
+| Agent           | LangChain `createAgent` | ReAct loop with `tool()` helper and Zod schemas          |
+| TTS             | Mistral Voxtral         | `voxtral-mini-tts-latest`, podcast-style narration (MP3) |
+| Cache           | node-cache              | In-memory TTL cache with typed get/set                   |
+| Shared types    | TypeScript lib          | `@voxpopuli/shared-types` consumed by both apps          |
+| Logging         | Pino (nestjs-pino)      | Structured JSON logging, pretty-print in dev             |
+| Validation      | class-validator + Zod   | Environment validation + agent tool schemas              |
+| HTTP client     | @nestjs/axios           | Algolia and Firebase API calls with retry + backoff      |
+| Package manager | pnpm                    | Workspace-aware dependency management                    |
+| CI              | GitHub Actions          | Lint and test on affected projects                       |
 
 ---
 
@@ -299,14 +299,14 @@ All providers implement `LlmProviderInterface` with three members: `name`, `maxC
 
 ### 5.8 ConfigModule (`apps/api/src/config/`)
 
-| Attribute          | Value                                                                                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Purpose            | Environment variable validation at application startup                                                                                        |
-| Key export         | `validate()` function used by `ConfigModule.forRoot()`                                                                                        |
-| Validation library | `class-validator` + `class-transformer`                                                                                                       |
-| Key class          | `EnvironmentVariables` with decorated fields                                                                                                  |
-| Required vars      | `LLM_PROVIDER` (default: `mistral`)                                                                                                           |
-| Optional vars      | `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_TTS_MODEL`, `OPENROUTER_TTS_VOICE`, `PORT`, `LOG_LEVEL`, `NODE_ENV` |
+| Attribute          | Value                                                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose            | Environment variable validation at application startup                                                                                  |
+| Key export         | `validate()` function used by `ConfigModule.forRoot()`                                                                                  |
+| Validation library | `class-validator` + `class-transformer`                                                                                                 |
+| Key class          | `EnvironmentVariables` with decorated fields                                                                                            |
+| Required vars      | `LLM_PROVIDER` (default: `mistral`)                                                                                                     |
+| Optional vars      | `OPENROUTER_API_KEY`, `MISTRAL_API_KEY`, `ANTHROPIC_API_KEY`, `MISTRAL_TTS_MODEL`, `MISTRAL_TTS_VOICE`, `PORT`, `LOG_LEVEL`, `NODE_ENV` |
 
 ### 5.9 AppModule (`apps/api/src/app/`)
 
@@ -424,17 +424,17 @@ All pipeline types use Zod schemas with runtime validation and inferred TypeScri
 
 ### Environment Variables
 
-| Variable               | Required                 | Default                 | Purpose                                                                                                                                                                            |
-| ---------------------- | ------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LLM_PROVIDER`         | Yes                      | `mistral`               | Active LLM provider (`openrouter`, `claude`, or `mistral`). Note: the frontend provider selector defaults to `mistral`, which overrides this server-side default for SSE requests. |
-| `OPENROUTER_API_KEY`   | When provider=openrouter | --                      | OpenRouter API authentication                                                                                                                                                      |
-| `MISTRAL_API_KEY`      | When provider=mistral    | --                      | Mistral API authentication                                                                                                                                                         |
-| `ANTHROPIC_API_KEY`    | When provider=claude     | --                      | Anthropic API authentication                                                                                                                                                       |
-| `OPENROUTER_TTS_MODEL` | No                       | `openai/gpt-audio-mini` | OpenRouter audio-output model for narration                                                                                                                                        |
-| `OPENROUTER_TTS_VOICE` | No                       | `onyx`                  | Narrator voice (alloy, echo, fable, onyx, nova, shimmer)                                                                                                                           |
-| `PORT`                 | No                       | `3000`                  | HTTP server port                                                                                                                                                                   |
-| `LOG_LEVEL`            | No                       | `info`                  | Pino log level                                                                                                                                                                     |
-| `NODE_ENV`             | No                       | `development`           | Enables pretty-printed logs in non-production                                                                                                                                      |
+| Variable             | Required                 | Default                   | Purpose                                                                                                                                                                            |
+| -------------------- | ------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER`       | Yes                      | `mistral`                 | Active LLM provider (`openrouter`, `claude`, or `mistral`). Note: the frontend provider selector defaults to `mistral`, which overrides this server-side default for SSE requests. |
+| `OPENROUTER_API_KEY` | When provider=openrouter | --                        | OpenRouter API authentication                                                                                                                                                      |
+| `MISTRAL_API_KEY`    | When provider=mistral    | --                        | Mistral API authentication                                                                                                                                                         |
+| `ANTHROPIC_API_KEY`  | When provider=claude     | --                        | Anthropic API authentication                                                                                                                                                       |
+| `MISTRAL_TTS_MODEL`  | No                       | `voxtral-mini-tts-latest` | Voxtral TTS model for narration (uses `MISTRAL_API_KEY`)                                                                                                                           |
+| `MISTRAL_TTS_VOICE`  | No                       | `en_paul_neutral`         | Narrator voice: Voxtral preset slug or custom voice UUID                                                                                                                           |
+| `PORT`               | No                       | `3000`                    | HTTP server port                                                                                                                                                                   |
+| `LOG_LEVEL`          | No                       | `info`                    | Pino log level                                                                                                                                                                     |
+| `NODE_ENV`           | No                       | `development`             | Enables pretty-printed logs in non-production                                                                                                                                      |
 
 ### Validation
 
@@ -519,7 +519,7 @@ Environment variables are validated at startup using `class-validator` in `apps/
 
 ## 10. What's Next
 
-**M5: Voice Output** (not started) -- ElevenLabs TTS backend integration and frontend audio player for podcast-style narration of agent responses.
+**M5: Voice Output** (done; ElevenLabs originally, now Mistral Voxtral) -- TTS backend integration and frontend audio player for podcast-style narration of agent responses.
 
 **M7: Deploy & Observability** (~87% complete) -- Remaining items: production monitoring dashboards, alerting setup.
 

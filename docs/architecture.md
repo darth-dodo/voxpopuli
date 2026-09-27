@@ -89,7 +89,7 @@ graph TB
     subgraph External ["External APIs"]
         ALGOLIA["HN Algolia"]
         FIREBASE["HN Firebase"]
-        ELEVEN["OpenRouter TTS (gpt-audio-mini)"]
+        VOXTRAL["Mistral Voxtral TTS"]
     end
 
     CHAT <-->|SSE / HTTP| RAG
@@ -108,7 +108,7 @@ graph TB
     AGENT_LEGACY --> CHUNKER
     AGENT_LEGACY --> LLM
     TTS_S --> LLM
-    TTS_S --> ELEVEN
+    TTS_S --> VOXTRAL
     HN --> CACHE
     HN --> ALGOLIA
     HN --> FIREBASE
@@ -163,17 +163,17 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology                                        | Version                                                 |
-| --------------- | ------------------------------------------------- | ------------------------------------------------------- |
-| Monorepo        | Nx                                                | Latest                                                  |
-| Backend         | NestJS                                            | 10+                                                     |
-| Frontend        | Angular                                           | 21                                                      |
-| LLM (quality)   | Claude Haiku 4.5                                  | LangChain.js (`@langchain/anthropic`)                   |
-| LLM (cost)      | Mistral Large 3                                   | LangChain.js (`@langchain/mistralai`)                   |
-| LLM (speed/dev) | OpenRouter Qwen3 32B                              | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
-| TTS             | OpenRouter audio output (`openai/gpt-audio-mini`) | native `fetch`, SSE `pcm16` → WAV                       |
-| Cache           | node-cache                                        | Latest                                                  |
-| Shared Types    | TypeScript lib                                    | `@voxpopuli/shared-types`                               |
+| Layer           | Technology                                  | Version                                                 |
+| --------------- | ------------------------------------------- | ------------------------------------------------------- |
+| Monorepo        | Nx                                          | Latest                                                  |
+| Backend         | NestJS                                      | 10+                                                     |
+| Frontend        | Angular                                     | 21                                                      |
+| LLM (quality)   | Claude Haiku 4.5                            | LangChain.js (`@langchain/anthropic`)                   |
+| LLM (cost)      | Mistral Large 3                             | LangChain.js (`@langchain/mistralai`)                   |
+| LLM (speed/dev) | OpenRouter Qwen3 32B                        | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
+| TTS             | Mistral Voxtral (`voxtral-mini-tts-latest`) | native `fetch` → `/v1/audio/speech`, base64 MP3         |
+| Cache           | node-cache                                  | Latest                                                  |
+| Shared Types    | TypeScript lib                              | `@voxpopuli/shared-types`                               |
 
 ### 1.4 Project Structure
 
@@ -524,7 +524,7 @@ See product.md Section 18 for full pipeline, voice config, and cost analysis.
 | ----------------------------------- | ---------------------------------------------- |
 | `TtsService.narrate(text, sources)` | Full pipeline: rewrite + stream audio          |
 | `TtsService.rewriteForSpeech(text)` | LLM call to convert markdown to podcast script |
-| `TtsService.synthesize(script)`     | OpenRouter audio output → WAV buffer           |
+| `TtsService.synthesize(script)`     | Voxtral TTS → MP3 buffer                       |
 
 | Endpoint           | Method | Description                  |
 | ------------------ | ------ | ---------------------------- |
@@ -1153,9 +1153,9 @@ OPENROUTER_API_KEY=sk-or-...
 MISTRAL_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
 
-# TTS via OpenRouter audio output (uses OPENROUTER_API_KEY)
-OPENROUTER_TTS_MODEL=openai/gpt-audio-mini   # optional override
-OPENROUTER_TTS_VOICE=onyx                    # alloy|echo|fable|onyx|nova|shimmer
+# TTS via Mistral Voxtral (uses MISTRAL_API_KEY)
+MISTRAL_TTS_MODEL=voxtral-mini-tts-latest    # optional override
+MISTRAL_TTS_VOICE=en_paul_neutral            # preset slug or custom voice UUID
 
 # Server
 PORT=3000

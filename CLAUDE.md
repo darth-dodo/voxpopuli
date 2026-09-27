@@ -6,7 +6,7 @@ Project-specific instructions for Claude Code when working in this repository.
 
 VoxPopuli is an agentic RAG system over Hacker News. See [product.md](docs/product.md) for what and why, [architecture.md](docs/architecture.md) for how.
 
-**Stack:** Nx monorepo, NestJS backend, Angular 17+ frontend, triple-stack LLM (Claude/Mistral/OpenRouter), OpenRouter TTS, node-cache.
+**Stack:** Nx monorepo, NestJS backend, Angular 17+ frontend, triple-stack LLM (Claude/Mistral/OpenRouter), Mistral Voxtral TTS, node-cache.
 
 ## Repository Structure
 
@@ -121,7 +121,7 @@ npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
 ### Testing
 
 - Tests live alongside source files (NestJS convention) or in `__tests__/` directories.
-- Mock external HTTP calls (HN APIs, LLM providers, OpenRouter TTS `fetch`). Never hit real APIs in tests.
+- Mock external HTTP calls (HN APIs, LLM providers, Voxtral TTS `fetch`). Never hit real APIs in tests.
 - CacheService can be tested with real in-memory cache behavior.
 - Every milestone has integration tests. See architecture.md Section 8 for Definition of Done.
 
@@ -162,7 +162,7 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 3. **Comment tree fetching is slow.** Each Firebase comment is an individual HTTP call. Always respect the 30-comment cap and parallel batching.
 4. **Token budgets vary by provider.** Always use `ChunkerService.buildContext()` with the active provider's budget, not a hardcoded number.
 5. **SSE events have specific types.** Use `thought`, `action`, `observation`, `answer`, `error` -- don't invent new event types.
-6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`. Speech itself comes from OpenRouter audio output (`OPENROUTER_TTS_MODEL`, default `openai/gpt-audio-mini`; voice `OPENROUTER_TTS_VOICE`, default `onyx`) via a raw `fetch` — OpenRouter only returns audio over SSE as base64 `pcm16`, which `TtsService` wraps in a WAV header (`audio/wav`). The only audio-model hosts are OpenAI, which is not Zero-Data-Retention compliant: an OpenRouter account/workspace with ZDR enforced gets a 404 (surfaced as HTTP 502).
+6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`. Speech itself comes from **Mistral Voxtral TTS** (`POST https://api.mistral.ai/v1/audio/speech`, `MISTRAL_API_KEY`) via a raw `fetch` in `TtsService.synthesize()`: model `MISTRAL_TTS_MODEL` (default `voxtral-mini-tts-latest`), voice `MISTRAL_TTS_VOICE` (default preset `en_paul_neutral`; list presets with `GET /v1/audio/voices`, custom cloned voices are UUIDs). The response is JSON `{ audio_data: <base64 MP3> }`, returned to the client as one `audio/mpeg` body. Upstream failures throw `TtsUpstreamError` → HTTP 502 with Mistral's reason (e.g. unknown voice).
 7. **Don't import LangChain packages directly.** All LangChain usage is encapsulated inside `apps/api/src/llm/providers/` and `apps/api/src/agent/`. Consuming code should only depend on `LlmService`, `AgentService`, or the tool factories.
 8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
 9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/openrouter.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
@@ -187,9 +187,12 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 ADRs live in `docs/adr/` and document key design choices. Consult these before proposing changes to the areas they cover:
 
 - `002-chunker-strategy.md` — Token-aware context building approach
-- `003-llm-provider-architecture.md` — LangChain provider facade pattern
+- `003-llm-provider-architecture.md` — LangChain provider facade pattern (addendum: Groq → OpenRouter)
 - `004-react-agent-design.md` — ReAct agent design, tool selection, LangChain createAgent (v1.2+)
 - `005-true-sse-streaming.md` — AsyncGenerator-based mid-loop SSE streaming
+- `006-adaptive-query-decomposition.md` — Retriever prompt decomposition for comparison/temporal queries
+- `007-query-id-resilience.md` — Query IDs, stored results, and reconnect/dedup for background tabs
+- `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
 
 ## Linear Project
 
