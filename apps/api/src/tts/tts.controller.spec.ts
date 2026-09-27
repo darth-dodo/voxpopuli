@@ -28,7 +28,7 @@ describe('TtsController', () => {
     narrate: jest.fn().mockImplementation(() =>
       Promise.resolve({
         audio: Buffer.from('fake-audio'),
-        contentType: 'audio/wav',
+        contentType: 'audio/mpeg',
         characterCount: 150,
       }),
     ),
@@ -59,17 +59,17 @@ describe('TtsController', () => {
 
       await controller.narrate({ text: 'Hello world', rewrite: true }, mockRes as never);
 
-      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'audio/wav');
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'audio/mpeg');
       expect(mockRes.setHeader).toHaveBeenCalledWith('X-TTS-Characters', '150');
       expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Length', 10); // 'fake-audio'.length
       expect(mockRes.end).toHaveBeenCalledWith(Buffer.from('fake-audio'));
     });
 
-    it('should throw 400 for an unknown voice', async () => {
+    it('should throw 400 for a malformed voiceId', async () => {
       const mockRes = createMockRes();
 
       await expect(
-        controller.narrate({ text: 'Hello', voiceId: 'nPczCjzI2devNBz1zQrb' }, mockRes as never),
+        controller.narrate({ text: 'Hello', voiceId: '../../etc/passwd' }, mockRes as never),
       ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
       expect(ttsService.narrate).not.toHaveBeenCalledWith('Hello', expect.anything());
     });
@@ -77,17 +77,17 @@ describe('TtsController', () => {
     it('should pass a valid voice through to the service', async () => {
       const mockRes = createMockRes();
 
-      await controller.narrate({ text: 'Hello', voiceId: 'nova' }, mockRes as never);
+      await controller.narrate({ text: 'Hello', voiceId: 'gb_jane_neutral' }, mockRes as never);
 
       expect(ttsService.narrate).toHaveBeenCalledWith('Hello', {
         rewrite: undefined,
-        voiceId: 'nova',
+        voiceId: 'gb_jane_neutral',
       });
     });
 
     it('should map TtsUpstreamError to 502 Bad Gateway', async () => {
       const mockRes = createMockRes();
-      mockTtsService.narrate.mockRejectedValueOnce(new TtsUpstreamError('ZDR violation'));
+      mockTtsService.narrate.mockRejectedValueOnce(new TtsUpstreamError('Voice not found'));
 
       await expect(controller.narrate({ text: 'Hello' }, mockRes as never)).rejects.toMatchObject({
         status: HttpStatus.BAD_GATEWAY,
@@ -128,10 +128,9 @@ describe('TtsController', () => {
       expect(result).toHaveProperty('name');
       expect(result).toHaveProperty('model');
       expect(result).toEqual({
-        id: 'onyx',
-        name: 'Onyx',
-        model: 'openai/gpt-audio-mini',
-        availableVoices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
+        id: 'en_paul_neutral',
+        name: 'en_paul_neutral',
+        model: 'voxtral-mini-tts-latest',
       });
     });
   });

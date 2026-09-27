@@ -25,7 +25,7 @@ describe('TtsService', () => {
 
     const mockResponse = new Response(fakeStream, {
       status: 200,
-      headers: { 'X-TTS-Characters': '100', 'Content-Type': 'audio/wav' },
+      headers: { 'X-TTS-Characters': '100' },
     });
 
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(mockResponse);
@@ -38,7 +38,7 @@ describe('TtsService', () => {
     });
 
     expect(result.blob).toBeInstanceOf(Blob);
-    expect(result.blob.type).toBe('audio/wav');
+    expect(result.blob.type).toBe('audio/mpeg');
     expect(result.characterCount).toBe(100);
   });
 

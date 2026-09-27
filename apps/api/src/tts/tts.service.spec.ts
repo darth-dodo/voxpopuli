@@ -2,39 +2,18 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { TtsService, TtsUpstreamError, TTS_CONTENT_TYPE } from './tts.service';
 import { LlmService } from '../llm/llm.service';
-import { OPENROUTER_BASE_URL, OPENROUTER_TTS_MODEL_ID } from '../llm/model-ids';
+import { MISTRAL_API_BASE_URL, MISTRAL_TTS_MODEL_ID } from '../llm/model-ids';
 
 // Mock LLM provider modules to avoid ESM resolution issues
 jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-const PCM_A = Buffer.from([1, 2, 3, 4]);
-const PCM_B = Buffer.from([5, 6]);
+const MP3 = Buffer.from('ID3fake-mp3-bytes');
 
-/**
- * Build an SSE Response like OpenRouter's audio stream. The body is split
- * into small byte chunks so lines straddle chunk boundaries.
- */
-function sseResponse(events: unknown[], chunkSize = 7): Response {
-  const text =
-    ': OPENROUTER PROCESSING\n\n' +
-    events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join('') +
-    'data: [DONE]\n\n';
-  const bytes = new TextEncoder().encode(text);
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        controller.enqueue(bytes.slice(i, i + chunkSize));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, { status: 200 });
-}
-
-function audioEvent(pcm: Buffer, transcript = '') {
-  return { choices: [{ delta: { audio: { data: pcm.toString('base64'), transcript } } }] };
+/** Build a Mistral `/audio/speech` JSON response. */
+function speechResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status });
 }
 
 describe('TtsService', () => {
@@ -42,7 +21,7 @@ describe('TtsService', () => {
   let llmService: jest.Mocked<LlmService>;
   let fetchMock: jest.SpyInstance;
 
-  const config: Record<string, string | undefined> = { OPENROUTER_API_KEY: 'test-key' };
+  const config: Record<string, string | undefined> = { MISTRAL_API_KEY: 'test-key' };
   const mockConfigService = {
     get: jest.fn((key: string, defaultValue?: string) => config[key] ?? defaultValue),
   };
@@ -70,10 +49,10 @@ describe('TtsService', () => {
   }
 
   beforeEach(async () => {
-    config['OPENROUTER_API_KEY'] = 'test-key';
+    config['MISTRAL_API_KEY'] = 'test-key';
     fetchMock = jest
       .spyOn(global, 'fetch')
-      .mockImplementation(async () => sseResponse([audioEvent(PCM_A, 'Hello'), audioEvent(PCM_B)]));
+      .mockImplementation(async () => speechResponse({ audio_data: MP3.toString('base64') }));
     await build();
   });
 
@@ -97,88 +76,91 @@ describe('TtsService', () => {
   });
 
   describe('synthesize', () => {
-    it('should request streamed pcm16 audio from OpenRouter with the default model and voice', async () => {
+    it('should request mp3 speech from Voxtral with the default model and voice', async () => {
       await service.synthesize('Read this');
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-      const body = JSON.parse(init.body as string);
-      expect(url).toBe(`${OPENROUTER_BASE_URL}/chat/completions`);
+      expect(url).toBe(`${MISTRAL_API_BASE_URL}/audio/speech`);
       expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer test-key');
-      expect(body).toMatchObject({
-        model: OPENROUTER_TTS_MODEL_ID,
-        stream: true,
-        modalities: ['text', 'audio'],
-        audio: { voice: 'onyx', format: 'pcm16' },
+      expect(JSON.parse(init.body as string)).toEqual({
+        model: MISTRAL_TTS_MODEL_ID,
+        input: 'Read this',
+        voice_id: 'en_paul_neutral',
+        response_format: 'mp3',
       });
-      expect(body.messages[1]).toEqual({ role: 'user', content: 'Read this' });
     });
 
-    it('should concatenate audio chunks across SSE boundaries into a WAV file', async () => {
-      const wav = await service.synthesize('Read this');
+    it('should decode base64 audio_data into an MP3 buffer', async () => {
+      const audio = await service.synthesize('Read this');
 
-      expect(wav.subarray(0, 4).toString('ascii')).toBe('RIFF');
-      expect(wav.subarray(8, 12).toString('ascii')).toBe('WAVE');
-      expect(wav.subarray(44)).toEqual(Buffer.concat([PCM_A, PCM_B]));
+      expect(audio).toEqual(MP3);
     });
 
     it('should honour a voice override', async () => {
-      await service.synthesize('Read this', 'nova');
+      await service.synthesize('Read this', 'gb_jane_neutral');
 
       const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-      expect(body.audio.voice).toBe('nova');
+      expect(body.voice_id).toBe('gb_jane_neutral');
     });
 
-    it('should use OPENROUTER_TTS_MODEL and OPENROUTER_TTS_VOICE when set', async () => {
-      config['OPENROUTER_TTS_MODEL'] = 'openai/gpt-audio';
-      config['OPENROUTER_TTS_VOICE'] = 'shimmer';
+    it('should use MISTRAL_TTS_MODEL and MISTRAL_TTS_VOICE when set', async () => {
+      config['MISTRAL_TTS_MODEL'] = 'voxtral-mini-tts-2603';
+      config['MISTRAL_TTS_VOICE'] = 'gb_oliver_neutral';
       await build();
 
       await service.synthesize('Read this');
 
       const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-      expect(body.model).toBe('openai/gpt-audio');
-      expect(body.audio.voice).toBe('shimmer');
-      delete config['OPENROUTER_TTS_MODEL'];
-      delete config['OPENROUTER_TTS_VOICE'];
+      expect(body.model).toBe('voxtral-mini-tts-2603');
+      expect(body.voice_id).toBe('gb_oliver_neutral');
+      delete config['MISTRAL_TTS_MODEL'];
+      delete config['MISTRAL_TTS_VOICE'];
     });
 
-    it('should throw TtsUpstreamError with the OpenRouter message on HTTP errors', async () => {
-      fetchMock.mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'ZDR violation' } }), { status: 404 }),
-      );
+    it('should throw TtsUpstreamError with the Mistral message on HTTP errors', async () => {
+      fetchMock.mockResolvedValueOnce(speechResponse({ message: 'Voice not found' }, 404));
 
       await expect(service.synthesize('x')).rejects.toThrow(
-        new TtsUpstreamError('OpenRouter TTS request failed (404): ZDR violation'),
+        new TtsUpstreamError('Mistral TTS request failed (404): Voice not found'),
       );
     });
 
-    it('should throw TtsUpstreamError on an in-stream error event', async () => {
-      fetchMock.mockResolvedValueOnce(sseResponse([{ error: { message: 'boom' } }]));
+    it('should report validation details on 422 errors', async () => {
+      fetchMock.mockResolvedValueOnce(speechResponse({ detail: [{ msg: 'input too long' }] }, 422));
 
-      await expect(service.synthesize('x')).rejects.toThrow('OpenRouter TTS stream error: boom');
+      await expect(service.synthesize('x')).rejects.toThrow('input too long');
+    });
+
+    it('should handle non-JSON error bodies', async () => {
+      fetchMock.mockResolvedValueOnce(new Response('Bad Gateway', { status: 502 }));
+
+      await expect(service.synthesize('x')).rejects.toThrow(
+        'Mistral TTS request failed (502): Bad Gateway',
+      );
     });
 
     it('should throw TtsUpstreamError when no audio is returned', async () => {
-      fetchMock.mockResolvedValueOnce(sseResponse([{ choices: [{ delta: { content: 'hi' } }] }]));
+      fetchMock.mockResolvedValueOnce(speechResponse({}));
 
       await expect(service.synthesize('x')).rejects.toBeInstanceOf(TtsUpstreamError);
     });
 
-    it('should fail fast when OPENROUTER_API_KEY is missing', async () => {
-      config['OPENROUTER_API_KEY'] = undefined;
+    it('should fail fast when MISTRAL_API_KEY is missing', async () => {
+      config['MISTRAL_API_KEY'] = undefined;
       await build();
 
-      await expect(service.synthesize('x')).rejects.toThrow('OPENROUTER_API_KEY is required');
+      await expect(service.synthesize('x')).rejects.toThrow('MISTRAL_API_KEY is required');
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 
   describe('narrate', () => {
-    it('should return WAV audio, content type, and character count', async () => {
+    it('should return MP3 audio, content type, and character count', async () => {
       const result = await service.narrate('Answer text', { rewrite: true });
 
       expect(result.contentType).toBe(TTS_CONTENT_TYPE);
-      expect(result.audio.subarray(0, 4).toString('ascii')).toBe('RIFF');
+      expect(result.contentType).toBe('audio/mpeg');
+      expect(result.audio).toEqual(MP3);
       expect(result.characterCount).toBeGreaterThan(0);
     });
 

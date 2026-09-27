@@ -25,11 +25,11 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  OPENROUTER_TTS_MODEL?: string;
+  MISTRAL_TTS_MODEL?: string;
 
   @IsString()
   @IsOptional()
-  OPENROUTER_TTS_VOICE?: string;
+  MISTRAL_TTS_VOICE?: string;
 
   @Type(() => Number)
   @IsNumber()

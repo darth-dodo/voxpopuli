@@ -3,19 +3,17 @@ import { ConfigService } from '@nestjs/config';
 import { LlmService } from '../llm/llm.service';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { NARRATOR_SYSTEM_PROMPT, MAX_NARRATION_CHARS } from './prompts/narrator.prompt';
-import { SPEECH_SYSTEM_PROMPT } from './prompts/speech.prompt';
 import {
-  OPENROUTER_BASE_URL,
-  OPENROUTER_TTS_DEFAULT_VOICE,
-  OPENROUTER_TTS_MODEL_ID,
+  MISTRAL_API_BASE_URL,
+  MISTRAL_TTS_DEFAULT_VOICE,
+  MISTRAL_TTS_MODEL_ID,
 } from '../llm/model-ids';
-import { pcm16ToWav } from './wav';
 
 /** Upper bound for a single speech synthesis request. */
-const TTS_TIMEOUT_MS = 120_000;
+const TTS_TIMEOUT_MS = 60_000;
 
 /** Content type of the audio returned by {@link TtsService.synthesize}. */
-export const TTS_CONTENT_TYPE = 'audio/wav';
+export const TTS_CONTENT_TYPE = 'audio/mpeg';
 
 /** Failure reported by (or while talking to) the upstream TTS service. */
 export class TtsUpstreamError extends Error {
@@ -32,19 +30,19 @@ export interface NarrationAudio {
   characterCount: number;
 }
 
-/** Shape of one OpenRouter chat-completions stream chunk (fields we read). */
-interface AudioStreamChunk {
-  error?: { message?: string };
-  choices?: { delta?: { audio?: { data?: string; transcript?: string } } }[];
+/** Fields we read from a Mistral `/audio/speech` JSON response (success or error). */
+interface SpeechResponseBody {
+  audio_data?: string;
+  message?: string;
+  detail?: unknown;
 }
 
 /**
- * Narration via OpenRouter audio output.
+ * Narration via Mistral Voxtral text-to-speech.
  *
  * Text is optionally rewritten into a podcast script by the active LLM, then
- * spoken by an OpenRouter audio model (`OPENROUTER_TTS_MODEL`, default
- * `openai/gpt-audio-mini`). OpenRouter only returns audio over SSE, as base64
- * `pcm16` chunks, which are concatenated and wrapped in a WAV header.
+ * spoken by Voxtral (`MISTRAL_TTS_MODEL`, default `voxtral-mini-tts-latest`)
+ * using `MISTRAL_API_KEY`. The API returns base64 MP3 in a JSON body.
  */
 @Injectable()
 export class TtsService {
@@ -57,12 +55,9 @@ export class TtsService {
     private readonly llmService: LlmService,
     private readonly configService: ConfigService,
   ) {
-    this.apiKey = this.configService.get<string>('OPENROUTER_API_KEY');
-    this.model = this.configService.get<string>('OPENROUTER_TTS_MODEL', OPENROUTER_TTS_MODEL_ID);
-    this.voice = this.configService.get<string>(
-      'OPENROUTER_TTS_VOICE',
-      OPENROUTER_TTS_DEFAULT_VOICE,
-    );
+    this.apiKey = this.configService.get<string>('MISTRAL_API_KEY');
+    this.model = this.configService.get<string>('MISTRAL_TTS_MODEL', MISTRAL_TTS_MODEL_ID);
+    this.voice = this.configService.get<string>('MISTRAL_TTS_VOICE', MISTRAL_TTS_DEFAULT_VOICE);
   }
 
   /**
@@ -70,7 +65,7 @@ export class TtsService {
    *
    * @param text    - Answer text to narrate
    * @param options - `rewrite` (default true) and an optional `voiceId` override
-   * @returns WAV audio plus the number of characters spoken
+   * @returns MP3 audio plus the number of characters spoken
    */
   async narrate(
     text: string,
@@ -113,100 +108,48 @@ export class TtsService {
   }
 
   /**
-   * Speak a script with the OpenRouter audio model and return a WAV file.
+   * Speak a script with Voxtral and return MP3 audio.
    *
-   * @param script - Text to read aloud verbatim
-   * @param voice  - Voice override (defaults to OPENROUTER_TTS_VOICE)
-   * @returns WAV audio buffer
-   * @throws TtsUpstreamError if OpenRouter rejects the request or returns no audio
+   * @param script - Text to speak
+   * @param voice  - Voice override: preset slug or custom voice id (defaults to MISTRAL_TTS_VOICE)
+   * @returns MP3 audio buffer
+   * @throws TtsUpstreamError if Mistral rejects the request or returns no audio
    */
   async synthesize(script: string, voice?: string): Promise<Buffer> {
     if (!this.apiKey) {
-      throw new Error('OPENROUTER_API_KEY is required for text-to-speech');
+      throw new Error('MISTRAL_API_KEY is required for text-to-speech');
     }
 
-    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    const response = await fetch(`${MISTRAL_API_BASE_URL}/audio/speech`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         'Content-Type': 'application/json',
-        'X-Title': 'VoxPopuli',
       },
       body: JSON.stringify({
         model: this.model,
-        stream: true,
-        modalities: ['text', 'audio'],
-        audio: { voice: voice ?? this.voice, format: 'pcm16' },
-        messages: [
-          { role: 'system', content: SPEECH_SYSTEM_PROMPT },
-          { role: 'user', content: script },
-        ],
+        input: script,
+        voice_id: voice ?? this.voice,
+        response_format: 'mp3',
       }),
       signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     });
 
-    if (!response.ok || !response.body) {
-      throw new TtsUpstreamError(
-        `OpenRouter TTS request failed (${response.status}): ${await readErrorMessage(response)}`,
-      );
+    const raw = await response.text();
+    let body: SpeechResponseBody = {};
+    try {
+      body = JSON.parse(raw) as SpeechResponseBody;
+    } catch {
+      // Non-JSON body (e.g. gateway error page) — reported below.
     }
 
-    const pcm = await collectPcm(response.body);
-    if (pcm.length === 0) {
-      throw new TtsUpstreamError('OpenRouter TTS returned no audio');
+    if (!response.ok) {
+      const reason = body.message ?? (body.detail ? JSON.stringify(body.detail) : raw);
+      throw new TtsUpstreamError(`Mistral TTS request failed (${response.status}): ${reason}`);
     }
-    return pcm16ToWav(pcm);
+    if (!body.audio_data) {
+      throw new TtsUpstreamError('Mistral TTS returned no audio');
+    }
+    return Buffer.from(body.audio_data, 'base64');
   }
-}
-
-/** Extract `error.message` from an OpenRouter error body, falling back to raw text. */
-async function readErrorMessage(response: Response): Promise<string> {
-  const body = await response.text().catch(() => '');
-  try {
-    const parsed = JSON.parse(body) as AudioStreamChunk;
-    return parsed.error?.message ?? body;
-  } catch {
-    return body || response.statusText;
-  }
-}
-
-/**
- * Read an OpenRouter SSE stream and concatenate the base64 audio chunks.
- * Lines are `data: {json}`; comment lines (`: OPENROUTER PROCESSING`) and
- * `data: [DONE]` are skipped. An in-stream `error` payload aborts the read.
- */
-async function collectPcm(body: ReadableStream<Uint8Array>): Promise<Buffer> {
-  const decoder = new TextDecoder();
-  const chunks: Buffer[] = [];
-  let pending = '';
-
-  const handleLine = (line: string): void => {
-    if (!line.startsWith('data:')) return;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
-
-    const chunk = JSON.parse(payload) as AudioStreamChunk;
-    if (chunk.error) {
-      throw new TtsUpstreamError(
-        `OpenRouter TTS stream error: ${chunk.error.message ?? 'unknown'}`,
-      );
-    }
-    for (const choice of chunk.choices ?? []) {
-      const data = choice.delta?.audio?.data;
-      if (data) chunks.push(Buffer.from(data, 'base64'));
-    }
-  };
-
-  const reader = body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    pending += decoder.decode(value, { stream: true });
-    const lines = pending.split('\n');
-    pending = lines.pop() ?? '';
-    lines.forEach(handleLine);
-  }
-  handleLine(pending + decoder.decode());
-
-  return Buffer.concat(chunks);
 }

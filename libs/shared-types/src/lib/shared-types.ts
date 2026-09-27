@@ -88,16 +88,14 @@ export interface RewriteTrustMetadata {
   toneAlignment: number;
 }
 
-/** Narration voice configuration (OpenRouter audio output). */
+/** Narration voice configuration (Mistral Voxtral TTS). */
 export interface VoiceConfig {
-  /** Active voice id, e.g. "onyx". */
+  /** Active Voxtral voice id: a preset slug (e.g. "en_paul_neutral") or custom voice UUID. */
   id: string;
   /** Display name of the active voice. */
   name: string;
-  /** OpenRouter audio model slug, e.g. "openai/gpt-audio-mini". */
+  /** Voxtral TTS model, e.g. "voxtral-mini-tts-latest". */
   model: string;
-  /** Voice ids accepted by `TtsRequest.voiceId`. */
-  availableVoices: string[];
 }
 
 /** A single claim extracted from source material. */

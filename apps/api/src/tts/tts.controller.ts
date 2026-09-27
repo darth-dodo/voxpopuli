@@ -3,21 +3,19 @@ import type { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { TtsService, TtsUpstreamError } from './tts.service';
 import { TtsRequest, VoiceConfig } from '@voxpopuli/shared-types';
-import {
-  OPENROUTER_TTS_DEFAULT_VOICE,
-  OPENROUTER_TTS_MODEL_ID,
-  OPENROUTER_TTS_VOICES,
-} from '../llm/model-ids';
+import { MISTRAL_TTS_DEFAULT_VOICE, MISTRAL_TTS_MODEL_ID } from '../llm/model-ids';
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
 const MAX_INPUT_LENGTH = 10_000;
+/** Voxtral voice ids are preset slugs (en_paul_neutral) or custom-voice UUIDs. */
+const VOICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /**
  * Controller for TTS (text-to-speech) endpoints.
  *
- * Provides a narration endpoint that returns WAV audio synthesised via
- * OpenRouter audio output, and a voice configuration endpoint.
+ * Provides a narration endpoint that returns MP3 audio synthesised by
+ * Mistral Voxtral TTS, and a voice configuration endpoint.
  */
 @Controller('tts')
 export class TtsController {
@@ -32,7 +30,7 @@ export class TtsController {
    * Generate narrated audio for the given text.
    *
    * Optionally rewrites the text into a podcast-style script before
-   * synthesising speech via OpenRouter. The audio is returned as one
+   * synthesising speech via Mistral Voxtral. The audio is returned as one
    * complete response with Content-Length for compatibility with
    * reverse proxies (Render, Cloudflare) that drop chunked streams.
    */
@@ -48,14 +46,8 @@ export class TtsController {
       );
     }
 
-    if (
-      body.voiceId !== undefined &&
-      !(OPENROUTER_TTS_VOICES as readonly string[]).includes(body.voiceId)
-    ) {
-      throw new HttpException(
-        `Unknown voice "${body.voiceId}". Valid voices: ${OPENROUTER_TTS_VOICES.join(', ')}`,
-        HttpStatus.BAD_REQUEST,
-      );
+    if (body.voiceId !== undefined && !VOICE_ID_PATTERN.test(body.voiceId)) {
+      throw new HttpException('Invalid voiceId', HttpStatus.BAD_REQUEST);
     }
 
     this.enforceRateLimit();
@@ -89,15 +81,11 @@ export class TtsController {
    */
   @Get('voices')
   voices(): VoiceConfig {
-    const voice = this.configService.get<string>(
-      'OPENROUTER_TTS_VOICE',
-      OPENROUTER_TTS_DEFAULT_VOICE,
-    );
+    const voice = this.configService.get<string>('MISTRAL_TTS_VOICE', MISTRAL_TTS_DEFAULT_VOICE);
     return {
       id: voice,
-      name: voice.charAt(0).toUpperCase() + voice.slice(1),
-      model: this.configService.get<string>('OPENROUTER_TTS_MODEL', OPENROUTER_TTS_MODEL_ID),
-      availableVoices: [...OPENROUTER_TTS_VOICES],
+      name: voice,
+      model: this.configService.get<string>('MISTRAL_TTS_MODEL', MISTRAL_TTS_MODEL_ID),
     };
   }
 
