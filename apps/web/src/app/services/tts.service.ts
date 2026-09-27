@@ -13,7 +13,8 @@ export class TtsService {
 
   /**
    * POST to /api/tts/narrate with the answer text.
-   * Reads the MP3 response and collects into a Blob.
+   * Reads the audio response and collects it into a Blob typed from the
+   * response's Content-Type (WAV from the OpenRouter-backed API).
    */
   narrate(text: string, rewrite = true): Observable<TtsResult> {
     return from(this.fetchNarration(text, rewrite));
@@ -45,7 +46,8 @@ export class TtsService {
       if (value) chunks.push(value as BlobPart);
     }
 
-    const blob = new Blob(chunks, { type: 'audio/mpeg' });
+    const type = response.headers.get('Content-Type') ?? 'audio/wav';
+    const blob = new Blob(chunks, { type });
     return { blob, characterCount };
   }
 }

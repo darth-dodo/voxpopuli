@@ -88,20 +88,16 @@ export interface RewriteTrustMetadata {
   toneAlignment: number;
 }
 
-/** ElevenLabs voice generation settings. */
-export interface VoiceSettings {
-  stability: number;
-  similarityBoost: number;
-  style: number;
-  useSpeakerBoost: boolean;
-}
-
-/** Configuration for an ElevenLabs voice. */
+/** Narration voice configuration (OpenRouter audio output). */
 export interface VoiceConfig {
+  /** Active voice id, e.g. "onyx". */
   id: string;
+  /** Display name of the active voice. */
   name: string;
+  /** OpenRouter audio model slug, e.g. "openai/gpt-audio-mini". */
   model: string;
-  settings: VoiceSettings;
+  /** Voice ids accepted by `TtsRequest.voiceId`. */
+  availableVoices: string[];
 }
 
 /** A single claim extracted from source material. */

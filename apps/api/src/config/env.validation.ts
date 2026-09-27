@@ -25,15 +25,11 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
-  ELEVENLABS_API_KEY?: string;
+  OPENROUTER_TTS_MODEL?: string;
 
   @IsString()
   @IsOptional()
-  ELEVENLABS_VOICE_ID?: string;
-
-  @IsString()
-  @IsOptional()
-  ELEVENLABS_MODEL?: string;
+  OPENROUTER_TTS_VOICE?: string;
 
   @Type(() => Number)
   @IsNumber()

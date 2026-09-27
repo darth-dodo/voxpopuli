@@ -1,18 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TtsController } from './tts.controller';
-import { TtsService } from './tts.service';
+import { ConfigService } from '@nestjs/config';
+import { TtsService, TtsUpstreamError } from './tts.service';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { Readable } from 'node:stream';
 
 // Mock LLM provider modules to avoid ESM resolution issues
 jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
-
-// Mock the elevenlabs SDK
-jest.mock('elevenlabs', () => ({
-  ElevenLabsClient: jest.fn().mockImplementation(() => ({})),
-}));
 
 /** Create a mock Express Response. */
 function createMockRes() {
@@ -32,7 +27,8 @@ describe('TtsController', () => {
   const mockTtsService = {
     narrate: jest.fn().mockImplementation(() =>
       Promise.resolve({
-        stream: Readable.from([Buffer.from('fake-audio')]),
+        audio: Buffer.from('fake-audio'),
+        contentType: 'audio/wav',
         characterCount: 150,
       }),
     ),
@@ -41,7 +37,13 @@ describe('TtsController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TtsController],
-      providers: [{ provide: TtsService, useValue: mockTtsService }],
+      providers: [
+        { provide: TtsService, useValue: mockTtsService },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((_key: string, defaultValue?: string) => defaultValue) },
+        },
+      ],
     }).compile();
 
     controller = module.get<TtsController>(TtsController);
@@ -52,15 +54,53 @@ describe('TtsController', () => {
   });
 
   describe('POST /api/tts/narrate', () => {
-    it('should buffer audio and set Content-Length, Content-Type, and X-TTS-Characters', async () => {
+    it('should send audio with Content-Length, Content-Type, and X-TTS-Characters', async () => {
       const mockRes = createMockRes();
 
       await controller.narrate({ text: 'Hello world', rewrite: true }, mockRes as never);
 
-      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'audio/mpeg');
+      expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Type', 'audio/wav');
       expect(mockRes.setHeader).toHaveBeenCalledWith('X-TTS-Characters', '150');
       expect(mockRes.setHeader).toHaveBeenCalledWith('Content-Length', 10); // 'fake-audio'.length
       expect(mockRes.end).toHaveBeenCalledWith(Buffer.from('fake-audio'));
+    });
+
+    it('should throw 400 for an unknown voice', async () => {
+      const mockRes = createMockRes();
+
+      await expect(
+        controller.narrate({ text: 'Hello', voiceId: 'nPczCjzI2devNBz1zQrb' }, mockRes as never),
+      ).rejects.toMatchObject({ status: HttpStatus.BAD_REQUEST });
+      expect(ttsService.narrate).not.toHaveBeenCalledWith('Hello', expect.anything());
+    });
+
+    it('should pass a valid voice through to the service', async () => {
+      const mockRes = createMockRes();
+
+      await controller.narrate({ text: 'Hello', voiceId: 'nova' }, mockRes as never);
+
+      expect(ttsService.narrate).toHaveBeenCalledWith('Hello', {
+        rewrite: undefined,
+        voiceId: 'nova',
+      });
+    });
+
+    it('should map TtsUpstreamError to 502 Bad Gateway', async () => {
+      const mockRes = createMockRes();
+      mockTtsService.narrate.mockRejectedValueOnce(new TtsUpstreamError('ZDR violation'));
+
+      await expect(controller.narrate({ text: 'Hello' }, mockRes as never)).rejects.toMatchObject({
+        status: HttpStatus.BAD_GATEWAY,
+      });
+    });
+
+    it('should map other errors to 500', async () => {
+      const mockRes = createMockRes();
+      mockTtsService.narrate.mockRejectedValueOnce(new Error('LLM rewrite failed'));
+
+      await expect(controller.narrate({ text: 'Hello' }, mockRes as never)).rejects.toMatchObject({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+      });
     });
 
     it('should throw 400 for empty text', async () => {
@@ -87,8 +127,12 @@ describe('TtsController', () => {
       expect(result).toHaveProperty('id');
       expect(result).toHaveProperty('name');
       expect(result).toHaveProperty('model');
-      expect(result).toHaveProperty('settings');
-      expect(result.settings).toHaveProperty('stability');
+      expect(result).toEqual({
+        id: 'onyx',
+        name: 'Onyx',
+        model: 'openai/gpt-audio-mini',
+        availableVoices: ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
+      });
     });
   });
 

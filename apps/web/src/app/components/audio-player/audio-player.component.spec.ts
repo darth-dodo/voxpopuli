@@ -13,7 +13,7 @@ describe('AudioPlayerComponent', () => {
     mockTtsService = {
       narrate: vi.fn().mockReturnValue(
         of({
-          blob: new Blob(['fake-audio'], { type: 'audio/mpeg' }),
+          blob: new Blob(['fake-audio'], { type: 'audio/wav' }),
           characterCount: 100,
         }),
       ),
@@ -67,7 +67,7 @@ describe('AudioPlayerComponent', () => {
 
     // Reset mock for retry
     mockTtsService.narrate.mockReturnValue(
-      of({ blob: new Blob(['audio'], { type: 'audio/mpeg' }), characterCount: 50 }),
+      of({ blob: new Blob(['audio'], { type: 'audio/wav' }), characterCount: 50 }),
     );
     component.onRetry();
     expect(component.state()).toBe('loading');

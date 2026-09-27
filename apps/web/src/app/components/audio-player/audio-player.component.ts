@@ -251,13 +251,13 @@ export class AudioPlayerComponent implements OnDestroy {
     }
   }
 
-  /** Download the narration audio as an MP3 file. */
+  /** Download the narration audio, using a file extension matching its type. */
   download(): void {
     if (!this.audioBlob) return;
     const url = URL.createObjectURL(this.audioBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'voxpopuli-narration.mp3';
+    a.download = `voxpopuli-narration.${this.audioBlob.type.includes('mpeg') ? 'mp3' : 'wav'}`;
     a.click();
     URL.revokeObjectURL(url);
   }

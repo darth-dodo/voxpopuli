@@ -1,8 +1,13 @@
 import { Controller, Post, Get, Body, Res, HttpException, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
-import { TtsService } from './tts.service';
+import { ConfigService } from '@nestjs/config';
+import { TtsService, TtsUpstreamError } from './tts.service';
 import { TtsRequest, VoiceConfig } from '@voxpopuli/shared-types';
-import { ELEVENLABS_MODEL_ID, ELEVENLABS_DEFAULT_VOICE_ID } from '../llm/model-ids';
+import {
+  OPENROUTER_TTS_DEFAULT_VOICE,
+  OPENROUTER_TTS_MODEL_ID,
+  OPENROUTER_TTS_VOICES,
+} from '../llm/model-ids';
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
@@ -11,22 +16,25 @@ const MAX_INPUT_LENGTH = 10_000;
 /**
  * Controller for TTS (text-to-speech) endpoints.
  *
- * Provides a streaming narration endpoint that pipes chunked MP3 audio
- * directly to the response, and a voice configuration endpoint.
+ * Provides a narration endpoint that returns WAV audio synthesised via
+ * OpenRouter audio output, and a voice configuration endpoint.
  */
 @Controller('tts')
 export class TtsController {
   private readonly requestTimestamps: number[] = [];
 
-  constructor(private readonly ttsService: TtsService) {}
+  constructor(
+    private readonly ttsService: TtsService,
+    private readonly configService: ConfigService,
+  ) {}
 
   /**
    * Generate narrated audio for the given text.
    *
    * Optionally rewrites the text into a podcast-style script before
-   * synthesising speech via ElevenLabs. The audio stream is buffered
-   * into a complete response with Content-Length for compatibility
-   * with reverse proxies (Render, Cloudflare) that drop chunked streams.
+   * synthesising speech via OpenRouter. The audio is returned as one
+   * complete response with Content-Length for compatibility with
+   * reverse proxies (Render, Cloudflare) that drop chunked streams.
    */
   @Post('narrate')
   async narrate(@Body() body: TtsRequest, @Res() res: Response): Promise<void> {
@@ -40,37 +48,38 @@ export class TtsController {
       );
     }
 
+    if (
+      body.voiceId !== undefined &&
+      !(OPENROUTER_TTS_VOICES as readonly string[]).includes(body.voiceId)
+    ) {
+      throw new HttpException(
+        `Unknown voice "${body.voiceId}". Valid voices: ${OPENROUTER_TTS_VOICES.join(', ')}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     this.enforceRateLimit();
 
     try {
-      const { stream, characterCount } = await this.ttsService.narrate(body.text, {
+      const { audio, contentType, characterCount } = await this.ttsService.narrate(body.text, {
         rewrite: body.rewrite,
         voiceId: body.voiceId,
       });
 
-      // Buffer the stream into a single Buffer for reliable delivery
-      // through reverse proxies that don't support chunked transfer.
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      const audioBuffer = Buffer.concat(chunks);
-
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Content-Length', audioBuffer.length);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', audio.length);
       res.setHeader('X-TTS-Characters', String(characterCount));
       res.setHeader('Cache-Control', 'no-cache');
-      res.end(audioBuffer);
+      res.end(audio);
     } catch (error) {
       if (error instanceof HttpException) throw error;
 
       const message = error instanceof Error ? error.message : 'TTS narration failed';
-      const isUpstream =
-        message.toLowerCase().includes('elevenlabs') || message.toLowerCase().includes('upstream');
-
       throw new HttpException(
         message,
-        isUpstream ? HttpStatus.BAD_GATEWAY : HttpStatus.INTERNAL_SERVER_ERROR,
+        error instanceof TtsUpstreamError
+          ? HttpStatus.BAD_GATEWAY
+          : HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
@@ -80,16 +89,15 @@ export class TtsController {
    */
   @Get('voices')
   voices(): VoiceConfig {
+    const voice = this.configService.get<string>(
+      'OPENROUTER_TTS_VOICE',
+      OPENROUTER_TTS_DEFAULT_VOICE,
+    );
     return {
-      id: ELEVENLABS_DEFAULT_VOICE_ID,
-      name: 'Brian',
-      model: ELEVENLABS_MODEL_ID,
-      settings: {
-        stability: 0.65,
-        similarityBoost: 0.75,
-        style: 0.35,
-        useSpeakerBoost: true,
-      },
+      id: voice,
+      name: voice.charAt(0).toUpperCase() + voice.slice(1),
+      model: this.configService.get<string>('OPENROUTER_TTS_MODEL', OPENROUTER_TTS_MODEL_ID),
+      availableVoices: [...OPENROUTER_TTS_VOICES],
     };
   }
 
