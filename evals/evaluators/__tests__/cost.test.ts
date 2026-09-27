@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCost } from '../cost';
 
 describe('evaluateCost', () => {
-  it('returns high score for groq with low tokens', () => {
+  it('returns high score for openrouter with low tokens', () => {
     // 1000 input tokens, 500 output tokens
-    // cost = (1000/1e6)*0.59 + (500/1e6)*0.79 = 0.000590 + 0.000395 = 0.000985
-    // score = max(0, 1 - 0.000985/0.05) = ~0.9803
-    const result = evaluateCost(1000, 500, 'groq');
+    // cost = (1000/1e6)*0.08 + (500/1e6)*0.28 = 0.00008 + 0.00014 = 0.00022
+    // score = max(0, 1 - 0.00022/0.05) = ~0.9956
+    const result = evaluateCost(1000, 500, 'openrouter');
 
     expect(result.key).toBe('cost');
     expect(result.score).toBeGreaterThan(0.95);
@@ -24,10 +24,7 @@ describe('evaluateCost', () => {
   });
 
   it('returns score 0.0 when cost exactly at $0.05', () => {
-    // For groq: need cost = 0.05
-    // Use only input tokens: (tokens/1e6)*0.59 = 0.05 → tokens = 84745.76...
-    // Use round numbers: input=$0.05 → tokens = 50000/0.59*1e6... let's just use a known provider
-    // Simpler: mistral input $2/M, output $6/M
+    // Use mistral for round numbers: input $2/M, output $6/M
     // cost = (25000/1e6)*2.00 + (0/1e6)*6.00 = 0.05
     // score = max(0, 1 - 0.05/0.05) = 0.0
     const result = evaluateCost(25000, 0, 'mistral');
@@ -37,7 +34,7 @@ describe('evaluateCost', () => {
   });
 
   it('returns score 1.0 when cost is $0', () => {
-    const result = evaluateCost(0, 0, 'groq');
+    const result = evaluateCost(0, 0, 'openrouter');
 
     expect(result.key).toBe('cost');
     expect(result.score).toBe(1.0);

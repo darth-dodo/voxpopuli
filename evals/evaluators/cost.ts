@@ -6,7 +6,8 @@ interface TokenRates {
 }
 
 const PROVIDER_RATES: Record<string, TokenRates> = {
-  groq: { inputPerMillion: 0.59, outputPerMillion: 0.79 },
+  // OpenRouter qwen/qwen3-32b list price
+  openrouter: { inputPerMillion: 0.08, outputPerMillion: 0.28 },
   claude: { inputPerMillion: 3.0, outputPerMillion: 15.0 },
   mistral: { inputPerMillion: 2.0, outputPerMillion: 6.0 },
 };
@@ -18,14 +19,14 @@ const COST_CEILING = 0.05;
  * Evaluates estimated query cost based on token usage and provider rates.
  *
  * Score = max(0, 1 - estimatedCost / $0.05).
- * Unknown providers default to groq rates.
+ * Unknown providers default to openrouter rates.
  */
 export function evaluateCost(
   totalInputTokens: number,
   totalOutputTokens: number,
   provider: string,
 ): EvaluatorResult {
-  const rates = PROVIDER_RATES[provider] ?? PROVIDER_RATES['groq'];
+  const rates = PROVIDER_RATES[provider] ?? PROVIDER_RATES['openrouter'];
 
   const estimatedCost =
     (totalInputTokens / 1_000_000) * rates.inputPerMillion +

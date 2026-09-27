@@ -58,7 +58,7 @@ export class RagService {
    * Send a blocking RAG query to the backend.
    *
    * @param query  - Natural-language question (max 500 chars).
-   * @param provider - Optional LLM provider override (groq / mistral / claude).
+   * @param provider - Optional LLM provider override (openrouter / mistral / claude).
    * @returns Observable that emits a single `AgentResponse` then completes.
    */
   query(query: string, provider?: string): Observable<AgentResponse> {
@@ -111,7 +111,7 @@ export class RagService {
    * underlying `EventSource`.
    *
    * @param query - Natural-language question (max 500 chars).
-   * @param provider - Optional LLM provider override (groq / mistral / claude).
+   * @param provider - Optional LLM provider override (openrouter / mistral / claude).
    * @returns Observable of `StreamEvent` items.
    */
 

@@ -24,7 +24,7 @@ npx tsx evals/run-eval.ts -C tool_comparison
 npx tsx evals/run-eval.ts --no-judge
 
 # Compare providers side by side
-npx tsx evals/run-eval.ts -c groq,mistral,claude
+npx tsx evals/run-eval.ts -c openrouter,mistral,claude
 
 # Dry run — preview without calling API
 npx tsx evals/run-eval.ts --dry-run
@@ -35,19 +35,19 @@ npx tsx evals/run-eval.ts --list
 
 ## CLI Options
 
-| Flag                    | Description                                             | Default                        |
-| ----------------------- | ------------------------------------------------------- | ------------------------------ |
-| `-p, --provider <name>` | LLM provider to evaluate                                | `groq` (or `LLM_PROVIDER` env) |
-| `-c, --compare <list>`  | Compare multiple providers (comma-separated)            | —                              |
-| `-q, --query <id>`      | Run a single query by ID                                | all queries                    |
-| `-C, --category <name>` | Filter queries by category                              | all categories                 |
-| `--list`                | List available queries and exit                         | —                              |
-| `--dry-run`             | Preview without calling the API                         | —                              |
-| `--no-langsmith`        | Skip LangSmith dataset sync                             | sync enabled                   |
-| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)              | judge enabled                  |
-| `-t, --timeout <sec>`   | Per-query timeout                                       | `300`                          |
-| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                       | `3`                            |
-| `--multi-agent`         | Use multi-agent pipeline instead of legacy single-agent | legacy (single-agent)          |
+| Flag                    | Description                                             | Default                           |
+| ----------------------- | ------------------------------------------------------- | --------------------------------- |
+| `-p, --provider <name>` | LLM provider to evaluate                                | `mistral` (or `LLM_PROVIDER` env) |
+| `-c, --compare <list>`  | Compare multiple providers (comma-separated)            | —                                 |
+| `-q, --query <id>`      | Run a single query by ID                                | all queries                       |
+| `-C, --category <name>` | Filter queries by category                              | all categories                    |
+| `--list`                | List available queries and exit                         | —                                 |
+| `--dry-run`             | Preview without calling the API                         | —                                 |
+| `--no-langsmith`        | Skip LangSmith dataset sync                             | sync enabled                      |
+| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)              | judge enabled                     |
+| `-t, --timeout <sec>`   | Per-query timeout                                       | `300`                             |
+| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                       | `3`                               |
+| `--multi-agent`         | Use multi-agent pipeline instead of legacy single-agent | legacy (single-agent)             |
 
 ## Scoring System
 
@@ -65,11 +65,11 @@ Each query is scored across five dimensions with fixed weights:
 
 ### Latency Thresholds
 
-| Provider | Excellent (1.0) | Good (0.6-0.7) | Acceptable (0.3) | Fail (0.0) |
-| -------- | --------------- | -------------- | ---------------- | ---------- |
-| Groq     | < 15s           | < 30s          | < 60s            | >= 60s     |
-| Mistral  | < 30s           | < 60s          | < 90s            | >= 90s     |
-| Claude   | < 30s           | < 60s          | < 120s           | >= 120s    |
+| Provider   | Excellent (1.0) | Good (0.6-0.7) | Acceptable (0.3) | Fail (0.0) |
+| ---------- | --------------- | -------------- | ---------------- | ---------- |
+| OpenRouter | < 15s           | < 30s          | < 60s            | >= 60s     |
+| Mistral    | < 30s           | < 60s          | < 90s            | >= 90s     |
+| Claude     | < 30s           | < 60s          | < 120s           | >= 120s    |
 
 ### Source Accuracy
 
@@ -160,7 +160,7 @@ The harness is fully black-box — it calls the API over HTTP, never imports Nes
 | Variable              | Required | Description                                     |
 | --------------------- | -------- | ----------------------------------------------- |
 | `EVAL_API_URL`        | No       | API base URL (default: `http://localhost:3000`) |
-| `LLM_PROVIDER`        | No       | Default provider (default: `groq`)              |
+| `LLM_PROVIDER`        | No       | Default provider (default: `mistral`)           |
 | `EVAL_JUDGE_PROVIDER` | No       | LLM-as-judge provider (default: `mistral`)      |
 | `LANGSMITH_API_KEY`   | No       | LangSmith API key for dataset sync              |
 | `LANGSMITH_TRACING`   | No       | Enable LangSmith tracing (`true`/`false`)       |

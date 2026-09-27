@@ -46,8 +46,8 @@ envVarGroups:
   - name: voxpopuli-secrets
     envVars:
       - key: LLM_PROVIDER
-        value: groq
-      - key: GROQ_API_KEY
+        value: openrouter
+      - key: OPENROUTER_API_KEY
         sync: false
       - key: MISTRAL_API_KEY
         sync: false

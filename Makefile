@@ -55,8 +55,8 @@ docker-clean: ## Stop containers and remove volumes
 eval: ## Run eval harness (requires running API)
 	npx tsx evals/run-eval.ts
 
-eval-compare: ## Compare groq, mistral, claude
-	npx tsx evals/run-eval.ts -c groq,mistral,claude
+eval-compare: ## Compare openrouter, mistral, claude
+	npx tsx evals/run-eval.ts -c openrouter,mistral,claude
 
 # ── Shortcuts ────────────────────────────────────────────────
 health: ## Health-check the running API

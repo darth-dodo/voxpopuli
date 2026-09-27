@@ -16,10 +16,10 @@ const TRUNCATION_FACTOR = 0.5;
 /**
  * Detect whether an error is a Groq-style TPM / request-size rate-limit.
  *
- * Groq returns HTTP 413 with:
+ * Groq (and Groq-hosted models routed via OpenRouter) return HTTP 413 with:
  *   `{ error: { code: "rate_limit_exceeded", type: "tokens" } }`
  *
- * The LangChain ChatGroq wrapper wraps this in a generic Error whose
+ * LangChain chat model wrappers surface this as a generic Error whose
  * message contains the original JSON body.
  */
 export function isTpmError(err: unknown): boolean {
@@ -73,7 +73,7 @@ function truncateMessages(messages: BaseMessage[], factor: number): BaseMessage[
 }
 
 /**
- * Invoke a LangChain model with automatic retry on Groq TPM rate-limit errors.
+ * Invoke a LangChain model with automatic retry on TPM rate-limit errors.
  *
  * On a TPM error the function truncates the longest message by 50% and
  * retries once. This covers the common case where a large tool output or

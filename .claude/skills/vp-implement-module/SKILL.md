@@ -54,7 +54,7 @@ apps/api/src/{module-name}/
 - Using `vi.fn()` (Vitest) in API tests -- the API project uses **Jest**, use `jest.fn()`
 - Not mocking LLM providers in test files that transitively import `LlmService` or `AgentService` -- Jest can't resolve `@langchain/*` ESM packages. Add these mocks at the top of spec files:
   ```typescript
-  jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+  jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
   jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
   jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
   ```

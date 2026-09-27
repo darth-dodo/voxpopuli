@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { LlmService } from './llm.service';
-import { GroqProvider } from './providers/groq.provider';
+import { ChatOpenAI } from '@langchain/openai';
+import { OpenRouterProvider, OPENROUTER_BASE_URL } from './providers/openrouter.provider';
+import { OPENROUTER_MODEL_ID } from './model-ids';
 import { ClaudeProvider } from './providers/claude.provider';
 import { MistralProvider } from './providers/mistral.provider';
 import type { LlmProviderInterface } from './llm-provider.interface';
@@ -10,9 +12,9 @@ import type { LlmProviderInterface } from './llm-provider.interface';
 // Mocks — prevent real SDK instantiation
 // ---------------------------------------------------------------------------
 
-jest.mock('@langchain/groq', () => ({
-  ChatGroq: jest.fn().mockImplementation(() => ({
-    _llmType: () => 'groq',
+jest.mock('@langchain/openai', () => ({
+  ChatOpenAI: jest.fn().mockImplementation(() => ({
+    _llmType: () => 'openai',
     invoke: jest.fn(),
   })),
 }));
@@ -51,27 +53,51 @@ function mockConfigService(values: Record<string, string | undefined>): ConfigSe
 // Provider Tests
 // ---------------------------------------------------------------------------
 
-describe('GroqProvider', () => {
-  it('implements LlmProviderInterface with correct properties', () => {
-    const config = mockConfigService({ GROQ_API_KEY: 'test-key' });
-    const provider: LlmProviderInterface = new GroqProvider(config);
+describe('OpenRouterProvider', () => {
+  beforeEach(() => jest.mocked(ChatOpenAI).mockClear());
 
-    expect(provider.name).toBe('groq');
+  it('implements LlmProviderInterface with correct properties', () => {
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const provider: LlmProviderInterface = new OpenRouterProvider(config);
+
+    expect(provider.name).toBe('openrouter');
     expect(provider.maxContextTokens).toBe(131_000);
   });
 
-  it('getModel() returns a ChatGroq instance', () => {
-    const config = mockConfigService({ GROQ_API_KEY: 'test-key' });
-    const provider = new GroqProvider(config);
+  it('getModel() returns a ChatOpenAI instance pointed at OpenRouter', () => {
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const provider = new OpenRouterProvider(config);
     const model = provider.getModel();
 
     expect(model).toBeDefined();
-    expect((model as Record<string, unknown>)['_llmType']).toBeDefined();
+    expect(ChatOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'test-key',
+        model: OPENROUTER_MODEL_ID,
+        configuration: expect.objectContaining({ baseURL: OPENROUTER_BASE_URL }),
+      }),
+    );
+  });
+
+  it('accepts a custom model slug, name and context budget', () => {
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const provider = new OpenRouterProvider(config, {
+      name: 'openrouter-claude',
+      model: 'anthropic/claude-haiku-4.5',
+      maxContextTokens: 200_000,
+    });
+    provider.getModel();
+
+    expect(provider.name).toBe('openrouter-claude');
+    expect(provider.maxContextTokens).toBe(200_000);
+    expect(ChatOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'anthropic/claude-haiku-4.5' }),
+    );
   });
 
   it('getModel() returns the same instance on subsequent calls', () => {
-    const config = mockConfigService({ GROQ_API_KEY: 'test-key' });
-    const provider = new GroqProvider(config);
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const provider = new OpenRouterProvider(config);
 
     const first = provider.getModel();
     const second = provider.getModel();
@@ -79,11 +105,11 @@ describe('GroqProvider', () => {
     expect(first).toBe(second);
   });
 
-  it('throws when GROQ_API_KEY is missing', () => {
+  it('throws when OPENROUTER_API_KEY is missing', () => {
     const config = mockConfigService({});
 
-    expect(() => new GroqProvider(config)).toThrow(
-      'GROQ_API_KEY is required when using the Groq provider',
+    expect(() => new OpenRouterProvider(config)).toThrow(
+      'OPENROUTER_API_KEY is required when using the OpenRouter provider',
     );
   });
 });
@@ -149,8 +175,8 @@ describe('MistralProvider', () => {
 describe('LlmService', () => {
   /** All API keys present — the default happy-path config. */
   const allKeysConfig: Record<string, string> = {
-    LLM_PROVIDER: 'groq',
-    GROQ_API_KEY: 'test-groq-key',
+    LLM_PROVIDER: 'openrouter',
+    OPENROUTER_API_KEY: 'test-openrouter-key',
     ANTHROPIC_API_KEY: 'test-anthropic-key',
     MISTRAL_API_KEY: 'test-mistral-key',
   };
@@ -181,9 +207,9 @@ describe('LlmService', () => {
     expect(service.getProviderName()).toBe('claude');
   });
 
-  it('defaults to groq when LLM_PROVIDER is not set', async () => {
+  it('defaults to mistral when LLM_PROVIDER is not set', async () => {
     const service = await buildService({ LLM_PROVIDER: undefined });
-    expect(service.getProviderName()).toBe('groq');
+    expect(service.getProviderName()).toBe('mistral');
   });
 
   // -------------------------------------------------------------------------
@@ -191,27 +217,27 @@ describe('LlmService', () => {
   // -------------------------------------------------------------------------
 
   it('getModel() returns a model instance for the active provider', async () => {
-    const service = await buildService({ LLM_PROVIDER: 'groq' });
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
     const model = service.getModel();
 
     expect(model).toBeDefined();
   });
 
   it('getModel() with provider override returns a different instance', async () => {
-    const service = await buildService({ LLM_PROVIDER: 'groq' });
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
 
-    const groqModel = service.getModel();
+    const openrouterModel = service.getModel();
     const claudeModel = service.getModel('claude');
 
-    expect(groqModel).not.toBe(claudeModel);
+    expect(openrouterModel).not.toBe(claudeModel);
   });
 
   // -------------------------------------------------------------------------
   // getMaxContextTokens()
   // -------------------------------------------------------------------------
 
-  it('getMaxContextTokens() returns correct budget for groq', async () => {
-    const service = await buildService({ LLM_PROVIDER: 'groq' });
+  it('getMaxContextTokens() returns correct budget for openrouter', async () => {
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
     expect(service.getMaxContextTokens()).toBe(131_000);
   });
 
@@ -226,7 +252,7 @@ describe('LlmService', () => {
   });
 
   it('getMaxContextTokens() respects provider override', async () => {
-    const service = await buildService({ LLM_PROVIDER: 'groq' });
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
     expect(service.getMaxContextTokens('mistral')).toBe(262_000);
   });
 
@@ -241,24 +267,24 @@ describe('LlmService', () => {
   });
 
   it('throws for unknown provider override at runtime', async () => {
-    const service = await buildService({ LLM_PROVIDER: 'groq' });
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
 
     expect(() => service.getModel('openai')).toThrow('Unknown LLM provider "openai"');
   });
 
   it('throws when active provider API key is missing', async () => {
     const service = await buildService({
-      LLM_PROVIDER: 'groq',
-      GROQ_API_KEY: undefined,
+      LLM_PROVIDER: 'openrouter',
+      OPENROUTER_API_KEY: undefined,
     });
 
     // Provider instantiation (and key validation) happens lazily on first access
-    expect(() => service.getModel()).toThrow('GROQ_API_KEY is required');
+    expect(() => service.getModel()).toThrow('OPENROUTER_API_KEY is required');
   });
 
   it('throws when override provider API key is missing', async () => {
     const service = await buildService({
-      LLM_PROVIDER: 'groq',
+      LLM_PROVIDER: 'openrouter',
       ANTHROPIC_API_KEY: undefined,
     });
 

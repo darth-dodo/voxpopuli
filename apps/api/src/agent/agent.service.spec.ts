@@ -21,7 +21,7 @@ jest.mock('./tools', () => ({
 }));
 
 // Mock LLM providers to avoid loading @langchain/* ESM packages
-jest.mock('../llm/providers/groq.provider', () => ({ GroqProvider: jest.fn() }));
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
@@ -85,7 +85,7 @@ describe('AgentService', () => {
 
   const mockLlmService = {
     getModel: jest.fn().mockReturnValue(mockModel),
-    getProviderName: jest.fn().mockReturnValue('groq'),
+    getProviderName: jest.fn().mockReturnValue('openrouter'),
     getMaxContextTokens: jest.fn().mockReturnValue(131000),
   };
 
@@ -155,7 +155,7 @@ describe('AgentService', () => {
     expect(result.answer).toBe('This is the answer about Rust on HN.');
 
     // Verify meta fields
-    expect(result.meta.provider).toBe('groq');
+    expect(result.meta.provider).toBe('openrouter');
     expect(result.meta.durationMs).toBeGreaterThanOrEqual(0);
     expect(result.meta.cached).toBe(false);
 
@@ -341,7 +341,7 @@ describe('AgentService', () => {
       expect(completeEvent.response.answer).toBe('Direct answer.');
       expect(completeEvent.response.trust).toHaveProperty('sourcesVerified');
       expect(completeEvent.response.trust).toHaveProperty('viewpointDiversity');
-      expect(completeEvent.response.meta.provider).toBe('groq');
+      expect(completeEvent.response.meta.provider).toBe('openrouter');
     }
   });
 

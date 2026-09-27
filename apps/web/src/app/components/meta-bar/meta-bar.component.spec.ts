@@ -19,7 +19,7 @@ class TestHostComponent {
 /** Minimal AgentMeta factory. */
 function stubMeta(overrides: Partial<AgentMeta> = {}): AgentMeta {
   return {
-    provider: 'groq',
+    provider: 'openrouter',
     totalInputTokens: 1000,
     totalOutputTokens: 234,
     durationMs: 4521,
@@ -57,7 +57,7 @@ describe('MetaBarComponent', () => {
   });
 
   it('should display the provider name', () => {
-    expect(el.textContent).toContain('groq');
+    expect(el.textContent).toContain('openrouter');
   });
 
   it('should display total token count', () => {

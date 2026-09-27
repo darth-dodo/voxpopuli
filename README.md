@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22-green?style=flat-square&logo=node.js)](https://nodejs.org)
 [![NestJS](https://img.shields.io/badge/NestJS-11-red?style=flat-square&logo=nestjs)](https://nestjs.com)
 [![Angular](https://img.shields.io/badge/Angular-21-dd0031?style=flat-square&logo=angular)](https://angular.dev)
-[![Qwen3](https://img.shields.io/badge/Qwen3_32B-via_Groq-6366f1?style=flat-square)](https://console.groq.com)
+[![Qwen3](https://img.shields.io/badge/Qwen3_32B-via_OpenRouter-6366f1?style=flat-square)](https://openrouter.ai)
 [![Mistral](https://img.shields.io/badge/Mistral_Large_3-ff7000?style=flat-square)](https://console.mistral.ai)
 [![Claude](https://img.shields.io/badge/Claude_Haiku_4.5-d4a574?style=flat-square)](https://console.anthropic.com)
 
@@ -23,7 +23,7 @@ An **agentic RAG system** that turns 18+ years of [HackerNews](https://news.ycom
 ## Technical Highlights
 
 - **Multi-agent pipeline** orchestrated by LangGraph StateGraph: Retriever (ReAct + compaction) → Synthesizer → Writer, with per-stage retry, fallback response construction, and dry-well circuit breaker
-- **Triple-stack LLM providers** (Claude / Mistral / Groq) behind a facade pattern -- hot-switchable from the UI, each with provider-specific retry and TPM handling
+- **Triple-stack LLM providers** (Claude / Mistral / OpenRouter) behind a facade pattern -- hot-switchable from the UI, each with provider-specific retry and TPM handling
 - **SSE streaming with query-ID resilience** -- results stored server-side by queryId so mobile background-tab kills don't lose agent runs; automatic SSE reconnect with backend dedup prevents duplicate LLM calls
 - **Trust framework** computing source verification, recency, viewpoint diversity, and bias detection on every answer
 - **Automated eval harness** with 27 queries, 5 evaluators (source accuracy, LLM-as-judge quality, efficiency, latency, cost), and LangSmith tracing integration
@@ -82,7 +82,7 @@ The pipeline falls back to a single-agent ReAct loop on failure, preserving accu
 | Monorepo     | Nx                                                                      |
 | Backend      | NestJS 11 (TypeScript, module-per-domain DI)                            |
 | Frontend     | Angular 21 (standalone components, signals, Tailwind CSS v4)            |
-| LLM          | Claude / Mistral / Groq via LangChain.js facade                         |
+| LLM          | Claude / Mistral / OpenRouter via LangChain.js facade                   |
 | Pipeline     | LangGraph StateGraph with per-stage retry and fallback                  |
 | Streaming    | SSE for live progress + QueryStore for result persistence and reconnect |
 | Caching      | LRU cache (in-memory, TTL-based) with query deduplication               |
@@ -151,7 +151,7 @@ npx nx test              # All tests
 npx nx test api          # Backend (Jest)
 npx nx test web          # Frontend (Vitest)
 npx tsx evals/run-eval.ts               # Eval harness (requires running API)
-npx tsx evals/run-eval.ts -p groq -n 5  # Groq provider, 5 concurrent
+npx tsx evals/run-eval.ts -p openrouter -n 5  # OpenRouter provider, 5 concurrent
 npx tsx evals/run-eval.ts --no-judge    # Fast mode (skip LLM judge)
 ```
 

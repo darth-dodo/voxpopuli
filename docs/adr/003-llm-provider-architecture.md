@@ -135,3 +135,13 @@ All three depend on `@langchain/core` (~180 KB), which provides the `BaseChatMod
 - **LangChain agent API instability.** LangChain's agent primitives (AgentExecutor, tool calling interfaces) have changed significantly between major versions. Mitigation: pin exact versions in `package.json` and upgrade deliberately. The thin provider wrapper pattern means only `AgentService` touches LangChain's agent APIs directly.
 - **Provider SDK version drift.** If a provider updates its API (e.g., Anthropic introduces a new message format), the LangChain adapter package must be updated before VoxPopuli can use it. This creates a dependency on the LangChain maintainers' responsiveness. Mitigation: all three current providers have active LangChain adapter maintenance.
 - **Streaming translation complexity.** LangChain's streaming interface may not map cleanly to the SSE event types VoxPopuli needs (`thought`, `action`, `observation`, `answer`, `error`). The RagController may need custom stream transformation logic. Mitigation: this is a localized concern in one controller method, not a systemic risk.
+
+## Addendum (2026-09-27): Groq replaced by OpenRouter
+
+The `GroqProvider` (`@langchain/groq`) has been removed and replaced by `OpenRouterProvider`, registered under the provider id `openrouter`.
+
+- **Implementation:** LangChain `ChatOpenAI` (`@langchain/openai`) with `configuration.baseURL = https://openrouter.ai/api/v1`. OpenRouter is OpenAI-compatible, so tool calling uses the same `tool` role protocol Groq used.
+- **Model:** unchanged — `qwen/qwen3-32b` (131k context), now addressed as an OpenRouter slug via `OPENROUTER_MODEL_ID` in `model-ids.ts`.
+- **Config:** `OPENROUTER_API_KEY` replaces `GROQ_API_KEY`; `LLM_PROVIDER=openrouter` replaces `groq`.
+- **Dependency pin:** `@langchain/openai@1.4.1` — later versions (and the official `@langchain/openrouter`) require `@langchain/core` >= 1.1.48. Revisit when core is upgraded.
+- **Direction:** the long-term goal is to route _every_ provider through OpenRouter (one key, one billing surface, easy model swaps). `OpenRouterProvider` therefore accepts `{ name, model, maxContextTokens }`, so Claude/Mistral can later become OpenRouter-backed entries in `PROVIDER_FACTORIES` (e.g. `anthropic/claude-haiku-4.5`) without new provider classes. The Claude and Mistral native providers are unchanged for now.

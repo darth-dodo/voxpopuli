@@ -113,7 +113,7 @@ export class AgentService {
       );
 
       const baseModel = this.llm.getModel(options?.provider);
-      // Wrap with retry for Groq TPM rate-limits — waits 15s and retries.
+      // Wrap with retry for TPM rate-limits — waits 15s and retries.
       const model =
         typeof baseModel.withRetry === 'function'
           ? baseModel.withRetry({

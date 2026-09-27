@@ -6,7 +6,7 @@ Project-specific instructions for Claude Code when working in this repository.
 
 VoxPopuli is an agentic RAG system over Hacker News. See [product.md](docs/product.md) for what and why, [architecture.md](docs/architecture.md) for how.
 
-**Stack:** Nx monorepo, NestJS backend, Angular 17+ frontend, triple-stack LLM (Claude/Mistral/Groq), ElevenLabs TTS, node-cache.
+**Stack:** Nx monorepo, NestJS backend, Angular 17+ frontend, triple-stack LLM (Claude/Mistral/OpenRouter), ElevenLabs TTS, node-cache.
 
 ## Repository Structure
 
@@ -33,7 +33,7 @@ apps/api/src/          # NestJS backend (agent, cache, chunker, hn, llm, rag, tt
     dto/               #     RagQueryDto — input validation
   chunker/             #   ChunkerService — token-aware context building and formatting
   llm/                 #   LlmService facade + provider implementations
-    providers/         #     groq.provider, claude.provider, mistral.provider
+    providers/         #     openrouter.provider, claude.provider, mistral.provider
     llm-provider.interface.ts
   cache/               #   CacheService — in-memory caching layer
   hn/                  #   HN API client (stories, comments, search, retry with backoff)
@@ -75,12 +75,12 @@ npx tsx evals/run-eval.ts               # Run eval harness (requires running API
 npx tsx evals/run-eval.ts --help         # Show all CLI options
 npx tsx evals/run-eval.ts --list         # Browse queries by category
 npx tsx evals/run-eval.ts -p mistral     # Run with specific provider
-npx tsx evals/run-eval.ts -p groq -n 5   # Max parallelism (5 concurrent)
+npx tsx evals/run-eval.ts -p openrouter -n 5 # Max parallelism (5 concurrent)
 npx tsx evals/run-eval.ts --no-judge     # Fast mode (skip LLM-as-judge)
 npx tsx evals/run-eval.ts -C trust       # Run only trust category
 npx tsx evals/run-eval.ts -q q01         # Single query for debugging
 npx tsx evals/run-eval.ts --dry-run      # Preview without calling API
-npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
+npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
 ```
 
 ## Code Conventions
@@ -97,7 +97,7 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 - **Stateless services.** No mutable state outside CacheService.
 - **Dependency injection** for all service dependencies. No direct imports between modules.
 - All external API calls go through CacheService (`getOrSet<T>()` pattern).
-- All LLM providers implement `LlmProviderInterface` and wrap LangChain `ChatModel` instances. Never call LangChain provider SDKs (`@langchain/anthropic`, `@langchain/mistralai`, `@langchain/groq`) directly outside the provider class.
+- All LLM providers implement `LlmProviderInterface` and wrap LangChain `ChatModel` instances. Never call LangChain provider SDKs (`@langchain/anthropic`, `@langchain/mistralai`, `@langchain/openai`) directly outside the provider class.
 - Use native tool_result protocol per provider (see product.md Section 9). Do not string-hack tool results into messages.
 - **AgentService** uses LangChain `createAgent` (v1.2+) with `tool()` helper for typed tools. Do not use the deprecated `createReactAgent` + `AgentExecutor` API.
 - **Agent tools** are defined in `agent/tools.ts`. Each wraps an HnService method and returns chunked string output via ChunkerService. Add new tools following the same `tool()` + Zod schema pattern.
@@ -135,7 +135,7 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 | Comment cap per story | 30                                                                                         |
 | Query max length      | 500 chars                                                                                  |
 | Rate limit (global)   | 60 req/min                                                                                 |
-| Token budget: Claude  | 80k, Mistral 100k, Groq 50k                                                                |
+| Token budget: Claude  | 80k, Mistral 100k, OpenRouter 50k                                                          |
 | TTS max chars         | 2500                                                                                       |
 | Eval query count      | 27 (20 general + 7 trust)                                                                  |
 | Eval pass threshold   | 0.6 weighted score                                                                         |
@@ -151,7 +151,9 @@ npx tsx evals/run-eval.ts -c groq,mistral,claude  # Compare providers
 
 ## Environment Variables
 
-The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude), defaulting to `mistral`. Only that provider's API key is required. The frontend also defaults to Mistral via the `selectedProvider` model signal. See `.env.example` for all keys.
+The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), defaulting to `mistral`. Only that provider's API key is required. The frontend also defaults to Mistral via the `selectedProvider` model signal. See `.env.example` for all keys.
+
+**OpenRouter:** `OpenRouterProvider` uses LangChain `ChatOpenAI` pointed at `https://openrouter.ai/api/v1` (requires `OPENROUTER_API_KEY`). The model is an OpenRouter slug in `model-ids.ts` (`OPENROUTER_MODEL_ID`, currently `qwen/qwen3-32b`). The class accepts `{ name, model, maxContextTokens }` so more OpenRouter-backed providers can be registered in `PROVIDER_FACTORIES` without new classes — the long-term plan is to route every provider through OpenRouter. `@langchain/openai` is pinned to `1.4.1` because newer versions require `@langchain/core` >= 1.1.48.
 
 ## Common Pitfalls
 
@@ -163,7 +165,7 @@ The active LLM provider is set via `LLM_PROVIDER` (groq/mistral/claude), default
 6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`.
 7. **Don't import LangChain packages directly.** All LangChain usage is encapsulated inside `apps/api/src/llm/providers/` and `apps/api/src/agent/`. Consuming code should only depend on `LlmService`, `AgentService`, or the tool factories.
 8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
-9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/groq.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
+9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/openrouter.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
 10. **SSE streams mid-loop via AsyncGenerator.** `AgentService.runStream()` yields step events during the ReAct loop. `RagController.stream()` converts the generator to an Observable for NestJS `@Sse`. The blocking `run()` method consumes `runStream()` internally.
 11. **Trust metadata depends on tool usage.** Source age and recency metrics require the agent to call `get_story` (which emits "Posted: YYYY-MM-DD"). Search-only runs will have `avgSourceAge: 0`.
 12. **Angular 21 uses Vite-based dev server.** Proxy patterns need `/api/**` glob, not `/api`.

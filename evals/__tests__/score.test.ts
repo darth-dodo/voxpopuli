@@ -62,7 +62,7 @@ function makeResponse(overrides: Partial<AgentResponse> = {}): AgentResponse {
       },
     ],
     meta: {
-      provider: 'groq',
+      provider: 'openrouter',
       totalInputTokens: 5000,
       totalOutputTokens: 1000,
       durationMs: 4000,
@@ -96,7 +96,7 @@ beforeEach(() => {
 
 describe('scoreRun', () => {
   it('returns all zeros when response is null', async () => {
-    const result = await scoreRun(makeRunResult({ response: null }), makeQuery(), 'groq');
+    const result = await scoreRun(makeRunResult({ response: null }), makeQuery(), 'openrouter');
 
     expect(result.queryId).toBe('q01');
     expect(result.sourceAccuracy).toBe(0);
@@ -131,7 +131,7 @@ describe('scoreRun', () => {
 
     const query = makeQuery();
     const runResult = makeRunResult();
-    const result = await scoreRun(runResult, query, 'groq');
+    const result = await scoreRun(runResult, query, 'openrouter');
 
     // Verify evaluators called with correct args
     expect(mockedSourceAccuracy).toHaveBeenCalledWith(runResult.response);
@@ -140,8 +140,8 @@ describe('scoreRun', () => {
       query.expectedQualities,
     );
     expect(mockedEfficiency).toHaveBeenCalledWith(3, query.maxAcceptableSteps);
-    expect(mockedLatency).toHaveBeenCalledWith(runResult.durationMs, 'groq');
-    expect(mockedCost).toHaveBeenCalledWith(5000, 1000, 'groq');
+    expect(mockedLatency).toHaveBeenCalledWith(runResult.durationMs, 'openrouter');
+    expect(mockedCost).toHaveBeenCalledWith(5000, 1000, 'openrouter');
 
     // Verify individual scores
     expect(result.sourceAccuracy).toBe(0.8);
@@ -167,7 +167,7 @@ describe('scoreRun', () => {
     mockedLatency.mockReturnValue({ key: 'latency', score: 1.0 });
     mockedCost.mockReturnValue({ key: 'cost', score: 1.0, comment: '$0.001' });
 
-    const result = await scoreRun(makeRunResult(), makeQuery(), 'groq');
+    const result = await scoreRun(makeRunResult(), makeQuery(), 'openrouter');
 
     expect(result.details).toBeDefined();
     expect(result.details['source_accuracy']).toBe('5/5 verified');
@@ -222,9 +222,9 @@ describe('buildReport', () => {
       }),
     ];
 
-    const report = buildReport(scores, 'groq');
+    const report = buildReport(scores, 'openrouter');
 
-    expect(report.provider).toBe('groq');
+    expect(report.provider).toBe('openrouter');
     expect(report.queries).toBe(3);
     expect(report.scores).toBe(scores);
     expect(report.summary.avgSourceAccuracy).toBeCloseTo(0.6, 3);
@@ -242,14 +242,14 @@ describe('buildReport', () => {
       makeScore({ queryId: 'q03', weighted: 0.65 }), // pass
     ];
 
-    const report = buildReport(scores, 'groq');
+    const report = buildReport(scores, 'openrouter');
 
     // 2 of 3 pass => 66.67%
     expect(report.summary.passRate).toBeCloseTo(66.67, 1);
   });
 
   it('handles empty scores array', () => {
-    const report = buildReport([], 'groq');
+    const report = buildReport([], 'openrouter');
 
     expect(report.queries).toBe(0);
     expect(report.summary.avgWeighted).toBe(0);

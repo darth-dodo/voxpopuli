@@ -16,7 +16,7 @@ function stubAgentResponse(overrides: Partial<AgentResponse> = {}): AgentRespons
     steps: [],
     sources: [],
     meta: {
-      provider: 'groq',
+      provider: 'openrouter',
       totalInputTokens: 100,
       totalOutputTokens: 50,
       durationMs: 200,

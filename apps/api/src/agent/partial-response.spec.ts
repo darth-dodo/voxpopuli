@@ -29,7 +29,7 @@ function makeSources(count = 1): AgentSource[] {
 // ---------------------------------------------------------------------------
 
 describe('buildPartialResponse', () => {
-  const provider = 'groq';
+  const provider = 'openrouter';
   const startTime = Date.now() - 5000;
 
   it('should return null when no observation steps exist', () => {
@@ -216,7 +216,7 @@ describe('buildPartialResponse', () => {
 
     const result = buildPartialResponse(steps, [], provider, startTime, new Error('fail'));
 
-    expect(result!.meta.provider).toBe('groq');
+    expect(result!.meta.provider).toBe('openrouter');
     expect(result!.meta.totalInputTokens).toBe(0);
     expect(result!.meta.totalOutputTokens).toBe(0);
     expect(result!.meta.cached).toBe(false);

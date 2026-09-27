@@ -65,7 +65,7 @@ describe('ProviderSelectorComponent', () => {
     buttons[0].click();
     fixture.detectChanges();
 
-    expect(component.selectedProvider()).toBe('groq');
+    expect(component.selectedProvider()).toBe('openrouter');
     expect(buttons[0].classList.contains('vp-chip--active')).toBe(true);
     expect(buttons[1].classList.contains('vp-chip--active')).toBe(false);
   });

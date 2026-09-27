@@ -4,6 +4,11 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Groq replaced by OpenRouter** — The `groq` LLM provider is now `openrouter`: `OpenRouterProvider` uses LangChain `ChatOpenAI` against OpenRouter's OpenAI-compatible API, still serving `qwen/qwen3-32b`. Set `OPENROUTER_API_KEY` (replaces `GROQ_API_KEY`) and `LLM_PROVIDER=openrouter`. `@langchain/groq` removed. First step toward routing all providers through OpenRouter.
+- **Server default provider is now `mistral`** — `LLM_PROVIDER` defaults to `mistral` (matching the frontend selector and docs) instead of `groq`.
+
 ### Added
 
 - **Homepage UX polish** — Hero gradient with noise texture, masthead rule, editorial timeline component, preview cards matching real answer format, footer CTA, search focus refinements, light theme fixes, and 3x2 numbered example card grid.
