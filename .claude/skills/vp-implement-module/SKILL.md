@@ -68,7 +68,7 @@ Add it in every one of these places:
 | `CLAUDE.md`                             | Environment Variables section                                |
 | `docs/codebase-summary.md`              | Env var table                                                |
 
-When you remove or rename a var, delete it from all of these too, and tell the user to clean up the Render dashboard.
+When you remove or rename a var (or an accepted value, like a provider name), delete it from all of these too and tell the user to clean up the Render dashboard. Until they do, the old value is still deployed; see vp-complete-milestone §2b.
 
 ## Test Setup Gotcha
 

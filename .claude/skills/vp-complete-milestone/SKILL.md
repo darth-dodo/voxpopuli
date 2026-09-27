@@ -24,6 +24,23 @@ git ls-files | grep -E '\.(ts|tsx|json|md|yml|yaml|css|html)$' | xargs pnpm exec
 
 For anything touching an external provider (LLM, TTS, HN), unit tests with mocks aren't enough. **REQUIRED SUB-SKILL:** use vp-e2e-verify.
 
+## 2b. Check Compatibility With the Deployed Config
+
+If you **renamed or removed** an env var or an accepted value (a provider name like `groq`, a voice id, an endpoint field), the deployed environment still has the old one:
+
+- Render env-group values set in the dashboard are **not** overwritten by `render.yaml`, and PR previews share the `voxpopuli-secrets` group with production.
+- Production runs `main`, so you can't switch the shared value to the new name until the change has merged.
+- Cached frontends keep sending old values (e.g. `provider=groq`) for a while.
+
+So keep a deprecated alias that logs a warning (see `PROVIDER_ALIASES` in `llm.service.ts`), and prove the build boots with the **old** value:
+
+```bash
+pnpm exec nx build api && set -a && source .env && set +a
+LLM_PROVIDER=<old-value> PORT=3100 node apps/api/dist/main.js   # expect "Application is running", then GET /api/health -> 200
+```
+
+List the Render dashboard changes the user must make in the PR's unchecked test-plan items.
+
 ## 3. Update Docs
 
 Find every stale reference first, rather than relying on memory:
@@ -47,6 +64,8 @@ Leave history alone: past milestone checklists, version tables, and measured ben
 
 Use conventional commits, matching `git log`: `feat: …`, `fix: …`, `docs: …`, `refactor: …`. Put what changed and why in the body. Work on a feature branch. If the work builds on an unmerged PR, branch from that PR's branch and open the new PR with `--base <that-branch>` (a stacked PR).
 
+**Stacked PR merge order:** merge the child into its base branch _before_ the base merges to `main`, or retarget the child to `main` first. A child merged into an already-merged base branch never reaches `main`.
+
 The PR body has: Summary, Test plan (checked boxes for what you ran; unchecked for deploy steps like Render secrets), and Notes (known limits, anything skipped and why).
 
 ## 5. Linear (milestones)
@@ -59,3 +78,4 @@ Follow vp-linear-sync. Filter by milestone rather than keyword, close leaf tasks
 - Using `npx`/`npm`; this repo uses `pnpm`
 - Updating `architecture.md` but not `product.md`, the CHANGELOG, or the skills that document the old behaviour
 - Rewriting historical benchmark numbers instead of annotating them
+- Renaming a provider or env value without an alias, which crashes deployments whose env group still has the old value (`Unknown LLM provider "groq"`)
