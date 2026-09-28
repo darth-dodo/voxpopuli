@@ -11,6 +11,14 @@ import {
 import { Subscription } from 'rxjs';
 import { TtsService } from '../../services/tts.service';
 
+/**
+ * 12.5 ms of silence (8 kHz mono WAV). Played synchronously inside the Listen tap
+ * to "unlock" the audio element: iOS Safari only allows play() from a user
+ * gesture, and the real narration arrives ~15 s later, after the gesture ends.
+ */
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRuwAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
 export type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'complete' | 'error';
 
 const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5] as const;
@@ -225,8 +233,7 @@ export class AudioPlayerComponent implements OnDestroy {
       if (this.state() === 'complete') {
         this.audioElement.currentTime = 0;
       }
-      this.audioElement.play();
-      this.state.set('playing');
+      this.play();
     }
   }
 
@@ -268,6 +275,7 @@ export class AudioPlayerComponent implements OnDestroy {
 
   private startNarration(): void {
     this.cleanup();
+    this.unlockAudio();
     this.state.set('loading');
     this.errorMessage.set(null);
     this.startLoadingTimer();
@@ -287,16 +295,34 @@ export class AudioPlayerComponent implements OnDestroy {
     });
   }
 
+  /**
+   * Create the audio element and start a silent clip on it while still inside the
+   * user's tap. iOS Safari only permits play() during a gesture; an element that has
+   * played once in a gesture may play again later, when the narration arrives.
+   * Must be called synchronously from a click handler.
+   */
+  private unlockAudio(): void {
+    this.audioElement = new Audio();
+    this.audioElement.src = SILENT_WAV;
+    this.audioElement.play()?.catch(() => undefined);
+  }
+
+  /** Play, and only report 'playing' once the browser has actually started. */
+  private play(): void {
+    this.audioElement
+      ?.play()
+      .then(() => this.state.set('playing'))
+      .catch(() => this.state.set('paused'));
+  }
+
   private setupAudio(url: string): void {
-    this.audioElement = new Audio(url);
+    // Reuse the element unlocked during the Listen tap (see unlockAudio).
+    this.audioElement ??= new Audio();
     this.audioElement.playbackRate = this.playbackSpeed();
 
-    this.audioElement.addEventListener('canplay', () => {
-      this.audioElement
-        ?.play()
-        .then(() => this.state.set('playing'))
-        .catch(() => this.state.set('paused'));
-    });
+    // Auto-start once. Mobile browsers fire canplay again after seeks and
+    // rebuffers, which must not resume audio the user has paused.
+    this.audioElement.addEventListener('canplay', () => this.play(), { once: true });
 
     this.audioElement.addEventListener('timeupdate', () => {
       if (this.audioElement) {
@@ -316,6 +342,8 @@ export class AudioPlayerComponent implements OnDestroy {
       this.state.set('error');
       this.errorMessage.set('Audio playback failed');
     });
+
+    this.audioElement.src = url;
   }
 
   private startLoadingTimer(): void {

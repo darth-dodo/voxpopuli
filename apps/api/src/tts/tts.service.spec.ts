@@ -96,6 +96,22 @@ describe('TtsService', () => {
       expect(audio).toEqual(MP3);
     });
 
+    it('should add a Xing header to VBR MP3 so mobile browsers get the exact duration', async () => {
+      // Two MPEG-2 Layer III, 22.05 kHz, mono frames at different bitrates, no Xing header
+      const vbr = Buffer.concat([
+        Object.assign(Buffer.alloc(130), { 0: 0xff, 1: 0xf3, 2: 0x50, 3: 0xc0 }), // 40 kbps
+        Object.assign(Buffer.alloc(261), { 0: 0xff, 1: 0xf3, 2: 0x90, 3: 0xc0 }), // 80 kbps
+      ]);
+      fetchMock.mockResolvedValueOnce(speechResponse({ audio_data: vbr.toString('base64') }));
+
+      const audio = await service.synthesize('Read this');
+
+      const tagAt = audio.indexOf('Xing');
+      expect(tagAt).toBeGreaterThan(0);
+      expect(audio.readUInt32BE(tagAt + 8)).toBe(2); // exact frame count
+      expect(audio.subarray(audio.length - vbr.length)).toEqual(vbr);
+    });
+
     it('should honour a voice override', async () => {
       await service.synthesize('Read this', 'gb_jane_neutral');
 
