@@ -8,6 +8,7 @@ import {
   MISTRAL_TTS_DEFAULT_VOICE,
   MISTRAL_TTS_MODEL_ID,
 } from '../llm/model-ids';
+import { addXingHeader } from './mp3-xing';
 
 /** Upper bound for a single speech synthesis request. */
 const TTS_TIMEOUT_MS = 60_000;
@@ -112,7 +113,7 @@ export class TtsService {
    *
    * @param script - Text to speak
    * @param voice  - Voice override: preset slug or custom voice id (defaults to MISTRAL_TTS_VOICE)
-   * @returns MP3 audio buffer
+   * @returns MP3 audio buffer with a Xing header (exact duration for browsers)
    * @throws TtsUpstreamError if Mistral rejects the request or returns no audio
    */
   async synthesize(script: string, voice?: string): Promise<Buffer> {
@@ -150,6 +151,8 @@ export class TtsService {
     if (!body.audio_data) {
       throw new TtsUpstreamError('Mistral TTS returned no audio');
     }
-    return Buffer.from(body.audio_data, 'base64');
+    // Voxtral's VBR MP3 has no Xing header, so browsers misjudge its duration and
+    // WebKit (iOS Safari) stops playback early. Add one with the exact frame count.
+    return addXingHeader(Buffer.from(body.audio_data, 'base64'));
   }
 }
