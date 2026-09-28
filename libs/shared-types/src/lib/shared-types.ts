@@ -276,6 +276,16 @@ export interface HealthResponse {
   cacheStats: CacheStats;
 }
 
+/** Result of the live LLM provider probe at `GET /api/health/llm`. */
+export interface LlmHealthResponse {
+  provider: string;
+  ok: boolean;
+  latencyMs: number;
+  /** `auth` = the provider rejected the API key; `unavailable` = anything else. */
+  error?: 'auth' | 'unavailable';
+  detail?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Query result store
 // ---------------------------------------------------------------------------

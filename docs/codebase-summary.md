@@ -163,14 +163,14 @@ voxpopuli/
 
 ### 5.2 HealthModule (`apps/api/src/health/`)
 
-| Attribute    | Value                                                                             |
-| ------------ | --------------------------------------------------------------------------------- |
-| Purpose      | Lightweight health-check endpoint for load balancers and status indicators        |
-| Key class    | `HealthController`                                                                |
-| Key methods  | `GET /api/health` returns `HealthResponse` (status, uptime, cacheStats)           |
-| Test file    | `health.controller.spec.ts`                                                       |
-| Dependencies | `@voxpopuli/shared-types` (HealthResponse)                                        |
-| Note         | Currently returns hardcoded cache stats (0/0/0); does not inject CacheService yet |
+| Attribute    | Value                                                                                                                                                                                                           |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose      | Lightweight health-check endpoint for load balancers and status indicators                                                                                                                                      |
+| Key class    | `HealthController`                                                                                                                                                                                              |
+| Key methods  | `GET /api/health` returns `HealthResponse` (status, uptime, cacheStats); `GET /api/health/llm` returns `LlmHealthResponse` from a cached 1-token provider call (503 + `error: 'auth'` when the key is rejected) |
+| Test file    | `health.controller.spec.ts`                                                                                                                                                                                     |
+| Dependencies | `@voxpopuli/shared-types` (HealthResponse)                                                                                                                                                                      |
+| Note         | Currently returns hardcoded cache stats (0/0/0); does not inject CacheService yet                                                                                                                               |
 
 ### 5.3 HnModule (`apps/api/src/hn/`)
 

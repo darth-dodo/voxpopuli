@@ -184,6 +184,8 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 24. **Query result 202 response is a full QueryResult shape.** The `getResult` endpoint returns a complete `QueryResult` object (enforced via `satisfies QueryResult`) even when the query is still running (202). Do not assume any fields are missing from the 202 response body.
 25. **Don't make the LLM transcribe structured data (ADR-009).** Output tokens dominate latency (~5s per 1k). Source metadata comes from the `SourceRegistry` filled by the tools; the compactor emits only `themes` and the writer only prose. Never add `sources`/`allSources` back to an LLM output schema.
 26. **The Retriever ReAct model is output-capped** (`RETRIEVER_REACT_MAX_TOKENS`, via `LlmService.getModel(provider, { maxTokens })`). Hitting the recursion limit compacts what was collected instead of failing into the legacy fallback.
+27. **Rejected API keys fail fast, not into the fallback.** `isAuthError()` (`llm/llm-errors.ts`) recognizes 401/403 from every provider; the orchestrator then throws `LlmAuthError` (names the env var to fix) instead of re-running the legacy agent on the same bad key. `GET /api/health/llm` makes a cached 1-token call to confirm the active key works — use it after changing provider secrets; keep Render's health check on the cheap `/api/health`.
+28. **Mistral retries go through `FailFastChatMistralAI`.** Upstream `ChatMistralAI` retries every error except 400 because the Mistral SDK reports `statusCode` (not `status`), so a bad key used to hang ~2 minutes. The subclass disables inner retries and wraps calls with `failFastOnClientError`. Keep it if you upgrade `@langchain/mistralai`, unless upstream fixes the status mapping.
 
 ## Architecture Decision Records
 

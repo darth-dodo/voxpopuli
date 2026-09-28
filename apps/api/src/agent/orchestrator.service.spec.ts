@@ -335,12 +335,52 @@ describe('OrchestratorService', () => {
 
       const events = await collectEvents(service.runWithFallback('test query', defaultConfig));
 
-      expect(agentService.runStream).toHaveBeenCalledWith('test query');
+      expect(agentService.runStream).toHaveBeenCalledWith('test query', { provider: undefined });
       expect(
         events.some(
           (e) => e.kind === 'pipeline' && (e as PipelineStreamEvent).event.status === 'error',
         ),
       ).toBe(true);
+    });
+
+    it('falls back on the provider the user chose, not the server default', async () => {
+      (buildPipelineGraph as jest.Mock).mockReturnValue({
+        stream: jest.fn().mockRejectedValue(new Error('Retriever kaboom')),
+      });
+      (agentService.runStream as jest.Mock).mockReturnValue(makeLegacyEvents());
+
+      await collectEvents(
+        service.runWithFallback('test query', {
+          ...defaultConfig,
+          providerMap: { retriever: 'claude', synthesizer: 'claude', writer: 'claude' },
+        }),
+      );
+
+      expect(agentService.runStream).toHaveBeenCalledWith('test query', { provider: 'claude' });
+    });
+  });
+
+  describe('rejected API key', () => {
+    it('fails fast with a clear error instead of re-running the legacy agent', async () => {
+      const upstream = Object.assign(
+        new Error('401 {"error":{"message":"Invalid API Key","code":"invalid_api_key"}}'),
+        { status: 401 },
+      );
+      (buildPipelineGraph as jest.Mock).mockReturnValue({
+        stream: jest.fn().mockRejectedValue(upstream),
+      });
+
+      const events: PipelineStreamEvent[] = [];
+      await expect(async () => {
+        for await (const e of service.runWithFallback('test query', defaultConfig)) {
+          events.push(e as PipelineStreamEvent);
+        }
+      }).rejects.toThrow('The openrouter API key was rejected. Check OPENROUTER_API_KEY');
+
+      expect(agentService.runStream).not.toHaveBeenCalled();
+      expect(events.filter((e) => e.kind === 'pipeline').map((e) => e.event.detail)).toContain(
+        'API key rejected',
+      );
     });
   });
 

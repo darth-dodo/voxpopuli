@@ -398,11 +398,12 @@ Before passing the `EvidenceBundle` to the Synthesizer, the Orchestrator validat
 
 The pipeline can fail at three points. Each has a different recovery strategy:
 
-| Failure Point                                 | What Happened                   | Recovery Strategy                                                                                                                                      |
-| --------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Retriever fails                               | No evidence collected           | Fall back to legacy `AgentService` via `runWithFallback()`                                                                                             |
-| Retriever succeeds, Synthesizer fails         | Evidence exists but no analysis | **Retry Synthesizer once** with same `EvidenceBundle`. If second attempt fails, fall back to legacy.                                                   |
-| Retriever + Synthesizer succeed, Writer fails | Analysis exists but no prose    | **Retry Writer once** with same `AnalysisResult`. If second attempt fails, return a raw/fallback response built directly from `AnalysisResult` fields. |
+| Failure Point                                     | What Happened                   | Recovery Strategy                                                                                                                                                  |
+| ------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Retriever fails                                   | No evidence collected           | Fall back to legacy `AgentService` via `runWithFallback()`                                                                                                         |
+| Retriever succeeds, Synthesizer fails             | Evidence exists but no analysis | **Retry Synthesizer once** with same `EvidenceBundle`. If second attempt fails, fall back to legacy.                                                               |
+| Retriever + Synthesizer succeed, Writer fails     | Analysis exists but no prose    | **Retry Writer once** with same `AnalysisResult`. If second attempt fails, return a raw/fallback response built directly from `AnalysisResult` fields.             |
+| Any stage: provider rejects the API key (401/403) | Nothing can succeed on this key | **No fallback.** Emit `API key rejected` for unfinished stages and throw `LlmAuthError`, which names the env var to fix. The legacy agent would fail the same way. |
 
 **Key rule:** Never re-run the Retriever on a downstream failure. The Retriever is the slowest and most expensive stage (ReAct loop + HN API calls). If its output exists, reuse it.
 

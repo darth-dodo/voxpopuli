@@ -8,6 +8,7 @@ import { createAgentTools } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './system-prompt';
 import { computeTrustMetadata } from './trust';
 import { buildPartialResponse } from './partial-response';
+import { isAuthError, LlmAuthError } from '../llm/llm-errors';
 import { isTpmError } from '../llm/invoke-with-retry';
 
 // ---------------------------------------------------------------------------
@@ -256,6 +257,10 @@ export class AgentService {
         this.logger.error(
           `Agent failed after ${steps.length} steps (${elapsed}ms): ${error.message}`,
         );
+
+        if (isAuthError(error)) {
+          throw new LlmAuthError(options?.provider ?? this.llm.getProviderName());
+        }
 
         const sources = Array.from(sourcesMap.values());
         const partial = buildPartialResponse(

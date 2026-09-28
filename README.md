@@ -81,7 +81,7 @@ flowchart LR
 3. **Writer**: produces the editorial answer with a headline, sections, citations, and a bottom line.
 4. **Trust metadata**: computed afterwards by a pure function covering source verification, recency, viewpoint diversity, and Show HN bias.
 
-Each stage retries once. If the pipeline fails, it falls back to a single-agent ReAct loop and keeps the output of any stage that already completed. Every step streams to the UI over Server-Sent Events.
+Each stage retries once. If the pipeline fails, it falls back to a single-agent ReAct loop on the same provider and keeps the output of any stage that already completed; a rejected API key ends the query immediately with a message naming the env var to fix. Every step streams to the UI over Server-Sent Events.
 
 <details>
 <summary><strong>Query flow screenshots</strong></summary>
@@ -177,15 +177,16 @@ All configuration is through environment variables (see [`.env.example`](.env.ex
 
 All routes are served under `/api`.
 
-| Method | Route                                                 | Description                                                                            |
-| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `GET`  | `/rag/stream`                                         | SSE stream of pipeline, step, and answer events (`query`, `provider`, `useMultiAgent`) |
-| `POST` | `/rag/query`                                          | Blocking query that returns the full answer, sources, trust, and metadata              |
-| `GET`  | `/rag/query/:id/result`                               | Stored result for a query ID (`202` while still running)                               |
-| `POST` | `/tts/narrate`                                        | Narrate text as MP3 (`{ text, rewrite?, voiceId? }`)                                   |
-| `GET`  | `/tts/voices`                                         | Active narrator voice and model                                                        |
-| `GET`  | `/hn/search`, `/hn/item/:id`, `/hn/comments/:storyId` | Cached HN data access                                                                  |
-| `GET`  | `/health`                                             | Status, uptime, cache stats, and memory                                                |
+| Method | Route                                                 | Description                                                                                  |
+| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`  | `/rag/stream`                                         | SSE stream of pipeline, step, and answer events (`query`, `provider`, `useMultiAgent`)       |
+| `POST` | `/rag/query`                                          | Blocking query that returns the full answer, sources, trust, and metadata                    |
+| `GET`  | `/rag/query/:id/result`                               | Stored result for a query ID (`202` while still running)                                     |
+| `POST` | `/tts/narrate`                                        | Narrate text as MP3 (`{ text, rewrite?, voiceId? }`)                                         |
+| `GET`  | `/tts/voices`                                         | Active narrator voice and model                                                              |
+| `GET`  | `/hn/search`, `/hn/item/:id`, `/hn/comments/:storyId` | Cached HN data access                                                                        |
+| `GET`  | `/health`                                             | Status, uptime, cache stats, and memory                                                      |
+| `GET`  | `/health/llm`                                         | Live 1-token check of the active LLM provider (cached 60s; 503 + `error: auth` on a bad key) |
 
 Queries are limited to 500 characters and rate-limited to 60 requests per minute. Security headers are set with Helmet.
 
