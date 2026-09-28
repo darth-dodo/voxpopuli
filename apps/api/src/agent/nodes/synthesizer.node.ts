@@ -56,6 +56,34 @@ function extractTokens(msg: any): { input: number; output: number } {
   return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }
 
+/** Fewer distinct HN stories than this is "thin evidence". */
+export const THIN_EVIDENCE_SOURCES = 3;
+
+const CONFIDENCE_RANK = { low: 0, medium: 1, high: 2 } as const;
+
+/**
+ * Keep the stated confidence honest about how much evidence exists.
+ *
+ * The compactor can build several themes from a single story's comments, and the
+ * Synthesizer then reports "high" confidence. With fewer than
+ * {@link THIN_EVIDENCE_SOURCES} stories, confidence is capped (one or none → low,
+ * two → medium) and a gap is added; the Writer's prompt surfaces both to the reader.
+ */
+export function applyEvidenceFloor(analysis: AnalysisResult, sourceCount: number): AnalysisResult {
+  if (sourceCount >= THIN_EVIDENCE_SOURCES) return analysis;
+
+  const cap = sourceCount <= 1 ? 'low' : 'medium';
+  const confidence =
+    CONFIDENCE_RANK[analysis.confidence] > CONFIDENCE_RANK[cap] ? cap : analysis.confidence;
+  const gap =
+    sourceCount === 0
+      ? 'No relevant Hacker News stories were found, so this answer is not grounded in HN discussion.'
+      : `Only ${sourceCount} Hacker News ${
+          sourceCount === 1 ? 'story was' : 'stories were'
+        } found on this topic, so these views may not be representative.`;
+  return { ...analysis, confidence, gaps: [...analysis.gaps, gap] };
+}
+
 export function createSynthesizerNode(model: BaseChatModel) {
   return async (state: {
     query: string;
@@ -127,6 +155,10 @@ export function createSynthesizerNode(model: BaseChatModel) {
       analysis = AnalysisResultSchema.parse(JSON.parse(cleanLlmOutput(retryContent)));
     }
 
-    return { analysis, inputTokens, outputTokens };
+    return {
+      analysis: applyEvidenceFloor(analysis, state.bundle.allSources.length),
+      inputTokens,
+      outputTokens,
+    };
   };
 }
