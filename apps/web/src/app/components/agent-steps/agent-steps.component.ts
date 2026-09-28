@@ -318,6 +318,12 @@ export class AgentStepsComponent {
     if (!content || content.trim() === '') return 'No results';
     if (content.includes('No results found')) return 'No results found';
 
+    // Raw comment output (legacy mode): one "[Story <id>] <author> (depth <n>): ..." line each
+    const commentLines = content.match(/^\[Story \d+\]/gm);
+    if (commentLines) {
+      return `Read ${commentLines.length} ${commentLines.length === 1 ? 'comment' : 'comments'}`;
+    }
+
     // Count stories in observation
     const storyMatches = content.match(/\[\d+\]/g);
     if (storyMatches) {

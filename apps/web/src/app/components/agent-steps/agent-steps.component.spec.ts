@@ -528,6 +528,27 @@ describe('AgentStepsComponent', () => {
   // ---------------------------------------------------------------------------
 
   describe('summarizeObservation', () => {
+    it('counts comments in raw get_comments output (legacy mode)', () => {
+      const raw = [
+        '=== COMMENTS ===',
+        '[Story 9] alice (depth 0): Great tool',
+        '[Story 1]   bob (depth 1): Agreed',
+      ].join('\n');
+      const steps: AgentStep[] = [
+        mockStep({
+          type: 'action',
+          toolName: 'get_comments',
+          toolInput: { story_id: 9 },
+          timestamp: 1,
+        }),
+        mockStep({ type: 'observation', content: raw, timestamp: 2 }),
+      ];
+      fixture.componentRef.setInput('steps', steps);
+      fixture.detectChanges();
+
+      expect(component.groupedSteps()[0].observation).toBe('Read 2 comments');
+    });
+
     it('should return undefined for empty content (falsy observation skipped)', () => {
       const steps: AgentStep[] = [
         mockStep({

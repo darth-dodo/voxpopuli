@@ -34,7 +34,7 @@ const CompactedThemesSchema = EvidenceBundleSchema.pick({ themes: true });
  * The full output is still kept in `allMessages` for the compaction phase —
  * this summary is only used for the streamed step events shown in the UI.
  */
-function summarizeToolOutput(toolName: string | undefined, raw: string): string {
+export function summarizeToolOutput(toolName: string | undefined, raw: string): string {
   if (!raw || raw.trim() === '') return 'No results';
   if (raw.includes('No results found')) return 'No results found';
   if (raw.includes('No comments found')) return 'No comments found';
@@ -61,8 +61,8 @@ function summarizeToolOutput(toolName: string | undefined, raw: string): string 
       return 'Loaded story details';
     }
     case 'get_comments': {
-      // Comments are formatted with "by <author>" lines
-      const commentMatches = raw.match(/^by\s+\S+/gm);
+      // ChunkerService.formatForPrompt() emits one "[Story <id>] <author> (depth <n>): ..." line per comment
+      const commentMatches = raw.match(/^\[Story \d+\]/gm);
       const count = commentMatches?.length ?? 0;
       return count > 0
         ? `Read ${count} ${count === 1 ? 'comment' : 'comments'}`
