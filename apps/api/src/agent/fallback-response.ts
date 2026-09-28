@@ -43,6 +43,7 @@ export function buildFallbackResponse(
     author: s.author,
     points: s.points,
     commentCount: s.commentCount,
+    postedDate: s.postedDate,
   }));
 
   return {

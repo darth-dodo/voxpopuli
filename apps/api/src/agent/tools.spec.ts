@@ -391,6 +391,9 @@ describe('source registry', () => {
           author: 'a',
           points: 50,
           num_comments: 7,
+          created_at: '2026-03-04T10:00:00.000Z',
+          // Show HN body text with blank lines is what defeated the old text-parsing lookup.
+          story_text: 'Para one.\n\nPara two.',
         },
         {
           objectID: '12',
@@ -415,6 +418,7 @@ describe('source registry', () => {
         author: 'a',
         points: 50,
         commentCount: 7,
+        postedDate: '2026-03-04',
       },
       {
         storyId: 12,
@@ -450,6 +454,7 @@ describe('source registry', () => {
       author: 'pg',
       points: 120,
       commentCount: 40,
+      postedDate: '2023-11-14',
     });
   });
 });
