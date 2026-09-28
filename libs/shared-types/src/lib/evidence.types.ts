@@ -8,6 +8,8 @@ export const SourceMetadataSchema = z.object({
   author: z.string(),
   points: z.number(),
   commentCount: z.number(),
+  /** YYYY-MM-DD, from the HN API. */
+  postedDate: z.string().optional(),
 });
 export type SourceMetadata = z.infer<typeof SourceMetadataSchema>;
 

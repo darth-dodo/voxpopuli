@@ -74,6 +74,7 @@ export function createSearchHnTool(
           author: hit.author,
           points: hit.points ?? 0,
           commentCount: hit.num_comments ?? 0,
+          postedDate: hit.created_at ? hit.created_at.slice(0, 10) : undefined,
         });
       }
 
@@ -130,6 +131,7 @@ export function createGetStoryTool(
         author: story.by,
         points: story.score ?? 0,
         commentCount: story.descendants ?? 0,
+        postedDate: new Date(story.time * 1000).toISOString().slice(0, 10),
       });
       const text = chunker.stripHtml(story.text ?? null);
       const lines: string[] = [

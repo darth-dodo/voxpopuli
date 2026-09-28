@@ -16,6 +16,7 @@ export const AgentSourceSchema = z.object({
   author: z.string(),
   points: z.number(),
   commentCount: z.number(),
+  postedDate: z.string().optional(),
 });
 
 /** Structured agent response produced by the Writer. */
