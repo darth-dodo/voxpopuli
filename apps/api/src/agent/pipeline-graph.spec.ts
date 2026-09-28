@@ -175,6 +175,20 @@ describe('withRetry', () => {
 });
 
 describe('withWriterFallback', () => {
+  it('passes the graph config to the first attempt only, so a retry cannot re-stream the draft', async () => {
+    const fn = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('bad JSON'))
+      .mockResolvedValueOnce({ response: 'ok' });
+    const config = { writer: jest.fn() };
+    const wrapped = withWriterFallback(fn, jest.fn());
+
+    await wrapped(minimalState, config);
+
+    expect(fn).toHaveBeenNthCalledWith(1, minimalState, config);
+    expect(fn).toHaveBeenNthCalledWith(2, minimalState);
+  });
+
   it('should return result on success', async () => {
     const fn = jest.fn().mockResolvedValue({ response: 'ok' });
     const fallback = jest.fn();

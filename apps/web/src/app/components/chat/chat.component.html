@@ -559,6 +559,18 @@
               </span>
             </div>
           </div>
+
+          <!-- Live draft while the Writer streams; replaced by the final answer -->
+          @if (tokenContent()) {
+          <div class="vp-card p-4 sm:p-6 lg:p-8 mt-4 min-w-0" aria-live="polite" aria-busy="true">
+            <p class="text-mono text-[10px] uppercase tracking-widest text-text-muted mb-3">
+              Drafting answer…
+            </p>
+            <div class="vp-prose" data-testid="answer-draft">
+              <markdown [data]="tokenContent()" />
+            </div>
+          </div>
+          }
         </div>
         }
 

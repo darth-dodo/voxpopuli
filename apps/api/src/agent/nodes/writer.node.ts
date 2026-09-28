@@ -1,7 +1,10 @@
 import { AIMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { AIMessageChunk, BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { invokeWithRetry } from '../../llm/invoke-with-retry';
+import { WriterDraftStreamer } from './writer-draft';
 import {
   AgentResponseV2Schema,
   AnalysisResultSchema,
@@ -39,12 +42,56 @@ function extractTokens(msg: any): { input: number; output: number } {
   return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }
 
+/** Text of a message chunk; Anthropic streams arrays of content blocks rather than strings. */
+function chunkText(content: AIMessageChunk['content']): string {
+  if (typeof content === 'string') return content;
+  return content
+    .map((block) => ('text' in block && typeof block.text === 'string' ? block.text : ''))
+    .join('');
+}
+
+/**
+ * Stream the Writer's first attempt, emitting append-only markdown deltas of the
+ * answer as it is written (the UI renders them as a live draft), and return the
+ * same AIMessage shape `invokeWithRetry` would.
+ *
+ * If the provider fails before producing output, fall back to `invokeWithRetry`
+ * (which also handles TPM truncation). A failure mid-stream is rethrown so the
+ * node's retry wrapper runs the Writer again.
+ */
+async function streamWithDraft(
+  model: BaseChatModel,
+  messages: BaseMessage[],
+  options: RunnableConfig,
+  onDelta: (markdown: string) => void,
+): Promise<AIMessage> {
+  const drafter = new WriterDraftStreamer();
+  let full: AIMessageChunk | undefined;
+  let text = '';
+  try {
+    for await (const chunk of await model.stream(messages, options)) {
+      full = full ? full.concat(chunk) : chunk;
+      text += chunkText(chunk.content);
+      const delta = drafter.push(text);
+      if (delta) onDelta(delta);
+    }
+  } catch (err) {
+    if (full) throw err;
+    return invokeWithRetry(model, messages, options);
+  }
+  if (!full) return invokeWithRetry(model, messages, options);
+  return new AIMessage({ content: text, usage_metadata: full.usage_metadata });
+}
+
 export function createWriterNode(model: BaseChatModel) {
-  return async (state: {
-    query: string;
-    bundle: EvidenceBundle;
-    analysis: AnalysisResult;
-  }): Promise<{ response: AgentResponseV2; inputTokens: number; outputTokens: number }> => {
+  return async (
+    state: {
+      query: string;
+      bundle: EvidenceBundle;
+      analysis: AnalysisResult;
+    },
+    config?: LangGraphRunnableConfig,
+  ): Promise<{ response: AgentResponseV2; inputTokens: number; outputTokens: number }> => {
     let inputTokens = 0;
     let outputTokens = 0;
 
@@ -59,11 +106,17 @@ export function createWriterNode(model: BaseChatModel) {
       new HumanMessage(input),
     ];
 
-    // First attempt
-    const firstAttempt = await invokeWithRetry(model, messages, {
+    // First attempt — streamed as a live draft when the graph provides a writer.
+    const callOptions: RunnableConfig = {
       metadata: { pipeline_stage: 'writer', query: state.query },
       tags: ['multi-agent', 'writer'],
-    });
+    };
+    const emit = config?.writer;
+    const firstAttempt = emit
+      ? await streamWithDraft(model, messages, callOptions, (delta) =>
+          emit({ type: 'writer_draft', data: delta }),
+        )
+      : await invokeWithRetry(model, messages, callOptions);
     const t1 = extractTokens(firstAttempt);
     inputTokens += t1.input;
     outputTokens += t1.output;

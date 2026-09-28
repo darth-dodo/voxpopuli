@@ -1008,6 +1008,42 @@ describe('ChatComponent', () => {
       expect(el.textContent).toContain('Searching HN and collecting evidence...');
     });
 
+    it('renders the streamed answer draft while the writer is working', async () => {
+      ragServiceStub.stream.mockReturnValue(NEVER);
+      component.query.set('test');
+      component.submit();
+      component.isPipelineMode.set(true);
+      component.activeTab.set('answer');
+      component.tokenContent.set('## Rust is fast\n\nMost HN commenters agree.');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const draft = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="answer-draft"]',
+      );
+      expect(draft?.querySelector('h2')?.textContent).toContain('Rust is fast');
+      expect(draft?.textContent).toContain('Most HN commenters agree.');
+    });
+
+    it('hides the draft once the final answer arrives', () => {
+      ragServiceStub.stream.mockReturnValue(
+        of(
+          { type: 'pipeline', stage: 'writer', status: 'started', detail: '', elapsed: 0 },
+          { type: 'token', content: '## Draft' },
+          { type: 'answer', response: mockAgentResponse() },
+        ),
+      );
+      component.query.set('test');
+      component.submit();
+      component.activeTab.set('answer');
+      fixture.detectChanges();
+
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="answer-draft"]'),
+      ).toBeNull();
+    });
+
     it('should show partial result warning for error responses', () => {
       const resp = mockAgentResponse({
         meta: {
