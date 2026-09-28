@@ -39,6 +39,8 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Fixed
 
+- **Narration cut off and jumpy on mobile** — Voxtral returns variable-bitrate MP3 without a Xing header, so browsers guessed the duration 10-20% short: iOS Safari (WebKit) stopped playback early, cutting off the conclusion and sign-off, and seeks landed in the wrong place; Android Chrome showed a total time that kept growing. The API now adds a standard Xing header (exact frame count and seek table) to every narration.
+- **Listen could stay silent on iPhone** — The player now unlocks its audio element with a silent clip during the Listen tap, as iOS only allows playback from a user gesture and the narration arrives ~15 s later. Playback no longer auto-resumes after a pause when the browser re-buffers or seeks, and the Play button only shows "playing" once playback has actually started.
 - **CORS blocked the new frontend host** — The API allowed only one origin (`FRONTEND_URL`), still set to `voxpopuli-web-1o3v.onrender.com`, so requests from `voxpopuli-web-embx.onrender.com` were blocked. `FRONTEND_URL` now accepts a comma-separated list of origins (trailing slashes ignored); `onrender.com` still allows any Render subdomain for PR previews.
 - **Horizontal scroll eliminated on results page** — Fixed five overflow root causes: source card text wrapping, markdown table overflow, `min-w-0` on flex children, trust indicator mobile sizing, and source card title word-break.
 - **Pipeline stage timers stop on stall and error** — Timer caps at 180s, resets on retry, and stall detection prevents indefinitely spinning counters on SSE errors or connection drops.
