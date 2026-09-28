@@ -300,11 +300,12 @@ describe('RetrieverNode', () => {
     expect(parsed.success).toBe(true);
     expect(result.bundle.themes).toHaveLength(1);
 
-    // Verify the retry message includes validation error details
+    // Verify the retry message says what was wrong
     const secondCallArgs = mockModel.invoke.mock.calls[1][0];
     const retryMessage = secondCallArgs.find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (m: any) => typeof m.content === 'string' && m.content.includes('validation errors'),
+      (m: any) =>
+        typeof m.content === 'string' && m.content.includes('no themes with usable evidence'),
     );
     expect(retryMessage).toBeDefined();
   });
@@ -541,6 +542,46 @@ describe('RetrieverNode', () => {
 
       expect(bundle.themes).toHaveLength(1);
       expect(bundle.allSources).toEqual([registeredSource]);
+    });
+
+    it('normalizes an invalid evidence label without a repair round-trip', async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      mockModel.invoke.mockResolvedValue({
+        content: JSON.stringify({
+          themes: [
+            {
+              label: 'T',
+              items: [{ sourceId: 7, text: 'x', type: 'criticism', relevance: 0.5 }],
+            },
+          ],
+        }),
+      });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map([[7, registeredSource]]));
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(mockModel.invoke).toHaveBeenCalledTimes(1);
+      expect(bundle.themes[0].items[0].type).toBe('opinion');
+    });
+
+    it('uses salvaged themes when the repair retry also fails, instead of throwing', async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      const brokenMidway =
+        '{"themes":[{"label":"Kept","items":[{"sourceId":7,"text":"ok","type":"evidence","relevance":0.9}]},' +
+        '{"label":"Cut","items":[{"sourceId":7,"text":"He said "hi"';
+      mockModel.invoke
+        .mockResolvedValueOnce({ content: brokenMidway })
+        .mockResolvedValueOnce({ content: 'still not JSON' });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map([[7, registeredSource]]));
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(mockModel.invoke).toHaveBeenCalledTimes(2);
+      expect(bundle.themes.map((t) => t.label)).toEqual(['Kept']);
     });
 
     it('still surfaces unexpected ReAct errors', async () => {
