@@ -81,7 +81,8 @@ npx tsx evals/run-eval.ts -C trust       # Run only trust category
 npx tsx evals/run-eval.ts -q q01         # Single query for debugging
 npx tsx evals/run-eval.ts --dry-run      # Preview without calling API
 npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
-npx tsx evals/run-eval.ts --multi-agent --stream -n 1 --baseline <results.json>  # Latency A/B (ADR-009)
+npx tsx evals/run-eval.ts -n 1 --baseline <results.json>  # Latency A/B (ADR-009); pipeline over SSE is the default
+npx tsx evals/run-eval.ts --legacy                          # Legacy single-agent path (fallback only)
 ```
 
 ## Code Conventions

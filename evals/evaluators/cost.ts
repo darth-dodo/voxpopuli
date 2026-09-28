@@ -8,8 +8,10 @@ interface TokenRates {
 const PROVIDER_RATES: Record<string, TokenRates> = {
   // OpenRouter qwen/qwen3-235b-a22b-2507 lowest-price host
   openrouter: { inputPerMillion: 0.087, outputPerMillion: 0.35 },
-  claude: { inputPerMillion: 3.0, outputPerMillion: 15.0 },
-  mistral: { inputPerMillion: 2.0, outputPerMillion: 6.0 },
+  // claude-haiku-4-5: Anthropic list price (checked 2026-09-28)
+  claude: { inputPerMillion: 1.0, outputPerMillion: 5.0 },
+  // mistral-small-latest (Mistral Small 4): mistral.ai/pricing/api (checked 2026-09-28)
+  mistral: { inputPerMillion: 0.15, outputPerMillion: 0.6 },
 };
 
 /** Maximum acceptable cost per query (from product.md). */
