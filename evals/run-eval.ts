@@ -41,10 +41,13 @@ const program = new Command()
   .option('-t, --timeout <seconds>', 'per-query timeout in seconds', '300')
   .option('-n, --concurrency <n>', 'max parallel queries (API supports up to 5)', '3')
   .option('--no-judge', 'skip LLM-as-judge (faster, scores only source/efficiency/latency/cost)')
-  .option('--multi-agent', 'use multi-agent pipeline instead of legacy single-agent')
+  // Defaults match production: the web app always runs the multi-agent pipeline over SSE.
+  .option('--legacy', 'evaluate the legacy single-agent path (users only hit it on fallback)')
+  .option('--multi-agent', 'deprecated: the pipeline is now the default')
+  .option('--stream', 'default; kept so older commands keep working')
   .option(
-    '--stream',
-    'run over SSE (the real user path): uncached, records per-stage timings and fallbacks',
+    '--no-stream',
+    'use POST /rag/query instead of SSE (cached for 10 min; no per-stage timings or fallback detection)',
   )
   .option('--baseline <report>', 'print latency change vs a previous results JSON')
   .parse();
@@ -60,6 +63,7 @@ const opts = program.opts<{
   timeout: string;
   concurrency: string;
   judge: boolean;
+  legacy?: boolean;
   multiAgent?: boolean;
   stream?: boolean;
   baseline?: string;
@@ -226,11 +230,19 @@ async function main(): Promise<void> {
   const timeoutMs = parseInt(opts.timeout, 10) * 1000;
   const concurrency = Math.min(parseInt(opts.concurrency, 10), 5);
   const skipJudge = !opts.judge;
+  const useMultiAgent = !opts.legacy;
+  // Both --stream and --no-stream are declared, so the value is undefined unless one is passed.
+  const useStream = opts.stream !== false;
+  if (opts.multiAgent) {
+    console.warn(
+      '--multi-agent is deprecated: the pipeline is now the default (use --legacy to opt out).',
+    );
+  }
 
   for (const p of providers) {
     console.log(
-      `\nRunning eval for provider: ${p}${opts.multiAgent ? ' [pipeline]' : ' [legacy]'}${
-        opts.stream ? ' [sse]' : ''
+      `\nRunning eval for provider: ${p}${useMultiAgent ? ' [pipeline]' : ' [legacy]'}${
+        useStream ? ' [sse]' : ' [post]'
       } (${queries.length} queries, concurrency=${concurrency}${skipJudge ? ', no-judge' : ''})\n`,
     );
 
@@ -248,8 +260,8 @@ async function main(): Promise<void> {
       const batchResults = await Promise.allSettled(
         batchQueries.map(async (q, batchIdx) => {
           const idx = batch + batchIdx;
-          const run = opts.stream ? runQueryStream : runQuery;
-          const result = await run(q.query, p, EVAL_API_URL, timeoutMs, opts.multiAgent ?? false);
+          const run = useStream ? runQueryStream : runQuery;
+          const result = await run(q.query, p, EVAL_API_URL, timeoutMs, useMultiAgent);
           result.queryId = q.id;
 
           const score = await scoreRun(result, q, p, skipJudge);

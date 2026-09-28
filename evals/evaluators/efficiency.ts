@@ -17,6 +17,6 @@ export function evaluateEfficiency(stepCount: number, maxAcceptableSteps: number
   return {
     key: 'efficiency',
     score,
-    comment: `${stepCount} steps (max acceptable: ${maxAcceptableSteps})`,
+    comment: `${stepCount} tool calls (max acceptable: ${maxAcceptableSteps})`,
   };
 }

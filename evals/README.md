@@ -32,28 +32,32 @@ npx tsx evals/run-eval.ts --dry-run
 # List all available queries
 npx tsx evals/run-eval.ts --list
 
-# Latency A/B: run over SSE, then compare a later run against the saved baseline
-npx tsx evals/run-eval.ts --multi-agent --stream -n 1
-npx tsx evals/run-eval.ts --multi-agent --stream -n 1 --baseline evals/results/<baseline>.json
+# Latency A/B: compare a later run against a saved baseline (pipeline over SSE is the default)
+npx tsx evals/run-eval.ts -n 1
+npx tsx evals/run-eval.ts -n 1 --baseline evals/results/<baseline>.json
+
+# Evaluate the legacy single-agent path (users only reach it on pipeline fallback)
+npx tsx evals/run-eval.ts --legacy
 ```
 
 ## CLI Options
 
-| Flag                    | Description                                             | Default                           |
-| ----------------------- | ------------------------------------------------------- | --------------------------------- |
-| `-p, --provider <name>` | LLM provider to evaluate                                | `mistral` (or `LLM_PROVIDER` env) |
-| `-c, --compare <list>`  | Compare multiple providers (comma-separated)            | —                                 |
-| `-q, --query <id>`      | Run a single query by ID                                | all queries                       |
-| `-C, --category <name>` | Filter queries by category                              | all categories                    |
-| `--list`                | List available queries and exit                         | —                                 |
-| `--dry-run`             | Preview without calling the API                         | —                                 |
-| `--no-langsmith`        | Skip LangSmith dataset sync                             | sync enabled                      |
-| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)              | judge enabled                     |
-| `-t, --timeout <sec>`   | Per-query timeout                                       | `300`                             |
-| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                       | `3`                               |
-| `--multi-agent`         | Use multi-agent pipeline instead of legacy single-agent | legacy (single-agent)             |
-| `--stream`              | Run over SSE (uncached; records per-stage timings)      | `POST /rag/query` (cached 10 min) |
-| `--baseline <file>`     | Print latency change vs a previous results JSON         | —                                 |
+| Flag                    | Description                                              | Default                           |
+| ----------------------- | -------------------------------------------------------- | --------------------------------- |
+| `-p, --provider <name>` | LLM provider to evaluate                                 | `mistral` (or `LLM_PROVIDER` env) |
+| `-c, --compare <list>`  | Compare multiple providers (comma-separated)             | —                                 |
+| `-q, --query <id>`      | Run a single query by ID                                 | all queries                       |
+| `-C, --category <name>` | Filter queries by category                               | all categories                    |
+| `--list`                | List available queries and exit                          | —                                 |
+| `--dry-run`             | Preview without calling the API                          | —                                 |
+| `--no-langsmith`        | Skip LangSmith dataset sync                              | sync enabled                      |
+| `--no-judge`            | Skip LLM-as-judge (faster, partial scores)               | judge enabled                     |
+| `-t, --timeout <sec>`   | Per-query timeout                                        | `300`                             |
+| `-n, --concurrency <n>` | Max parallel queries (API cap: 5)                        | `3`                               |
+| `--legacy`              | Evaluate the legacy single agent instead of the pipeline | pipeline (what users run)         |
+| `--no-stream`           | Use `POST /rag/query` (cached 10 min, no stage timings)  | SSE stream (what users run)       |
+| `--multi-agent`         | Deprecated no-op; the pipeline is the default            | —                                 |
+| `--baseline <file>`     | Print latency change vs a previous results JSON          | —                                 |
 
 ## Scoring System
 
@@ -66,6 +70,14 @@ Each query is scored across five dimensions with fixed weights:
 | **Efficiency**        | 15%    | Agent steps vs `maxAcceptableSteps` threshold               |
 | **Latency**           | 15%    | Response time vs provider-specific thresholds               |
 | **Cost**              | 10%    | Token usage (input + output) vs provider pricing            |
+
+**Efficiency** counts tool calls (`action` steps), which is what `maxAcceptableSteps` budgets — the
+agent's step limit is also counted in actions. **Cost** is `max(0, 1 − cost / $0.05)`, the $0.05
+ceiling being product.md's maximum acceptable cost per query; rates in `evaluators/cost.ts` are list
+prices for the configured models (Mistral Small 4 $0.15/$0.60, Claude Haiku 4.5 $1/$5 per million
+tokens — before 2026-09-28 they were 10–13× too high for both). A run that **fell back to the legacy
+agent** scores 0 on both: only the fallback's tokens and steps are reported, so it would otherwise
+look cheap and lean.
 
 **Pass threshold:** Weighted score >= 0.60
 
@@ -84,8 +96,9 @@ The banded latency score hides the actual numbers, so every report also stores r
 (`retriever`/`synthesizer`/`writer`, from the pipeline's `done` events) and the number of runs
 that **fell back to the legacy agent** — the most expensive failure mode.
 
-- Use `--stream` for latency work. `POST /rag/query` serves repeat queries from a 10-minute cache,
-  so a re-run inside that window measures cache hits. Stage timings only exist over SSE.
+- Keep the default SSE mode for latency work. `--no-stream` uses `POST /rag/query`, which serves
+  repeat queries from a 10-minute cache, so a re-run inside that window measures cache hits. Stage
+  timings and fallback detection only exist over SSE.
 - Use `-n 1` for A/B comparisons. Mistral's limit is 100k tokens/minute and one pipeline query can
   consume most of it; concurrent runs measure provider backoff, not the code.
 - Errored runs are excluded from the latency summary so fast failures don't look like fast answers.
