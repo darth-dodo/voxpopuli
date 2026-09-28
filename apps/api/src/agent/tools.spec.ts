@@ -111,6 +111,41 @@ describe('createSearchHnTool', () => {
     });
   });
 
+  describe('thin results under a points filter', () => {
+    const hits = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({ objectID: String(i + 1), title: `S${i}` }));
+
+    it('retries once without min_points and says so', async () => {
+      hn.search.mockResolvedValueOnce({ hits: hits(1) }).mockResolvedValueOnce({ hits: hits(6) });
+
+      const out = await searchTool.invoke({ query: 'niche', min_points: 100 });
+
+      expect(hn.search).toHaveBeenNthCalledWith(2, 'niche', {
+        minPoints: undefined,
+        hitsPerPage: undefined,
+      });
+      expect(chunker.chunkStories).toHaveBeenCalledWith(hits(6));
+      expect(out).toMatch(/^Note: only 1 story had 100\+ points/);
+    });
+
+    it('keeps the filtered results, and says so, when the relaxed search finds nothing more', async () => {
+      hn.search.mockResolvedValueOnce({ hits: hits(1) }).mockResolvedValueOnce({ hits: hits(1) });
+
+      const out = await searchTool.invoke({ query: 'niche', min_points: 100 });
+
+      expect(out).toMatch(/^Note: removing the points filter found no additional stories/);
+    });
+
+    it('does not retry when the filter left enough results, or when no filter was set', async () => {
+      hn.search.mockResolvedValue({ hits: hits(3) });
+
+      await searchTool.invoke({ query: 'popular', min_points: 100 });
+      await searchTool.invoke({ query: 'popular' });
+
+      expect(hn.search).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('should coerce numeric strings sent by some models', async () => {
     hn.search.mockResolvedValue({ hits: [{ id: 1 }] });
 

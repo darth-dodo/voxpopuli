@@ -1,11 +1,15 @@
-import { AnalysisResultSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
+import {
+  AnalysisResultSchema,
+  type AnalysisResult,
+  type EvidenceBundle,
+} from '@voxpopuli/shared-types';
 
 // Mock LLM providers
 jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-import { createSynthesizerNode } from './synthesizer.node';
+import { applyEvidenceFloor, createSynthesizerNode } from './synthesizer.node';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
   query: 'React vs Vue',
@@ -207,8 +211,20 @@ describe('SynthesizerNode', () => {
     });
     mockModel.invoke.mockResolvedValue({ content: analysisJson });
 
+    // "high" is only kept with enough distinct stories (see applyEvidenceFloor).
+    const wellSourcedBundle: EvidenceBundle = {
+      ...SAMPLE_BUNDLE,
+      allSources: [1, 2, 3].map((storyId) => ({
+        storyId,
+        title: `Story ${storyId}`,
+        url: '',
+        author: 'a',
+        points: 10,
+        commentCount: 0,
+      })),
+    };
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'React vs Vue', bundle: SAMPLE_BUNDLE });
+    const result = await node({ query: 'React vs Vue', bundle: wellSourcedBundle });
 
     expect(result.analysis.confidence).toBe('high');
     expect(result.analysis.insights[0].evidenceStrength).toBe('strong');
@@ -291,5 +307,37 @@ describe('SynthesizerNode', () => {
 
     const parsed = AnalysisResultSchema.safeParse(result.analysis);
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('applyEvidenceFloor', () => {
+  const base: AnalysisResult = {
+    summary: 's',
+    insights: [],
+    contradictions: [],
+    confidence: 'high',
+    gaps: ['existing gap'],
+  };
+
+  it('leaves analyses with enough sources untouched', () => {
+    expect(applyEvidenceFloor(base, 3)).toBe(base);
+  });
+
+  it('caps confidence at low with one source and explains the gap', () => {
+    const result = applyEvidenceFloor(base, 1);
+    expect(result.confidence).toBe('low');
+    expect(result.gaps).toEqual([
+      'existing gap',
+      expect.stringContaining('Only 1 Hacker News story was found'),
+    ]);
+  });
+
+  it('caps confidence at medium with two sources, but never raises it', () => {
+    expect(applyEvidenceFloor(base, 2).confidence).toBe('medium');
+    expect(applyEvidenceFloor({ ...base, confidence: 'low' }, 2).confidence).toBe('low');
+  });
+
+  it('flags answers with no HN sources at all', () => {
+    expect(applyEvidenceFloor(base, 0).gaps[1]).toContain('not grounded in HN discussion');
   });
 });
