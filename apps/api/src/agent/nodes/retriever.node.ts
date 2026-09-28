@@ -4,30 +4,17 @@ import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages
 import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
-import {
-  EvidenceBundleSchema,
-  type EvidenceBundle,
-  type AgentStep,
-  type ThemeGroup,
-} from '@voxpopuli/shared-types';
+import { type EvidenceBundle, type AgentStep, type ThemeGroup } from '@voxpopuli/shared-types';
 import type { SourceRegistry } from '../tools';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
-import { cleanLlmOutput } from './parse-llm-json';
+import { parseCompactedThemes } from './compaction-parse';
 import { invokeWithRetry, isTpmError } from '../../llm/invoke-with-retry';
 
 const MAX_REACT_ITERATIONS = 8;
 
 /** Each ReAct "step" is ~2 graph nodes (LLM call + tool execution). Add buffer. */
 const RECURSION_LIMIT = MAX_REACT_ITERATIONS * 2 + 1;
-
-/**
- * The compactor only generates themes. Source metadata, counts and token
- * estimates are filled in by code — having the LLM transcribe ~30 source rows
- * cost thousands of output tokens (the dominant latency term) and produced
- * schema failures (e.g. `url: null` for Ask HN posts).
- */
-const CompactedThemesSchema = EvidenceBundleSchema.pick({ themes: true });
 
 /**
  * Produce a short, human-friendly summary of a tool's raw output.
@@ -327,48 +314,40 @@ async function compactWithRetry(
     new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
   ];
 
-  const firstAttempt = await invokeWithRetry(model, messages, {
+  const callOptions = {
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
-  });
+  };
+
+  const firstAttempt = await invokeWithRetry(model, messages, callOptions);
   const t1 = extractTokens(firstAttempt);
   inputTokens += t1.input;
   outputTokens += t1.output;
   const firstContent = typeof firstAttempt.content === 'string' ? firstAttempt.content : '';
 
-  try {
-    const parsed = JSON.parse(cleanLlmOutput(firstContent));
-    const result = CompactedThemesSchema.safeParse(parsed);
-    if (result.success) return { themes: result.data.themes, inputTokens, outputTokens };
+  // Complete JSON (labels normalized if needed) needs no repair round-trip.
+  const first = parseCompactedThemes(firstContent);
+  if (first.ok && !first.salvaged) return { themes: first.themes, inputTokens, outputTokens };
 
-    // Retry with error details
-    messages.push(
-      new AIMessage(firstContent),
-      new HumanMessage(
-        `Your previous response had validation errors:\n${JSON.stringify(
-          result.error.issues,
-          null,
-          2,
-        )}\n\nRespond with the COMPLETE corrected JSON object only, no markdown fencing.`,
-      ),
-    );
-  } catch {
-    messages.push(
-      new AIMessage(firstContent),
-      new HumanMessage(
-        'Your previous response was not valid JSON. Respond with the COMPLETE JSON object only, no markdown fencing.',
-      ),
-    );
-  }
-
-  const retryAttempt = await invokeWithRetry(model, messages, {
-    metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
-    tags: ['multi-agent', 'retriever', 'compaction'],
-  });
+  messages.push(
+    new AIMessage(firstContent),
+    new HumanMessage(
+      `Your previous response could not be used: ${
+        first.ok ? 'it was not valid JSON.' : first.error
+      } Respond with the COMPLETE JSON object only, no markdown fencing.`,
+    ),
+  );
+  const retryAttempt = await invokeWithRetry(model, messages, callOptions);
   const t2 = extractTokens(retryAttempt);
   inputTokens += t2.input;
   outputTokens += t2.output;
   const retryContent = typeof retryAttempt.content === 'string' ? retryAttempt.content : '';
-  const parsed = JSON.parse(cleanLlmOutput(retryContent));
-  return { themes: CompactedThemesSchema.parse(parsed).themes, inputTokens, outputTokens };
+
+  // Prefer a complete retry, then any salvaged themes — both beat re-running the
+  // whole query on the legacy agent, which is what throwing here triggers.
+  const retry = parseCompactedThemes(retryContent);
+  if (retry.ok && !retry.salvaged) return { themes: retry.themes, inputTokens, outputTokens };
+  const best = retry.ok ? retry : first;
+  if (best.ok) return { themes: best.themes, inputTokens, outputTokens };
+  throw new Error(`Compaction failed twice: ${retry.ok ? '' : retry.error}`);
 }
