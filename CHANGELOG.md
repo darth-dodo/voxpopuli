@@ -4,6 +4,15 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rejected API keys fail fast with a clear message** — A 401/403 from any LLM provider now ends the query immediately with "The <provider> API key was rejected. Check <ENV_VAR> in the server environment." instead of re-running the legacy agent on the same key. Mistral previously retried a rejected key with exponential backoff for about 2 minutes (the SDK reports `statusCode`, which LangChain's retry logic ignores); `FailFastChatMistralAI` stops on client errors while still retrying 429/5xx.
+- **Fallback keeps the chosen provider** — When the pipeline falls back to the single agent, it now uses the provider the user selected instead of the server default.
+
+### Added
+
+- **`GET /api/health/llm`** — Makes a cached (60 s) 1-token call to the active provider and returns `{ provider, ok, latencyMs, error?: 'auth' | 'unavailable' }` (503 when not ok). Use it to confirm provider secrets after a deploy.
+
 ### Changed
 
 - **ElevenLabs replaced by Mistral Voxtral TTS** — Narration audio now comes from Voxtral (`voxtral-mini-tts-latest`, preset voice `en_paul_neutral`) via `POST https://api.mistral.ai/v1/audio/speech` using the existing `MISTRAL_API_KEY`; still returned as MP3 (`audio/mpeg`), so the frontend is unchanged. Configure with `MISTRAL_TTS_MODEL` / `MISTRAL_TTS_VOICE`; `ELEVENLABS_*` env vars and the `elevenlabs` package are removed. `POST /api/tts/narrate` rejects malformed `voiceId`s with 400 and maps Voxtral failures to 502 with the upstream reason; `GET /api/tts/voices` returns `{ id, name, model }` (ElevenLabs `VoiceSettings` removed). A 2,500-character script (the narration cap) produces about 108 s of audio in about 10 s.

@@ -18,6 +18,7 @@ import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
 import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
+import { isAuthError, LlmAuthError } from '../llm/llm-errors';
 
 /** Output-token cap for the retriever's ReAct turns (see ADR-009). */
 const RETRIEVER_REACT_MAX_TOKENS = 768;
@@ -75,6 +76,23 @@ export class OrchestratorService {
       }
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error);
+      const provider = config.providerMap.retriever ?? this.llm.getProviderName();
+
+      // A rejected API key fails the legacy agent the same way — don't burn a second
+      // run on it; tell the operator which key to fix.
+      if (isAuthError(error)) {
+        this.logger.error(`LLM provider "${provider}" rejected its API key: ${rawMessage}`);
+        for (const stage of ['retriever', 'synthesizer', 'writer'] as const) {
+          if (!completedStages.has(stage)) {
+            yield {
+              kind: 'pipeline',
+              event: { stage, status: 'error' as const, detail: 'API key rejected', elapsed: 0 },
+            } as PipelineStreamEvent;
+          }
+        }
+        throw new LlmAuthError(provider);
+      }
+
       this.logger.warn(`Pipeline failed, falling back to legacy AgentService: ${rawMessage}`);
 
       // Show a user-friendly message instead of raw API error JSON.
@@ -103,8 +121,10 @@ export class OrchestratorService {
         },
       } as PipelineStreamEvent;
 
-      // Delegate to existing AgentService
-      for await (const event of this.agentService.runStream(query)) {
+      // Delegate to existing AgentService on the same provider the user chose
+      for await (const event of this.agentService.runStream(query, {
+        provider: config.providerMap.retriever,
+      })) {
         yield event;
       }
     }

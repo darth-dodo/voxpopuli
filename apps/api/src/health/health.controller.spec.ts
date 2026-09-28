@@ -1,9 +1,15 @@
+jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
+jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
+jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as http from 'http';
 import { HealthModule } from './health.module';
 import { CacheModule } from '../cache/cache.module';
-import type { HealthResponse } from '@voxpopuli/shared-types';
+import { CacheService } from '../cache/cache.service';
+import { LlmService } from '../llm/llm.service';
+import type { HealthResponse, LlmHealthResponse } from '@voxpopuli/shared-types';
 
 /**
  * Helper that performs a GET request against the test application and returns
@@ -37,11 +43,19 @@ function get(app: INestApplication, path: string): Promise<{ status: number; bod
 
 describe('HealthController', () => {
   let app: INestApplication;
+  const invoke = jest.fn();
+  const mockLlm = {
+    getProviderName: jest.fn(() => 'mistral'),
+    getModel: jest.fn(() => ({ invoke })),
+  };
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [HealthModule, CacheModule],
-    }).compile();
+    })
+      .overrideProvider(LlmService)
+      .useValue(mockLlm)
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
@@ -71,5 +85,40 @@ describe('HealthController', () => {
     const extended = body as HealthResponse & { memoryMB: number };
     expect(typeof extended.memoryMB).toBe('number');
     expect(extended.memoryMB).toBeGreaterThan(0);
+  });
+
+  describe('GET /api/health/llm', () => {
+    beforeEach(() => {
+      invoke.mockReset();
+      app.get(CacheService).del('health:llm');
+    });
+
+    it('returns 200 when the provider answers', async () => {
+      invoke.mockResolvedValue({ content: 'OK' });
+
+      const { status, body } = await get(app, '/api/health/llm');
+
+      expect(status).toBe(200);
+      expect(body).toMatchObject({ provider: 'mistral', ok: true });
+      expect(mockLlm.getModel).toHaveBeenCalledWith(undefined, { maxTokens: 5 });
+    });
+
+    it('returns 503 classified as auth when the key is rejected', async () => {
+      invoke.mockRejectedValue(Object.assign(new Error('Unauthorized'), { status: 401 }));
+
+      const { status, body } = await get(app, '/api/health/llm');
+
+      expect(status).toBe(503);
+      expect(body as LlmHealthResponse).toMatchObject({ ok: false, error: 'auth' });
+    });
+
+    it('caches the probe so repeated checks do not call the provider again', async () => {
+      invoke.mockResolvedValue({ content: 'OK' });
+
+      await get(app, '/api/health/llm');
+      await get(app, '/api/health/llm');
+
+      expect(invoke).toHaveBeenCalledTimes(1);
+    });
   });
 });
