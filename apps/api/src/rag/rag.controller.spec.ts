@@ -97,6 +97,7 @@ describe('RagController', () => {
     complete: jest.Mock;
     fail: jest.Mock;
     findRunning: jest.Mock;
+    findReusable: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -111,6 +112,7 @@ describe('RagController', () => {
       complete: jest.fn(),
       fail: jest.fn(),
       findRunning: jest.fn(),
+      findReusable: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -393,7 +395,7 @@ describe('RagController', () => {
     expect(answerData.answer).toBe('Multi-agent answer');
 
     // Verify QueryStore interactions
-    expect(queryStore.create).toHaveBeenCalledWith('multi-agent query', 'default');
+    expect(queryStore.create).toHaveBeenCalledWith('multi-agent query', 'default:pipeline');
     expect(queryStore.appendEvent).toHaveBeenCalled();
     expect(queryStore.appendStep).toHaveBeenCalled();
     expect(queryStore.complete).toHaveBeenCalledWith('test-query-id', response);
@@ -656,12 +658,40 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 21. Duplicate in-flight query should poll existing result (legacy)
   // -------------------------------------------------------------------------
+  it('replays a recently completed identical query immediately, marked as cached', async () => {
+    const response = fakeAgentResponse('Cached answer');
+    queryStore.findReusable.mockReturnValue({ queryId: 'done-id', complete: true });
+    queryStore.get.mockReturnValue({
+      queryId: 'done-id',
+      status: 'complete',
+      response,
+      pipelineEvents: [{ stage: 'retriever', status: 'done', detail: '', elapsed: 9000 }],
+      steps: [],
+      error: null,
+      createdAt: Date.now(),
+      completedAt: Date.now(),
+    });
+
+    const started = Date.now();
+    const events = await lastValueFrom(
+      controller.stream('What is Rust?', undefined, 'true').pipe(toArray()),
+    );
+
+    expect(Date.now() - started).toBeLessThan(1000); // not the 2s poll interval
+    expect(orchestratorService.runWithFallback).not.toHaveBeenCalled();
+    expect(queryStore.findReusable).toHaveBeenCalledWith('What is Rust?', 'default:pipeline');
+    expect(events.map((e) => e.type)).toEqual(['init', 'pipeline', 'answer']);
+    const answer = JSON.parse(events[2].data as string);
+    expect(answer.answer).toBe('Cached answer');
+    expect(answer.meta.cached).toBe(true);
+  });
+
   it('legacy stream should return existing query result when duplicate is in-flight', async () => {
     const response = fakeAgentResponse('Deduped answer');
     const existingQueryId = 'existing-query-id';
 
-    // findRunning returns existing queryId for this query+provider
-    queryStore.findRunning.mockReturnValue(existingQueryId);
+    // findReusable returns the in-flight queryId for this query+provider
+    queryStore.findReusable.mockReturnValue({ queryId: existingQueryId, complete: false });
 
     // First call returns running, second returns complete
     queryStore.get.mockReturnValueOnce({
@@ -701,7 +731,7 @@ describe('RagController', () => {
     const response = fakeAgentResponse('Deduped pipeline answer');
     const existingQueryId = 'existing-pipeline-id';
 
-    queryStore.findRunning.mockReturnValue(existingQueryId);
+    queryStore.findReusable.mockReturnValue({ queryId: existingQueryId, complete: false });
 
     queryStore.get.mockReturnValueOnce({
       queryId: existingQueryId,
@@ -732,7 +762,7 @@ describe('RagController', () => {
   // 23. Poll should emit error when query expires
   // -------------------------------------------------------------------------
   it('poll should emit error when existing query expires from store', async () => {
-    queryStore.findRunning.mockReturnValue('expired-query-id');
+    queryStore.findReusable.mockReturnValue({ queryId: 'expired-query-id', complete: false });
     queryStore.get.mockReturnValue(undefined);
 
     const observable = controller.stream('expiring query');
@@ -759,7 +789,7 @@ describe('RagController', () => {
     const observable = controller.stream('buffer test');
     await lastValueFrom(observable.pipe(toArray()));
 
-    expect(queryStore.create).toHaveBeenCalledWith('buffer test', 'default');
+    expect(queryStore.create).toHaveBeenCalledWith('buffer test', 'default:legacy');
     expect(queryStore.appendStep).toHaveBeenCalledTimes(1);
     expect(queryStore.complete).toHaveBeenCalledWith('test-query-id', response);
   });
