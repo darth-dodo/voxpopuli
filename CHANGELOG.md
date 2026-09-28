@@ -7,6 +7,7 @@ All notable changes to VoxPopuli are documented in this file.
 ### Fixed
 
 - **Rejected API keys fail fast with a clear message** — A 401/403 from any LLM provider now ends the query immediately with "The <provider> API key was rejected. Check <ENV_VAR> in the server environment." instead of re-running the legacy agent on the same key. Mistral previously retried a rejected key with exponential backoff for about 2 minutes (the SDK reports `statusCode`, which LangChain's retry logic ignores); `FailFastChatMistralAI` stops on client errors while still retrying 429/5xx.
+- **Comment reads show the real count** — The research timeline said "No comment content" for every `get_comments` call because the summary looked for a `by <author>` line format the chunker no longer emits. It now counts `[Story <id>] …` lines (server and legacy UI), and a test drives it with real `ChunkerService` output.
 - **Fallback keeps the chosen provider** — When the pipeline falls back to the single agent, it now uses the provider the user selected instead of the server default.
 
 ### Added

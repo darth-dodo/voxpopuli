@@ -13,7 +13,9 @@ jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
+import { ChunkerService } from '../../chunker/chunker.service';
 import {
+  summarizeToolOutput,
   createRetrieverNode,
   isDryWell,
   buildDryWellBundle,
@@ -570,5 +572,35 @@ describe('RetrieverNode', () => {
       expect(reactModel.invoke).not.toHaveBeenCalled();
       expect(mockModel.invoke).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('summarizeToolOutput', () => {
+  it('counts comments in the real get_comments output format', () => {
+    // Generate the observation exactly as the get_comments tool does, so a format
+    // change on either side breaks this test instead of silently showing "No comment content".
+    const chunker = new ChunkerService();
+    const comments = chunker.chunkComments([
+      { id: 1, type: 'comment', by: 'alice', time: 0, text: 'Great tool', parent: 9, depth: 0 },
+      {
+        id: 2,
+        type: 'comment',
+        by: 'bob',
+        time: 0,
+        text: 'Line one\nline two',
+        parent: 1,
+        depth: 1,
+      },
+      { id: 3, type: 'comment', by: 'carol', time: 0, text: 'Agreed', parent: 9, depth: 0 },
+    ]);
+    const raw = chunker.formatForPrompt(chunker.buildContext([], comments, Infinity));
+
+    expect(summarizeToolOutput('get_comments', raw)).toBe('Read 3 comments');
+  });
+
+  it('reports genuinely empty comment results', () => {
+    expect(summarizeToolOutput('get_comments', 'No comments found for story 9.')).toBe(
+      'No comments found',
+    );
   });
 });
