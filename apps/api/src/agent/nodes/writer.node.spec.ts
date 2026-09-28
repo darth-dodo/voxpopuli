@@ -8,7 +8,9 @@ jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
+import { AIMessageChunk } from '@langchain/core/messages';
 import { createWriterNode } from './writer.node';
+import { renderAnswerMarkdown } from './writer-draft';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
   query: 'React vs Vue',
@@ -376,5 +378,80 @@ describe('WriterNode', () => {
     const result = await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS });
 
     expect(result.response.sources).toEqual(SAMPLE_BUNDLE.allSources);
+  });
+
+  describe('live draft streaming', () => {
+    const output = {
+      headline: 'React leads',
+      context: 'Context.',
+      sections: [
+        { heading: 'A', body: 'a [1]', citedSources: [1] },
+        { heading: 'B', body: 'b [1]', citedSources: [1] },
+      ],
+      bottomLine: 'Pick React.',
+    };
+    const json = JSON.stringify(output);
+
+    /** A model whose stream() yields `json` in small chunks, like a real provider. */
+    function streamingModel(chunkSize = 7) {
+      return {
+        invoke: jest.fn(),
+        stream: jest.fn(async () =>
+          (async function* () {
+            for (let i = 0; i < json.length; i += chunkSize) {
+              yield new AIMessageChunk({ content: json.slice(i, i + chunkSize) });
+            }
+            yield new AIMessageChunk({
+              content: '',
+              usage_metadata: { input_tokens: 120, output_tokens: 80, total_tokens: 200 },
+            });
+          })(),
+        ),
+      };
+    }
+
+    it('streams markdown deltas that add up to the final answer', async () => {
+      const model = streamingModel();
+      const writer = jest.fn();
+
+      const node = createWriterNode(model as never);
+      const result = await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS }, {
+        writer,
+      } as never);
+
+      const drafts = writer.mock.calls.map(([e]) => e);
+      expect(drafts.length).toBeGreaterThan(3);
+      expect(drafts.every((e) => e.type === 'writer_draft')).toBe(true);
+      expect(drafts.map((e) => e.data).join('')).toBe(renderAnswerMarkdown(result.response));
+      expect(result.inputTokens).toBe(120);
+      expect(result.outputTokens).toBe(80);
+      expect(model.invoke).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a normal call when streaming fails before any output', async () => {
+      const model = {
+        invoke: jest.fn().mockResolvedValue({ content: json }),
+        stream: jest.fn().mockRejectedValue(new Error('streaming unsupported')),
+      };
+
+      const node = createWriterNode(model as never);
+      const result = await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS }, {
+        writer: jest.fn(),
+      } as never);
+
+      expect(model.invoke).toHaveBeenCalledTimes(1);
+      expect(result.response.headline).toBe('React leads');
+    });
+
+    it('does not stream when the graph provides no writer (e.g. retries)', async () => {
+      const model = streamingModel();
+      model.invoke.mockResolvedValue({ content: json });
+
+      const node = createWriterNode(model as never);
+      await node({ query: 'q', bundle: SAMPLE_BUNDLE, analysis: SAMPLE_ANALYSIS });
+
+      expect(model.stream).not.toHaveBeenCalled();
+      expect(model.invoke).toHaveBeenCalledTimes(1);
+    });
   });
 });

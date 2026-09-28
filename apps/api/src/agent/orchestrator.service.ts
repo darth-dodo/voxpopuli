@@ -17,6 +17,7 @@ import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
 import { createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
+import { renderAnswerMarkdown } from './nodes/writer-draft';
 import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
 import { isAuthError, LlmAuthError } from '../llm/llm-errors';
 
@@ -196,6 +197,8 @@ export class OrchestratorService {
         const customEvent = data as { type: string; data: unknown };
         if (customEvent.type === 'retriever_step') {
           yield { kind: 'step', step: customEvent.data as AgentStep };
+        } else if (customEvent.type === 'writer_draft') {
+          yield { kind: 'token', content: customEvent.data as string };
         }
         continue;
       }
@@ -301,11 +304,7 @@ export class OrchestratorService {
       yield {
         kind: 'complete',
         response: {
-          answer: `## ${writerResponse.headline}\n\n${
-            writerResponse.context
-          }\n\n${writerResponse.sections
-            .map((s) => `### ${s.heading}\n\n${s.body}`)
-            .join('\n\n')}\n\n**Bottom line:** ${writerResponse.bottomLine}`,
+          answer: renderAnswerMarkdown(writerResponse),
           steps: [],
           sources,
           meta: {

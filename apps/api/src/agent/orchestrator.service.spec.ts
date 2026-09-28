@@ -322,6 +322,26 @@ describe('OrchestratorService', () => {
       const lastStepIdx = events.reduce((acc, e, i) => (e.kind === 'step' ? i : acc), -1);
       expect(lastStepIdx).toBeLessThan(retrieverDoneIdx);
     });
+
+    it('forwards writer draft deltas as token events', async () => {
+      const graph = mockGraph(
+        [
+          { retriever: { bundle: mockBundle, steps: [] } },
+          { synthesizer: { analysis: mockAnalysis } },
+          { writer: { response: mockResponseV2 } },
+        ],
+        [
+          { type: 'writer_draft', data: '## Head' },
+          { type: 'writer_draft', data: 'line' },
+        ],
+      );
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const tokens = events.filter((e) => e.kind === 'token') as Array<{ content: string }>;
+      expect(tokens.map((t) => t.content)).toEqual(['## Head', 'line']);
+    });
   });
 
   describe('retriever failure', () => {
