@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import type {
+  PriorEvidence,
   AgentResponse,
   AgentStep,
   StoredPipelineEvent,
@@ -18,6 +19,9 @@ const QUERY_TTL = 300;
  * one pipeline run per window instead of one per visitor.
  */
 const COMPLETED_TTL = 900;
+
+/** How long a finished run's evidence stays available for follow-up questions. */
+const EVIDENCE_TTL = 1800;
 
 /**
  * Manages the lifecycle of query results, wrapping {@link CacheService}
@@ -134,6 +138,26 @@ export class QueryStore {
     // Only return if the query is still running
     if (entry && entry.status === 'running') return existingId;
     return null;
+  }
+
+  /**
+   * Keep a completed run's evidence so follow-up questions can reuse it.
+   *
+   * @param queryId  - The completed query's identifier
+   * @param evidence - Bundle, retriever steps and the original question
+   */
+  setEvidence(queryId: string, evidence: PriorEvidence): void {
+    this.cache.set(`evidence:${queryId}`, evidence, EVIDENCE_TTL);
+  }
+
+  /**
+   * Evidence from an earlier run, if it hasn't expired.
+   *
+   * @param queryId - The earlier query's identifier
+   * @returns The stored evidence, or `undefined`
+   */
+  getEvidence(queryId: string): PriorEvidence | undefined {
+    return this.cache.get<PriorEvidence>(`evidence:${queryId}`);
   }
 
   /**

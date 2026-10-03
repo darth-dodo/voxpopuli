@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type {
+  PriorEvidence,
   PipelineConfig,
   PipelineEvent,
   AgentResponseV2,
@@ -33,7 +34,7 @@ export type PipelineStreamEvent =
   | { kind: 'pipeline'; event: PipelineEvent }
   | { kind: 'step'; step: AgentStep }
   | { kind: 'token'; content: string }
-  | { kind: 'complete'; response: AgentResponse };
+  | { kind: 'complete'; response: AgentResponse; evidence?: PriorEvidence };
 
 /**
  * Orchestrates the multi-agent pipeline via a LangGraph StateGraph.
@@ -64,12 +65,13 @@ export class OrchestratorService {
   async *runWithFallback(
     query: string,
     config: PipelineConfig,
+    prior?: PriorEvidence,
   ): AsyncGenerator<PipelineStreamEvent | AgentStreamEvent> {
     // Track which stages completed so fallback only marks remaining stages as error
     const completedStages = new Set<string>();
 
     try {
-      for await (const event of this.runStream(query, config)) {
+      for await (const event of this.runStream(query, config, prior)) {
         if (event.kind === 'pipeline' && event.event.status === 'done') {
           completedStages.add(event.event.stage);
         }
@@ -134,7 +136,11 @@ export class OrchestratorService {
   /**
    * Run the pipeline by streaming a LangGraph StateGraph with per-stage event emission.
    */
-  async *runStream(query: string, config: PipelineConfig): AsyncGenerator<PipelineStreamEvent> {
+  async *runStream(
+    query: string,
+    config: PipelineConfig,
+    prior?: PriorEvidence,
+  ): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
 
     const activeProvider =
@@ -155,8 +161,19 @@ export class OrchestratorService {
       maxTokens: RETRIEVER_REACT_MAX_TOKENS,
     });
 
+    // A follow-up reuses the previous run's evidence: the Retriever stage returns it
+    // immediately, and the Synthesizer/Writer answer the new question from it.
+    const retriever = prior
+      ? async () => ({
+          bundle: { ...prior.bundle, query: `${query} (follow-up to: "${prior.query}")` },
+          steps: prior.steps,
+          inputTokens: 0,
+          outputTokens: 0,
+        })
+      : createRetrieverNode(getModel('retriever'), tools, sources, reactModel);
+
     const graph = buildPipelineGraph({
-      retriever: createRetrieverNode(getModel('retriever'), tools, sources, reactModel),
+      retriever,
       synthesizer: withRetry(createSynthesizerNode(getModel('synthesizer'))),
       writer: withWriterFallback(createWriterNode(getModel('writer')), () => ({
         response: undefined,
@@ -181,7 +198,9 @@ export class OrchestratorService {
       event: {
         stage: 'retriever',
         status: 'started',
-        detail: `Searching HN for "${query}"...`,
+        detail: prior
+          ? `Reusing ${prior.bundle.allSources.length} sources from "${prior.query}"...`
+          : `Searching HN for "${query}"...`,
         elapsed: 0,
       },
     };
@@ -307,6 +326,9 @@ export class OrchestratorService {
             writerResponse.headline + ' ' + writerResponse.sections.map((s) => s.body).join(' '),
           ),
         },
+        evidence: bundle
+          ? { query: prior?.query ?? query, bundle, steps: retrieverSteps }
+          : undefined,
       };
     } else if (analysis && bundle) {
       yield {
@@ -322,6 +344,7 @@ export class OrchestratorService {
           },
           retrieverSteps,
         ),
+        evidence: { query: prior?.query ?? query, bundle, steps: retrieverSteps },
       };
     }
   }

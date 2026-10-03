@@ -447,6 +447,50 @@ describe('OrchestratorService', () => {
     });
   });
 
+  describe('follow-up questions', () => {
+    const prior = {
+      query: 'What does HN think about Rust?',
+      bundle: mockBundle,
+      steps: [{ type: 'observation' as const, content: 'Found 3 stories', timestamp: 1 }],
+    };
+
+    it('reuses the prior evidence instead of running the Retriever', async () => {
+      setupHappyPathGraph();
+      const { createRetrieverNode } = jest.requireMock('./nodes/retriever.node');
+      (createRetrieverNode as jest.Mock).mockClear();
+
+      const events = await collectEvents(
+        service.runStream('What are the complaints?', defaultConfig, prior),
+      );
+
+      expect(createRetrieverNode).not.toHaveBeenCalled();
+      const { retriever } = (buildPipelineGraph as jest.Mock).mock.calls[0][0];
+      const out = await retriever();
+      expect(out.bundle.allSources).toEqual(mockBundle.allSources);
+      expect(out.bundle.query).toBe(
+        'What are the complaints? (follow-up to: "What does HN think about Rust?")',
+      );
+      expect(out.steps).toEqual(prior.steps);
+
+      const started = events.find((e) => e.kind === 'pipeline') as {
+        event: { detail: string };
+      };
+      expect(started.event.detail).toContain('Reusing');
+    });
+
+    it('returns the evidence with the completed answer so it can be followed up again', async () => {
+      setupHappyPathGraph();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const complete = events.find((e) => e.kind === 'complete') as {
+        evidence?: { query: string; bundle: EvidenceBundle };
+      };
+      expect(complete.evidence?.query).toBe('test query');
+      expect(complete.evidence?.bundle).toEqual(mockBundle);
+    });
+  });
+
   describe('graph construction', () => {
     it('calls buildPipelineGraph with node functions', async () => {
       setupHappyPathGraph();

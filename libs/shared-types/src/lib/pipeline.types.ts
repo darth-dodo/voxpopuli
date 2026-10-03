@@ -40,6 +40,18 @@ export const PipelineConfigSchema = z.object({
 });
 export type PipelineConfig = z.infer<typeof PipelineConfigSchema>;
 
+/**
+ * Evidence gathered by a completed pipeline run, kept so a follow-up question can
+ * reuse it instead of searching HN again.
+ */
+export interface PriorEvidence {
+  /** The question the evidence was gathered for. */
+  query: string;
+  bundle: z.infer<typeof EvidenceBundleSchema>;
+  /** Retriever steps, reused for trust metadata (source recency, verification). */
+  steps: import('./shared-types').AgentStep[];
+}
+
 /** Full pipeline result with intermediates and timing. */
 export const PipelineResultSchema = z.object({
   response: AgentResponseV2Schema,
