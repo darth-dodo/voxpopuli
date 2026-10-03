@@ -44,6 +44,7 @@ jest.mock('./nodes/retriever.node', () => ({
 }));
 jest.mock('./nodes/synthesizer.node', () => ({
   createSynthesizerNode: jest.fn(() => jest.fn()),
+  createMergedSynthesizerNode: jest.fn(() => jest.fn()),
 }));
 jest.mock('./nodes/writer.node', () => ({
   createWriterNode: jest.fn(() => jest.fn()),
@@ -444,6 +445,51 @@ describe('OrchestratorService', () => {
       expect(writerDone).toBeDefined();
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(writerDone!.detail).toContain('fallback');
+    });
+  });
+
+  describe('merged writer mode', () => {
+    it('is off by default: the Synthesizer makes its own LLM call', async () => {
+      setupHappyPathGraph();
+      const { createSynthesizerNode, createMergedSynthesizerNode } = jest.requireMock(
+        './nodes/synthesizer.node',
+      );
+      const { createWriterNode } = jest.requireMock('./nodes/writer.node');
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      expect(createSynthesizerNode).toHaveBeenCalled();
+      expect(createMergedSynthesizerNode).not.toHaveBeenCalled();
+      expect(createWriterNode).toHaveBeenLastCalledWith(expect.anything(), {
+        fromEvidence: false,
+      });
+    });
+
+    it('PIPELINE_MERGED_WRITER=true skips the Synthesizer call and writes from evidence', async () => {
+      setupHappyPathGraph();
+      const { createSynthesizerNode, createMergedSynthesizerNode } = jest.requireMock(
+        './nodes/synthesizer.node',
+      );
+      const { createWriterNode } = jest.requireMock('./nodes/writer.node');
+      (createSynthesizerNode as jest.Mock).mockClear();
+      const merged = new OrchestratorService(
+        agentService,
+        mockLlm as never,
+        {} as never,
+        {} as never,
+        { get: (key: string) => (key === 'PIPELINE_MERGED_WRITER' ? 'true' : undefined) } as never,
+      );
+
+      const events = await collectEvents(merged.runStream('test query', defaultConfig));
+
+      expect(createMergedSynthesizerNode).toHaveBeenCalled();
+      expect(createSynthesizerNode).not.toHaveBeenCalled();
+      expect(createWriterNode).toHaveBeenLastCalledWith(expect.anything(), { fromEvidence: true });
+      const synthDone = events.find(
+        (e) =>
+          e.kind === 'pipeline' && e.event.stage === 'synthesizer' && e.event.status === 'done',
+      ) as { event: { detail: string } };
+      expect(synthDone.event.detail).toContain('Merged into writer');
     });
   });
 

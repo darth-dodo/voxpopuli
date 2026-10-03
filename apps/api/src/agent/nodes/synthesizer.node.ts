@@ -16,7 +16,7 @@ import { cleanLlmOutput } from './parse-llm-json';
  * (url, commentCount, tokenCount) and formats as readable text rather than
  * raw JSON, which LLMs handle more efficiently for analysis tasks.
  */
-function formatBundleForSynthesizer(bundle: EvidenceBundle): string {
+export function formatBundleForSynthesizer(bundle: EvidenceBundle): string {
   const lines: string[] = [];
 
   lines.push(`Query: "${bundle.query}"`);
@@ -82,6 +82,51 @@ export function applyEvidenceFloor(analysis: AnalysisResult, sourceCount: number
           sourceCount === 1 ? 'story was' : 'stories were'
         } found on this topic, so these views may not be representative.`;
   return { ...analysis, confidence, gaps: [...analysis.gaps, gap] };
+}
+
+/**
+ * Build an extractive AnalysisResult straight from the evidence themes, without an
+ * LLM: one insight per theme (its most relevant items), summary from the labels.
+ * Used by merged mode, where it is what the fallback response shows if the Writer
+ * fails twice — so it must read sensibly on its own.
+ */
+export function analysisFromThemes(bundle: EvidenceBundle): AnalysisResult {
+  const themes = bundle.themes.slice(0, 5);
+  const insights = themes.map((theme, i) => ({
+    claim: theme.label,
+    reasoning: [...theme.items]
+      .sort((a, b) => b.relevance - a.relevance)
+      .slice(0, 2)
+      .map((item) => `${item.text} [${item.sourceId}]`)
+      .join(' '),
+    evidenceStrength: 'moderate' as const,
+    themeIndices: [i],
+  }));
+  return applyEvidenceFloor(
+    {
+      summary: `What HN discussion says about ${themes.map((t) => t.label).join(', ')}`,
+      insights,
+      contradictions: [],
+      confidence: 'high',
+      gaps: [],
+    },
+    bundle.allSources.length,
+  );
+}
+
+/**
+ * Synthesizer stand-in for merged mode (`PIPELINE_MERGED_WRITER=true`): no LLM call.
+ * The Writer analyzes the evidence itself; this supplies the confidence and gaps from
+ * {@link applyEvidenceFloor} and an extractive analysis for the fallback path.
+ */
+export function createMergedSynthesizerNode() {
+  return async (state: {
+    bundle: EvidenceBundle;
+  }): Promise<{ analysis: AnalysisResult; inputTokens: number; outputTokens: number }> => ({
+    analysis: analysisFromThemes(state.bundle),
+    inputTokens: 0,
+    outputTokens: 0,
+  });
 }
 
 export function createSynthesizerNode(model: BaseChatModel) {

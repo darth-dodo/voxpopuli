@@ -5,6 +5,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { invokeWithRetry } from '../../llm/invoke-with-retry';
 import { WriterDraftStreamer } from './writer-draft';
+import { formatBundleForSynthesizer } from './synthesizer.node';
+import { MERGED_WRITER_SYSTEM_PROMPT } from '../prompts/merged-writer.prompt';
 import {
   AgentResponseV2Schema,
   AnalysisResultSchema,
@@ -83,7 +85,12 @@ async function streamWithDraft(
   return new AIMessage({ content: text, usage_metadata: full.usage_metadata });
 }
 
-export function createWriterNode(model: BaseChatModel) {
+/**
+ * @param options.fromEvidence - Merged mode: write straight from the evidence themes
+ *   (one LLM call instead of Synthesizer + Writer). Confidence and gaps still come
+ *   from `state.analysis`, which the merged Synthesizer node derives in code.
+ */
+export function createWriterNode(model: BaseChatModel, options: { fromEvidence?: boolean } = {}) {
   return async (
     state: {
       query: string;
@@ -95,16 +102,26 @@ export function createWriterNode(model: BaseChatModel) {
     let inputTokens = 0;
     let outputTokens = 0;
 
-    const writerInput: WriterInput = {
-      analysis: state.analysis,
-      sources: state.bundle.allSources,
-    };
-    const input = JSON.stringify(writerInput);
-
-    const messages: BaseMessage[] = [
-      new SystemMessage(WRITER_SYSTEM_PROMPT),
-      new HumanMessage(input),
-    ];
+    let messages: BaseMessage[];
+    if (options.fromEvidence) {
+      const gaps = state.analysis.gaps.length ? state.analysis.gaps.join(' ') : 'none';
+      messages = [
+        new SystemMessage(MERGED_WRITER_SYSTEM_PROMPT),
+        new HumanMessage(
+          `${formatBundleForSynthesizer(state.bundle)}\n\n` +
+            `Confidence: ${state.analysis.confidence}\nKnown gaps: ${gaps}`,
+        ),
+      ];
+    } else {
+      const writerInput: WriterInput = {
+        analysis: state.analysis,
+        sources: state.bundle.allSources,
+      };
+      messages = [
+        new SystemMessage(WRITER_SYSTEM_PROMPT),
+        new HumanMessage(JSON.stringify(writerInput)),
+      ];
+    }
 
     // First attempt — streamed as a live draft when the graph provides a writer.
     const callOptions: RunnableConfig = {

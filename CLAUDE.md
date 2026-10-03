@@ -187,6 +187,8 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 26. **The Retriever ReAct model is output-capped** (`RETRIEVER_REACT_MAX_TOKENS`, via `LlmService.getModel(provider, { maxTokens })`). Hitting the recursion limit compacts what was collected instead of failing into the legacy fallback.
 27. **Rejected API keys fail fast, not into the fallback.** `isAuthError()` (`llm/llm-errors.ts`) recognizes 401/403 from every provider; the orchestrator then throws `LlmAuthError` (names the env var to fix) instead of re-running the legacy agent on the same bad key. `GET /api/health/llm` makes a cached 1-token call to confirm the active key works — use it after changing provider secrets; keep Render's health check on the cheap `/api/health`.
 28. **Mistral retries go through `FailFastChatMistralAI`.** Upstream `ChatMistralAI` retries every error except 400 because the Mistral SDK reports `statusCode` (not `status`), so a bad key used to hang ~2 minutes. The subclass disables inner retries and wraps calls with `failFastOnClientError`. Keep it if you upgrade `@langchain/mistralai`, unless upstream fixes the status mapping.
+29. **Completed answers are replayed for 15 minutes.** `QueryStore.findReusable()` returns a running query (attach) or one completed within `COMPLETED_TTL` (replay, `meta.cached: true`). Keys normalize case/whitespace and include the mode (`<provider>:pipeline` / `:legacy`, plus `:followup:<parentId>` for follow-ups). When testing a pipeline change locally, vary the question or restart the API, or you'll measure a replay.
+30. **Follow-ups reuse stored evidence.** Completed pipeline runs keep `PriorEvidence` (bundle + retriever steps) for 30 min; `?followUpOf=<queryId>` swaps the Retriever for a node returning it. Source metadata, including `postedDate`, comes from the tools' `SourceRegistry`, never from parsing tool text.
 
 ## Architecture Decision Records
 
@@ -200,6 +202,7 @@ ADRs live in `docs/adr/` and document key design choices. Consult these before p
 - `007-query-id-resilience.md` — Query IDs, stored results, and reconnect/dedup for background tabs
 - `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
 - `009-pipeline-latency.md` — Latency investigation; LLM writes only judgement, code supplies source metadata; eval `--stream`/`--baseline`
+- `010-merged-writer-and-model-speed.md` — Opt-in `PIPELINE_MERGED_WRITER` (−25% latency in eval) and OpenRouter model throughput benchmark
 
 ## Linear Project
 

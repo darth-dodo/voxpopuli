@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   PriorEvidence,
   PipelineConfig,
@@ -16,7 +17,7 @@ import { createAgentTools, type SourceRegistry } from './tools';
 import { computeTrustMetadata } from './trust';
 import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
-import { createSynthesizerNode } from './nodes/synthesizer.node';
+import { createMergedSynthesizerNode, createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
 import { renderAnswerMarkdown } from './nodes/writer-draft';
 import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
@@ -57,7 +58,16 @@ export class OrchestratorService {
     private readonly llm: LlmService,
     private readonly hn: HnService,
     private readonly chunker: ChunkerService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
+
+  /**
+   * Merged mode (`PIPELINE_MERGED_WRITER=true`, off by default): skip the Synthesizer's
+   * LLM call and let the Writer analyze the evidence directly. See ADR-010.
+   */
+  private get mergedWriter(): boolean {
+    return this.config?.get<string>('PIPELINE_MERGED_WRITER') === 'true';
+  }
 
   /**
    * Run the pipeline with automatic fallback to legacy agent on failure.
@@ -174,10 +184,15 @@ export class OrchestratorService {
 
     const graph = buildPipelineGraph({
       retriever,
-      synthesizer: withRetry(createSynthesizerNode(getModel('synthesizer'))),
-      writer: withWriterFallback(createWriterNode(getModel('writer')), () => ({
-        response: undefined,
-      })),
+      synthesizer: this.mergedWriter
+        ? createMergedSynthesizerNode()
+        : withRetry(createSynthesizerNode(getModel('synthesizer'))),
+      writer: withWriterFallback(
+        createWriterNode(getModel('writer'), { fromEvidence: this.mergedWriter }),
+        () => ({
+          response: undefined,
+        }),
+      ),
     });
 
     const stageOrder: PipelineStage[] = ['retriever', 'synthesizer', 'writer'];
@@ -253,9 +268,11 @@ export class OrchestratorService {
             event: {
               stage: 'synthesizer',
               status: 'done',
-              detail: `${analysis?.insights.length ?? 0} insights, confidence: ${
-                analysis?.confidence ?? 'unknown'
-              }`,
+              detail: this.mergedWriter
+                ? `Merged into writer, confidence: ${analysis?.confidence ?? 'unknown'}`
+                : `${analysis?.insights.length ?? 0} insights, confidence: ${
+                    analysis?.confidence ?? 'unknown'
+                  }`,
               elapsed: Date.now() - stageStart,
             },
           };
