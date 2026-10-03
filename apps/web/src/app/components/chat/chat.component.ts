@@ -165,17 +165,19 @@ export class ChatComponent implements OnInit, OnDestroy {
   private reconnectStream(): void {
     const q = this.query().trim();
     if (!q) return;
-    this.streamSub = this.ragService.stream(q, this.selectedProvider(), true).subscribe({
-      next: (event: StreamEvent) => this.handleStreamEvent(event),
-      error: (err: unknown) => {
-        const message =
-          err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-        this.finishStream(message, 'Connection lost');
-      },
-      complete: () => {
-        this.isStreaming.set(false);
-      },
-    });
+    this.streamSub = this.ragService
+      .stream(q, this.selectedProvider(), true, this.followUpOf() ?? undefined)
+      .subscribe({
+        next: (event: StreamEvent) => this.handleStreamEvent(event),
+        error: (err: unknown) => {
+          const message =
+            err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+          this.finishStream(message, 'Connection lost');
+        },
+        complete: () => {
+          this.isStreaming.set(false);
+        },
+      });
   }
 
   /**
@@ -295,6 +297,12 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   /** Token content accumulated during pipeline streaming. */
   readonly tokenContent = signal('');
+
+  /** Text of the follow-up question box under a finished answer. */
+  readonly followUpQuery = signal('');
+
+  /** queryId whose evidence the current run reuses (a follow-up), or null. */
+  readonly followUpOf = signal<string | null>(null);
 
   /** Whether the answer was recently copied to clipboard. */
   readonly copied = signal(false);
@@ -418,6 +426,25 @@ export class ChatComponent implements OnInit, OnDestroy {
    * answer once the stream completes.
    */
   submit(): void {
+    this.followUpOf.set(null);
+    this.startQuery();
+  }
+
+  /**
+   * Ask a follow-up that reuses the current answer's sources: the backend skips the
+   * HN search and answers from the evidence it kept for {@link queryId}.
+   */
+  submitFollowUp(): void {
+    const q = this.followUpQuery().trim();
+    const parentId = this.queryId();
+    if (!q || !parentId || this.loading()) return;
+    this.followUpOf.set(parentId);
+    this.query.set(q);
+    this.followUpQuery.set('');
+    this.startQuery();
+  }
+
+  private startQuery(): void {
     const q = this.query().trim();
     if (!q || q.length > MAX_QUERY_LENGTH || this.loading()) {
       return;

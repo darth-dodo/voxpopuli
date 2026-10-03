@@ -98,6 +98,8 @@ describe('RagController', () => {
     fail: jest.Mock;
     findRunning: jest.Mock;
     findReusable: jest.Mock;
+    getEvidence: jest.Mock;
+    setEvidence: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -113,6 +115,8 @@ describe('RagController', () => {
       fail: jest.fn(),
       findRunning: jest.fn(),
       findReusable: jest.fn(),
+      getEvidence: jest.fn(),
+      setEvidence: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -658,6 +662,57 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 21. Duplicate in-flight query should poll existing result (legacy)
   // -------------------------------------------------------------------------
+  it('runs a follow-up on the parent query evidence, under its own cache key', async () => {
+    const prior = { query: 'Rust?', bundle: { allSources: [] }, steps: [] };
+    queryStore.getEvidence.mockReturnValue(prior);
+    queryStore.findReusable.mockReturnValue(null);
+    queryStore.create.mockReturnValue('child-id');
+    const response = fakeAgentResponse('Follow-up answer');
+    const evidence = { query: 'Rust?', bundle: { allSources: [] }, steps: [] };
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'complete', response, evidence };
+      })(),
+    );
+
+    await lastValueFrom(
+      controller.stream('Any complaints?', undefined, 'true', 'parent-id').pipe(toArray()),
+    );
+
+    expect(queryStore.getEvidence).toHaveBeenCalledWith('parent-id');
+    expect(queryStore.findReusable).toHaveBeenCalledWith(
+      'Any complaints?',
+      'default:pipeline:followup:parent-id',
+    );
+    expect(orchestratorService.runWithFallback).toHaveBeenCalledWith(
+      'Any complaints?',
+      expect.anything(),
+      prior,
+    );
+    expect(queryStore.setEvidence).toHaveBeenCalledWith('child-id', evidence);
+  });
+
+  it('runs an expired follow-up as a fresh query', async () => {
+    queryStore.getEvidence.mockReturnValue(undefined);
+    queryStore.findReusable.mockReturnValue(null);
+    orchestratorService.runWithFallback.mockReturnValue(
+      (async function* () {
+        yield { kind: 'complete', response: fakeAgentResponse('Fresh') };
+      })(),
+    );
+
+    await lastValueFrom(
+      controller.stream('Any complaints?', undefined, 'true', 'gone-id').pipe(toArray()),
+    );
+
+    expect(queryStore.findReusable).toHaveBeenCalledWith('Any complaints?', 'default:pipeline');
+    expect(orchestratorService.runWithFallback).toHaveBeenCalledWith(
+      'Any complaints?',
+      expect.anything(),
+      undefined,
+    );
+  });
+
   it('replays a recently completed identical query immediately, marked as cached', async () => {
     const response = fakeAgentResponse('Cached answer');
     queryStore.findReusable.mockReturnValue({ queryId: 'done-id', complete: true });
