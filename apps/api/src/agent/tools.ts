@@ -12,6 +12,13 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
  */
 export type SourceRegistry = Map<number, SourceMetadata>;
 
+/**
+ * A `min_points`-filtered search returning fewer stories than this is retried once
+ * without the filter. Models often pick thresholds (50-100 points) that leave 0-1
+ * results for niche topics, which then produce confident answers from one story.
+ */
+export const MIN_FILTERED_HITS = 3;
+
 /** Canonical HN discussion URL — used when a story has no external link (Ask HN, etc.). */
 export function hnItemUrl(storyId: number): string {
   return `https://news.ycombinator.com/item?id=${storyId}`;
@@ -35,16 +42,24 @@ export function createSearchHnTool(
       min_points?: number;
       max_results?: number;
     }): Promise<string> => {
-      const result =
+      const search = (minPoints?: number) =>
         input.sort_by === 'date'
-          ? await hn.searchByDate(input.query, {
-              minPoints: input.min_points,
-              hitsPerPage: input.max_results,
-            })
-          : await hn.search(input.query, {
-              minPoints: input.min_points,
-              hitsPerPage: input.max_results,
-            });
+          ? hn.searchByDate(input.query, { minPoints, hitsPerPage: input.max_results })
+          : hn.search(input.query, { minPoints, hitsPerPage: input.max_results });
+
+      let result = await search(input.min_points);
+      let note = '';
+      if (input.min_points && input.min_points > 1 && result.hits.length < MIN_FILTERED_HITS) {
+        const relaxed = await search(undefined);
+        const had = `${result.hits.length} ${result.hits.length === 1 ? 'story' : 'stories'}`;
+        if (relaxed.hits.length > result.hits.length) {
+          note = `Note: only ${had} had ${input.min_points}+ points, so the points filter was removed for this search.\n`;
+          result = relaxed;
+        } else {
+          // Tell the model, or it re-runs the same search without the filter itself.
+          note = `Note: removing the points filter found no additional stories; don't repeat this search without it.\n`;
+        }
+      }
 
       if (result.hits.length === 0) {
         return 'No results found for this search query.';
@@ -59,12 +74,13 @@ export function createSearchHnTool(
           author: hit.author,
           points: hit.points ?? 0,
           commentCount: hit.num_comments ?? 0,
+          postedDate: hit.created_at ? hit.created_at.slice(0, 10) : undefined,
         });
       }
 
       const chunks = chunker.chunkStories(result.hits);
       const context = chunker.buildContext(chunks, [], Infinity);
-      return chunker.formatForPrompt(context);
+      return note + chunker.formatForPrompt(context);
     },
     {
       name: 'search_hn',
@@ -115,6 +131,7 @@ export function createGetStoryTool(
         author: story.by,
         points: story.score ?? 0,
         commentCount: story.descendants ?? 0,
+        postedDate: new Date(story.time * 1000).toISOString().slice(0, 10),
       });
       const text = chunker.stripHtml(story.text ?? null);
       const lines: string[] = [

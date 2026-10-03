@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
+  PriorEvidence,
   PipelineConfig,
   PipelineEvent,
   AgentResponseV2,
@@ -15,8 +17,9 @@ import { createAgentTools, type SourceRegistry } from './tools';
 import { computeTrustMetadata } from './trust';
 import { buildFallbackResponse } from './fallback-response';
 import { createRetrieverNode } from './nodes/retriever.node';
-import { createSynthesizerNode } from './nodes/synthesizer.node';
+import { createMergedSynthesizerNode, createSynthesizerNode } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
+import { renderAnswerMarkdown } from './nodes/writer-draft';
 import { buildPipelineGraph, withRetry, withWriterFallback } from './pipeline-graph';
 import { isAuthError, LlmAuthError } from '../llm/llm-errors';
 
@@ -32,7 +35,7 @@ export type PipelineStreamEvent =
   | { kind: 'pipeline'; event: PipelineEvent }
   | { kind: 'step'; step: AgentStep }
   | { kind: 'token'; content: string }
-  | { kind: 'complete'; response: AgentResponse };
+  | { kind: 'complete'; response: AgentResponse; evidence?: PriorEvidence };
 
 /**
  * Orchestrates the multi-agent pipeline via a LangGraph StateGraph.
@@ -55,7 +58,16 @@ export class OrchestratorService {
     private readonly llm: LlmService,
     private readonly hn: HnService,
     private readonly chunker: ChunkerService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
+
+  /**
+   * Merged mode (`PIPELINE_MERGED_WRITER=true`, off by default): skip the Synthesizer's
+   * LLM call and let the Writer analyze the evidence directly. See ADR-010.
+   */
+  private get mergedWriter(): boolean {
+    return this.config?.get<string>('PIPELINE_MERGED_WRITER') === 'true';
+  }
 
   /**
    * Run the pipeline with automatic fallback to legacy agent on failure.
@@ -63,12 +75,13 @@ export class OrchestratorService {
   async *runWithFallback(
     query: string,
     config: PipelineConfig,
+    prior?: PriorEvidence,
   ): AsyncGenerator<PipelineStreamEvent | AgentStreamEvent> {
     // Track which stages completed so fallback only marks remaining stages as error
     const completedStages = new Set<string>();
 
     try {
-      for await (const event of this.runStream(query, config)) {
+      for await (const event of this.runStream(query, config, prior)) {
         if (event.kind === 'pipeline' && event.event.status === 'done') {
           completedStages.add(event.event.stage);
         }
@@ -133,7 +146,11 @@ export class OrchestratorService {
   /**
    * Run the pipeline by streaming a LangGraph StateGraph with per-stage event emission.
    */
-  async *runStream(query: string, config: PipelineConfig): AsyncGenerator<PipelineStreamEvent> {
+  async *runStream(
+    query: string,
+    config: PipelineConfig,
+    prior?: PriorEvidence,
+  ): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
 
     const activeProvider =
@@ -154,12 +171,28 @@ export class OrchestratorService {
       maxTokens: RETRIEVER_REACT_MAX_TOKENS,
     });
 
+    // A follow-up reuses the previous run's evidence: the Retriever stage returns it
+    // immediately, and the Synthesizer/Writer answer the new question from it.
+    const retriever = prior
+      ? async () => ({
+          bundle: { ...prior.bundle, query: `${query} (follow-up to: "${prior.query}")` },
+          steps: prior.steps,
+          inputTokens: 0,
+          outputTokens: 0,
+        })
+      : createRetrieverNode(getModel('retriever'), tools, sources, reactModel);
+
     const graph = buildPipelineGraph({
-      retriever: createRetrieverNode(getModel('retriever'), tools, sources, reactModel),
-      synthesizer: withRetry(createSynthesizerNode(getModel('synthesizer'))),
-      writer: withWriterFallback(createWriterNode(getModel('writer')), () => ({
-        response: undefined,
-      })),
+      retriever,
+      synthesizer: this.mergedWriter
+        ? createMergedSynthesizerNode()
+        : withRetry(createSynthesizerNode(getModel('synthesizer'))),
+      writer: withWriterFallback(
+        createWriterNode(getModel('writer'), { fromEvidence: this.mergedWriter }),
+        () => ({
+          response: undefined,
+        }),
+      ),
     });
 
     const stageOrder: PipelineStage[] = ['retriever', 'synthesizer', 'writer'];
@@ -180,7 +213,9 @@ export class OrchestratorService {
       event: {
         stage: 'retriever',
         status: 'started',
-        detail: `Searching HN for "${query}"...`,
+        detail: prior
+          ? `Reusing ${prior.bundle.allSources.length} sources from "${prior.query}"...`
+          : `Searching HN for "${query}"...`,
         elapsed: 0,
       },
     };
@@ -196,6 +231,8 @@ export class OrchestratorService {
         const customEvent = data as { type: string; data: unknown };
         if (customEvent.type === 'retriever_step') {
           yield { kind: 'step', step: customEvent.data as AgentStep };
+        } else if (customEvent.type === 'writer_draft') {
+          yield { kind: 'token', content: customEvent.data as string };
         }
         continue;
       }
@@ -231,9 +268,11 @@ export class OrchestratorService {
             event: {
               stage: 'synthesizer',
               status: 'done',
-              detail: `${analysis?.insights.length ?? 0} insights, confidence: ${
-                analysis?.confidence ?? 'unknown'
-              }`,
+              detail: this.mergedWriter
+                ? `Merged into writer, confidence: ${analysis?.confidence ?? 'unknown'}`
+                : `${analysis?.insights.length ?? 0} insights, confidence: ${
+                    analysis?.confidence ?? 'unknown'
+                  }`,
               elapsed: Date.now() - stageStart,
             },
           };
@@ -273,21 +312,6 @@ export class OrchestratorService {
     const elapsed = () => Date.now() - startTime;
 
     if (writerResponse) {
-      // Build storyId → date map from retriever step tool outputs
-      const dateLookup = new Map<number, string>();
-      for (const step of retrieverSteps) {
-        if (step.type !== 'observation' || !step.toolOutput) continue;
-        // Match "[storyId]" followed eventually by "Posted: YYYY-MM-DD"
-        const blocks = step.toolOutput.split(/\n\n/);
-        for (const block of blocks) {
-          const idMatch = block.match(/\[(\d+)\]/);
-          const dateMatch = block.match(/Posted:\s*(\d{4}-\d{2}-\d{2})/);
-          if (idMatch && dateMatch) {
-            dateLookup.set(parseInt(idMatch[1], 10), dateMatch[1]);
-          }
-        }
-      }
-
       const sources = writerResponse.sources.map((s) => ({
         storyId: s.storyId,
         title: s.title,
@@ -295,17 +319,15 @@ export class OrchestratorService {
         author: s.author,
         points: s.points,
         commentCount: s.commentCount,
-        postedDate: dateLookup.get(s.storyId),
+        // Recorded by the tools from the HN API (parsing it back out of tool text missed
+        // stories whose body text contains blank lines).
+        postedDate: s.postedDate,
       }));
 
       yield {
         kind: 'complete',
         response: {
-          answer: `## ${writerResponse.headline}\n\n${
-            writerResponse.context
-          }\n\n${writerResponse.sections
-            .map((s) => `### ${s.heading}\n\n${s.body}`)
-            .join('\n\n')}\n\n**Bottom line:** ${writerResponse.bottomLine}`,
+          answer: renderAnswerMarkdown(writerResponse),
           steps: [],
           sources,
           meta: {
@@ -321,6 +343,9 @@ export class OrchestratorService {
             writerResponse.headline + ' ' + writerResponse.sections.map((s) => s.body).join(' '),
           ),
         },
+        evidence: bundle
+          ? { query: prior?.query ?? query, bundle, steps: retrieverSteps }
+          : undefined,
       };
     } else if (analysis && bundle) {
       yield {
@@ -336,6 +361,7 @@ export class OrchestratorService {
           },
           retrieverSteps,
         ),
+        evidence: { query: prior?.query ?? query, bundle, steps: retrieverSteps },
       };
     }
   }

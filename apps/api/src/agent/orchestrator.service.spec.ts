@@ -44,6 +44,7 @@ jest.mock('./nodes/retriever.node', () => ({
 }));
 jest.mock('./nodes/synthesizer.node', () => ({
   createSynthesizerNode: jest.fn(() => jest.fn()),
+  createMergedSynthesizerNode: jest.fn(() => jest.fn()),
 }));
 jest.mock('./nodes/writer.node', () => ({
   createWriterNode: jest.fn(() => jest.fn()),
@@ -322,6 +323,26 @@ describe('OrchestratorService', () => {
       const lastStepIdx = events.reduce((acc, e, i) => (e.kind === 'step' ? i : acc), -1);
       expect(lastStepIdx).toBeLessThan(retrieverDoneIdx);
     });
+
+    it('forwards writer draft deltas as token events', async () => {
+      const graph = mockGraph(
+        [
+          { retriever: { bundle: mockBundle, steps: [] } },
+          { synthesizer: { analysis: mockAnalysis } },
+          { writer: { response: mockResponseV2 } },
+        ],
+        [
+          { type: 'writer_draft', data: '## Head' },
+          { type: 'writer_draft', data: 'line' },
+        ],
+      );
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const tokens = events.filter((e) => e.kind === 'token') as Array<{ content: string }>;
+      expect(tokens.map((t) => t.content)).toEqual(['## Head', 'line']);
+    });
   });
 
   describe('retriever failure', () => {
@@ -424,6 +445,95 @@ describe('OrchestratorService', () => {
       expect(writerDone).toBeDefined();
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       expect(writerDone!.detail).toContain('fallback');
+    });
+  });
+
+  describe('merged writer mode', () => {
+    it('is off by default: the Synthesizer makes its own LLM call', async () => {
+      setupHappyPathGraph();
+      const { createSynthesizerNode, createMergedSynthesizerNode } = jest.requireMock(
+        './nodes/synthesizer.node',
+      );
+      const { createWriterNode } = jest.requireMock('./nodes/writer.node');
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      expect(createSynthesizerNode).toHaveBeenCalled();
+      expect(createMergedSynthesizerNode).not.toHaveBeenCalled();
+      expect(createWriterNode).toHaveBeenLastCalledWith(expect.anything(), {
+        fromEvidence: false,
+      });
+    });
+
+    it('PIPELINE_MERGED_WRITER=true skips the Synthesizer call and writes from evidence', async () => {
+      setupHappyPathGraph();
+      const { createSynthesizerNode, createMergedSynthesizerNode } = jest.requireMock(
+        './nodes/synthesizer.node',
+      );
+      const { createWriterNode } = jest.requireMock('./nodes/writer.node');
+      (createSynthesizerNode as jest.Mock).mockClear();
+      const merged = new OrchestratorService(
+        agentService,
+        mockLlm as never,
+        {} as never,
+        {} as never,
+        { get: (key: string) => (key === 'PIPELINE_MERGED_WRITER' ? 'true' : undefined) } as never,
+      );
+
+      const events = await collectEvents(merged.runStream('test query', defaultConfig));
+
+      expect(createMergedSynthesizerNode).toHaveBeenCalled();
+      expect(createSynthesizerNode).not.toHaveBeenCalled();
+      expect(createWriterNode).toHaveBeenLastCalledWith(expect.anything(), { fromEvidence: true });
+      const synthDone = events.find(
+        (e) =>
+          e.kind === 'pipeline' && e.event.stage === 'synthesizer' && e.event.status === 'done',
+      ) as { event: { detail: string } };
+      expect(synthDone.event.detail).toContain('Merged into writer');
+    });
+  });
+
+  describe('follow-up questions', () => {
+    const prior = {
+      query: 'What does HN think about Rust?',
+      bundle: mockBundle,
+      steps: [{ type: 'observation' as const, content: 'Found 3 stories', timestamp: 1 }],
+    };
+
+    it('reuses the prior evidence instead of running the Retriever', async () => {
+      setupHappyPathGraph();
+      const { createRetrieverNode } = jest.requireMock('./nodes/retriever.node');
+      (createRetrieverNode as jest.Mock).mockClear();
+
+      const events = await collectEvents(
+        service.runStream('What are the complaints?', defaultConfig, prior),
+      );
+
+      expect(createRetrieverNode).not.toHaveBeenCalled();
+      const { retriever } = (buildPipelineGraph as jest.Mock).mock.calls[0][0];
+      const out = await retriever();
+      expect(out.bundle.allSources).toEqual(mockBundle.allSources);
+      expect(out.bundle.query).toBe(
+        'What are the complaints? (follow-up to: "What does HN think about Rust?")',
+      );
+      expect(out.steps).toEqual(prior.steps);
+
+      const started = events.find((e) => e.kind === 'pipeline') as {
+        event: { detail: string };
+      };
+      expect(started.event.detail).toContain('Reusing');
+    });
+
+    it('returns the evidence with the completed answer so it can be followed up again', async () => {
+      setupHappyPathGraph();
+
+      const events = await collectEvents(service.runStream('test query', defaultConfig));
+
+      const complete = events.find((e) => e.kind === 'complete') as {
+        evidence?: { query: string; bundle: EvidenceBundle };
+      };
+      expect(complete.evidence?.query).toBe('test query');
+      expect(complete.evidence?.bundle).toEqual(mockBundle);
     });
   });
 

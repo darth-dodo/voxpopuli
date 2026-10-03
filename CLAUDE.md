@@ -81,7 +81,8 @@ npx tsx evals/run-eval.ts -C trust       # Run only trust category
 npx tsx evals/run-eval.ts -q q01         # Single query for debugging
 npx tsx evals/run-eval.ts --dry-run      # Preview without calling API
 npx tsx evals/run-eval.ts -c openrouter,mistral,claude  # Compare providers
-npx tsx evals/run-eval.ts --multi-agent --stream -n 1 --baseline <results.json>  # Latency A/B (ADR-009)
+npx tsx evals/run-eval.ts -n 1 --baseline <results.json>  # Latency A/B (ADR-009); pipeline over SSE is the default
+npx tsx evals/run-eval.ts --legacy                          # Legacy single-agent path (fallback only)
 ```
 
 ## Code Conventions
@@ -162,7 +163,7 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 2. **Don't assume LLM provider.** Always go through `LlmService`, never instantiate providers directly.
 3. **Comment tree fetching is slow.** Each Firebase comment is an individual HTTP call. Always respect the 30-comment cap. `getCommentTree()` fetches one depth level at a time with all parents in parallel — don't reintroduce per-comment `await`s.
 4. **Token budgets vary by provider.** Always use `ChunkerService.buildContext()` with the active provider's budget, not a hardcoded number.
-5. **SSE events have specific types.** Use `thought`, `action`, `observation`, `answer`, `error` -- don't invent new event types.
+5. **SSE events have specific types.** Use `thought`, `action`, `observation`, `answer`, `error` (plus `pipeline`, `token`, `init` in pipeline mode) -- don't invent new event types. `token` carries append-only markdown deltas of the answer while the Writer streams; the final `answer` replaces the draft.
 6. **TTS rewrite is a separate LLM call.** The podcast script rewriter is not the agent -- it's a lightweight single-turn call via `TtsService.rewriteForSpeech()`. Speech itself comes from **Mistral Voxtral TTS** (`POST https://api.mistral.ai/v1/audio/speech`, `MISTRAL_API_KEY`) via a raw `fetch` in `TtsService.synthesize()`: model `MISTRAL_TTS_MODEL` (default `voxtral-mini-tts-latest`), voice `MISTRAL_TTS_VOICE` (default preset `en_paul_neutral`; list presets with `GET /v1/audio/voices`, custom cloned voices are UUIDs). The response is JSON `{ audio_data: <base64 MP3> }`, returned to the client as one `audio/mpeg` body. Upstream failures throw `TtsUpstreamError` → HTTP 502 with Mistral's reason (e.g. unknown voice). Voxtral's MP3 is VBR with no Xing header, so `synthesize()` runs it through `addXingHeader()` (`tts/mp3-xing.ts`); without it WebKit/iOS Safari ends playback at a 10-20% short duration estimate. On the frontend, `AudioPlayerComponent` must create and `play()` its audio element synchronously in the Listen click (iOS gesture rule) and reuse it for the narration.
 7. **Don't import LangChain packages directly.** All LangChain usage is encapsulated inside `apps/api/src/llm/providers/` and `apps/api/src/agent/`. Consuming code should only depend on `LlmService`, `AgentService`, or the tool factories.
 8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
@@ -186,6 +187,8 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 26. **The Retriever ReAct model is output-capped** (`RETRIEVER_REACT_MAX_TOKENS`, via `LlmService.getModel(provider, { maxTokens })`). Hitting the recursion limit compacts what was collected instead of failing into the legacy fallback.
 27. **Rejected API keys fail fast, not into the fallback.** `isAuthError()` (`llm/llm-errors.ts`) recognizes 401/403 from every provider; the orchestrator then throws `LlmAuthError` (names the env var to fix) instead of re-running the legacy agent on the same bad key. `GET /api/health/llm` makes a cached 1-token call to confirm the active key works — use it after changing provider secrets; keep Render's health check on the cheap `/api/health`.
 28. **Mistral retries go through `FailFastChatMistralAI`.** Upstream `ChatMistralAI` retries every error except 400 because the Mistral SDK reports `statusCode` (not `status`), so a bad key used to hang ~2 minutes. The subclass disables inner retries and wraps calls with `failFastOnClientError`. Keep it if you upgrade `@langchain/mistralai`, unless upstream fixes the status mapping.
+29. **Completed answers are replayed for 15 minutes.** `QueryStore.findReusable()` returns a running query (attach) or one completed within `COMPLETED_TTL` (replay, `meta.cached: true`). Keys normalize case/whitespace and include the mode (`<provider>:pipeline` / `:legacy`, plus `:followup:<parentId>` for follow-ups). When testing a pipeline change locally, vary the question or restart the API, or you'll measure a replay.
+30. **Follow-ups reuse stored evidence.** Completed pipeline runs keep `PriorEvidence` (bundle + retriever steps) for 30 min; `?followUpOf=<queryId>` swaps the Retriever for a node returning it. Source metadata, including `postedDate`, comes from the tools' `SourceRegistry`, never from parsing tool text.
 
 ## Architecture Decision Records
 
@@ -199,6 +202,7 @@ ADRs live in `docs/adr/` and document key design choices. Consult these before p
 - `007-query-id-resilience.md` — Query IDs, stored results, and reconnect/dedup for background tabs
 - `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
 - `009-pipeline-latency.md` — Latency investigation; LLM writes only judgement, code supplies source metadata; eval `--stream`/`--baseline`
+- `010-merged-writer-and-model-speed.md` — Opt-in `PIPELINE_MERGED_WRITER` (−25% latency in eval) and OpenRouter model throughput benchmark
 
 ## Linear Project
 

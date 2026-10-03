@@ -122,7 +122,12 @@ export class RagService {
    */
   private static readonly STALL_TIMEOUT_MS = 300_000;
 
-  stream(query: string, provider?: string, useMultiAgent?: boolean): Observable<StreamEvent> {
+  stream(
+    query: string,
+    provider?: string,
+    useMultiAgent?: boolean,
+    followUpOf?: string,
+  ): Observable<StreamEvent> {
     this.loading.set(true);
     this.error.set(null);
     this.connectionState.set('streaming');
@@ -133,6 +138,9 @@ export class RagService {
     }
     if (useMultiAgent) {
       url += '&useMultiAgent=true';
+    }
+    if (followUpOf) {
+      url += `&followUpOf=${encodeURIComponent(followUpOf)}`;
     }
 
     return new Observable<StreamEvent>((subscriber) => {

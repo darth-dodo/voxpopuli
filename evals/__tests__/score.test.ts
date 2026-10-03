@@ -139,7 +139,8 @@ describe('scoreRun', () => {
       runResult.response,
       query.expectedQualities,
     );
-    expect(mockedEfficiency).toHaveBeenCalledWith(3, query.maxAcceptableSteps);
+    // Only the one `action` step counts against the tool-call budget.
+    expect(mockedEfficiency).toHaveBeenCalledWith(1, query.maxAcceptableSteps);
     expect(mockedLatency).toHaveBeenCalledWith(runResult.durationMs, 'openrouter');
     expect(mockedCost).toHaveBeenCalledWith(5000, 1000, 'openrouter');
 
@@ -173,6 +174,27 @@ describe('scoreRun', () => {
     expect(result.details['source_accuracy']).toBe('5/5 verified');
     expect(result.details['efficiency']).toBe('2 steps');
     expect(result.details['cost']).toBe('$0.001');
+  });
+
+  it('zeroes cost and efficiency when the run fell back to the legacy agent', async () => {
+    mockedSourceAccuracy.mockResolvedValue({ key: 'source_accuracy', score: 1.0 });
+    mockedQualityChecklist.mockResolvedValue({ key: 'quality_checklist', score: 1.0 });
+    mockedEfficiency.mockReturnValue({ key: 'efficiency', score: 1.0, comment: '1 tool calls' });
+    mockedLatency.mockReturnValue({ key: 'latency', score: 1.0 });
+    mockedCost.mockReturnValue({ key: 'cost', score: 1.0, comment: '$0.001' });
+
+    const result = await scoreRun(
+      {
+        ...makeRunResult(),
+        timings: { firstEventMs: 5, stages: {}, fallback: true },
+      },
+      makeQuery(),
+      'openrouter',
+    );
+
+    expect(result.efficiency).toBe(0);
+    expect(result.cost).toBe(0);
+    expect(result.details['cost']).toContain('fell back to legacy agent');
   });
 });
 

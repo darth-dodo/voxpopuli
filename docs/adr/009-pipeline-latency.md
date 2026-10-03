@@ -117,14 +117,18 @@ same machine, run back to back. The change was later rebased onto `main`, whose 
 
 **Quality and cost**
 
-| Metric                        | Before | After  |
-| ----------------------------- | ------ | ------ |
-| Pass rate (weighted ≥ 0.6)    | 60%    | 92%    |
-| Avg weighted score            | 0.65   | 0.70   |
-| Source accuracy               | 0.96   | 1.00   |
-| Quality checklist (LLM judge) | 0.79   | 0.81   |
-| Mean estimated cost per query | $0.138 | $0.097 |
-| Mean agent steps              | 14.6   | 13.4   |
+| Metric                          | Before | After  |
+| ------------------------------- | ------ | ------ |
+| Pass rate (weighted ≥ 0.6)      | 60%    | 92%    |
+| Avg weighted score              | 0.65   | 0.70   |
+| Source accuracy                 | 0.96   | 1.00   |
+| Quality checklist (LLM judge)   | 0.79   | 0.81   |
+| Mean estimated cost per query\* | $0.138 | $0.097 |
+| Mean agent steps                | 14.6   | 13.4   |
+
+_\*Computed with the eval's Mistral rates at the time ($2/$6 per million tokens), which were 10–13×
+too high for Mistral Small 4 ($0.15/$0.60) and corrected on 2026-09-28. The relative drop (−30%) holds;
+the absolute cost per query is about a cent._
 
 The **efficiency** (0.13 → 0.04) and **cost** (0.11 → 0.01) _scores_ went down even though raw steps and
 cost went down. Both scores are clipped bands (cost: `max(0, 1 − cost / $0.05)`), so most queries score 0

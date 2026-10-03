@@ -134,4 +134,33 @@ describe('QueryStore', () => {
     const found = store.findRunning('unknown query', 'mistral');
     expect(found).toBeNull();
   });
+
+  describe('findReusable()', () => {
+    it('attaches to a running query', () => {
+      const queryId = store.create('test query', 'mistral');
+      expect(store.findReusable('test query', 'mistral')).toEqual({ queryId, complete: false });
+    });
+
+    it('replays a completed query, ignoring case and extra whitespace', () => {
+      const queryId = store.create('What does HN think about Rust?', 'mistral');
+      store.complete(queryId, mockResponse);
+
+      expect(store.findReusable('  what does hn think   about rust? ', 'mistral')).toEqual({
+        queryId,
+        complete: true,
+      });
+    });
+
+    it('never reuses a failed query', () => {
+      const queryId = store.create('test query', 'mistral');
+      store.fail(queryId, 'boom');
+      expect(store.findReusable('test query', 'mistral')).toBeNull();
+    });
+
+    it('keys by provider (callers include the pipeline mode in it)', () => {
+      const queryId = store.create('test query', 'mistral:pipeline');
+      store.complete(queryId, mockResponse);
+      expect(store.findReusable('test query', 'mistral:legacy')).toBeNull();
+    });
+  });
 });

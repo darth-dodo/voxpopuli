@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import type {
+  PriorEvidence,
   AgentResponse,
   AgentStep,
   StoredPipelineEvent,
@@ -11,6 +12,16 @@ import { CacheService } from './cache.service';
 
 /** TTL for query results: 5 minutes. */
 const QUERY_TTL = 300;
+
+/**
+ * How long a completed answer is replayed to identical questions (15 min, matching
+ * the HN search cache). Popular questions — e.g. the homepage examples — then cost
+ * one pipeline run per window instead of one per visitor.
+ */
+const COMPLETED_TTL = 900;
+
+/** How long a finished run's evidence stays available for follow-up questions. */
+const EVIDENCE_TTL = 1800;
 
 /**
  * Manages the lifecycle of query results, wrapping {@link CacheService}
@@ -41,8 +52,8 @@ export class QueryStore {
       completedAt: null,
     };
     this.cache.set(`query:${queryId}`, entry, QUERY_TTL);
-    // Dedup index: map query+provider hash to queryId
-    this.cache.set(`dedup:${this.dedupKey(query, provider)}`, queryId, QUERY_TTL);
+    // Dedup index: map query+provider hash to queryId (lives as long as a completed answer)
+    this.cache.set(`dedup:${this.dedupKey(query, provider)}`, queryId, COMPLETED_TTL);
     return queryId;
   }
 
@@ -84,7 +95,7 @@ export class QueryStore {
     entry.status = 'complete';
     entry.response = response;
     entry.completedAt = Date.now();
-    this.cache.set(`query:${queryId}`, entry, QUERY_TTL);
+    this.cache.set(`query:${queryId}`, entry, COMPLETED_TTL);
   }
 
   /**
@@ -130,13 +141,55 @@ export class QueryStore {
   }
 
   /**
-   * Generate a dedup key from query text + provider.
+   * Keep a completed run's evidence so follow-up questions can reuse it.
+   *
+   * @param queryId  - The completed query's identifier
+   * @param evidence - Bundle, retriever steps and the original question
+   */
+  setEvidence(queryId: string, evidence: PriorEvidence): void {
+    this.cache.set(`evidence:${queryId}`, evidence, EVIDENCE_TTL);
+  }
+
+  /**
+   * Evidence from an earlier run, if it hasn't expired.
+   *
+   * @param queryId - The earlier query's identifier
+   * @returns The stored evidence, or `undefined`
+   */
+  getEvidence(queryId: string): PriorEvidence | undefined {
+    return this.cache.get<PriorEvidence>(`evidence:${queryId}`);
+  }
+
+  /**
+   * Find a query whose result can be reused: one still running (attach to it) or
+   * one that completed within {@link COMPLETED_TTL} (replay it). Failed queries are
+   * never reused.
+   *
+   * @param query    - The user's query text
+   * @param provider - The LLM provider name (callers include the pipeline mode)
+   * @returns The queryId and whether it has already completed, or null
+   */
+  findReusable(query: string, provider: string): { queryId: string; complete: boolean } | null {
+    const existingId = this.cache.get<string>(`dedup:${this.dedupKey(query, provider)}`);
+    if (!existingId) return null;
+    const entry = this.get(existingId);
+    if (entry?.status === 'running') return { queryId: existingId, complete: false };
+    if (entry?.status === 'complete' && entry.response) {
+      return { queryId: existingId, complete: true };
+    }
+    return null;
+  }
+
+  /**
+   * Generate a dedup key from query text + provider. Case and whitespace are
+   * normalized so trivially different phrasings share a result.
    *
    * @param query    - The user's query text
    * @param provider - The LLM provider name
    * @returns A truncated SHA-256 hash
    */
   private dedupKey(query: string, provider: string): string {
-    return createHash('sha256').update(`${query}:${provider}`).digest('hex').slice(0, 16);
+    const normalized = query.trim().toLowerCase().replace(/\s+/g, ' ');
+    return createHash('sha256').update(`${normalized}:${provider}`).digest('hex').slice(0, 16);
   }
 }

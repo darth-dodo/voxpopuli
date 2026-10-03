@@ -156,6 +156,7 @@ export class RagController {
    * followed by a final `answer` event when the loop completes.
    *
    * @param query - The search query (required, max 500 chars)
+   * @param followUpOf - queryId of an earlier pipeline answer whose evidence to reuse
    * @returns Observable of SSE {@link MessageEvent}s
    */
   @Sse('stream')
@@ -166,6 +167,7 @@ export class RagController {
     @Query('query') query: string,
     @Query('provider') provider?: string,
     @Query('useMultiAgent') useMultiAgent?: string,
+    @Query('followUpOf') followUpOf?: string,
   ): Observable<MessageEvent> {
     if (!query || query.length > 500) {
       throw new HttpException(
@@ -177,7 +179,7 @@ export class RagController {
     this.enforceRateLimit();
 
     if (useMultiAgent === 'true') {
-      return this.streamMultiAgent(query, provider);
+      return this.streamMultiAgent(query, provider, followUpOf);
     }
 
     return this.streamLegacy(query, provider);
@@ -192,10 +194,11 @@ export class RagController {
    * stall detection.
    */
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
-    // Check for duplicate in-flight query
-    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
-    if (existingId) {
-      return this.pollExistingQuery(existingId);
+    // Attach to an identical in-flight query, or replay a recently completed one
+    const storeKey = `${provider ?? 'default'}:legacy`;
+    const existing = this.queryStore.findReusable(query, storeKey);
+    if (existing) {
+      return this.pollExistingQuery(existing.queryId, existing.complete);
     }
 
     return new Observable<MessageEvent>((subscriber) => {
@@ -219,7 +222,7 @@ export class RagController {
         subscriber.next(msg);
       };
 
-      const queryId = this.queryStore.create(query, provider ?? 'default');
+      const queryId = this.queryStore.create(query, storeKey);
       const generator = this.agent.runStream(query, { provider });
 
       (async () => {
@@ -306,11 +309,21 @@ export class RagController {
    * to keep the connection alive on mobile browsers and enable client-side
    * stall detection.
    */
-  private streamMultiAgent(query: string, provider?: string): Observable<MessageEvent> {
-    // Check for duplicate in-flight query
-    const existingId = this.queryStore.findRunning(query, provider ?? 'default');
-    if (existingId) {
-      return this.pollExistingQuery(existingId);
+  private streamMultiAgent(
+    query: string,
+    provider?: string,
+    followUpOf?: string,
+  ): Observable<MessageEvent> {
+    // A follow-up reuses the earlier run's evidence. If it has expired, the question
+    // simply runs as a fresh query.
+    const prior = followUpOf ? this.queryStore.getEvidence(followUpOf) : undefined;
+
+    // Attach to an identical in-flight query, or replay a recently completed one.
+    // Follow-ups are keyed by their parent so they never replay an unrelated answer.
+    const storeKey = `${provider ?? 'default'}:pipeline${prior ? `:followup:${followUpOf}` : ''}`;
+    const existing = this.queryStore.findReusable(query, storeKey);
+    if (existing) {
+      return this.pollExistingQuery(existing.queryId, existing.complete);
     }
 
     return new Observable<MessageEvent>((subscriber) => {
@@ -341,8 +354,8 @@ export class RagController {
       });
       const config = parsed.success ? parsed.data : PipelineConfigSchema.parse({});
 
-      const queryId = this.queryStore.create(query, provider ?? 'default');
-      const generator = this.orchestrator.runWithFallback(query, config);
+      const queryId = this.queryStore.create(query, storeKey);
+      const generator = this.orchestrator.runWithFallback(query, config, prior);
 
       (async () => {
         let isFirst = true;
@@ -393,6 +406,9 @@ export class RagController {
               isFirst = false;
             } else if (event.kind === 'complete') {
               this.queryStore.complete(queryId, event.response);
+              if ('evidence' in event && event.evidence) {
+                this.queryStore.setEvidence(queryId, event.evidence);
+              }
               emit(
                 {
                   type: 'answer',
@@ -445,7 +461,7 @@ export class RagController {
    * @param queryId - The existing query's ID from QueryStore.findRunning()
    * @returns Observable of SSE {@link MessageEvent}s
    */
-  private pollExistingQuery(queryId: string): Observable<MessageEvent> {
+  private pollExistingQuery(queryId: string, replayCompleted = false): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let lastEventCount = 0;
@@ -458,7 +474,7 @@ export class RagController {
       // Emit init with queryId
       emit({ type: 'init', data: JSON.stringify({ queryId }) });
 
-      const interval = setInterval(() => {
+      const tick = (): void => {
         const result = this.queryStore.get(queryId);
         if (!result) {
           emit({ type: 'error', data: JSON.stringify({ message: 'Query expired' }) });
@@ -491,7 +507,10 @@ export class RagController {
               answer: result.response.answer,
               sources: result.response.sources,
               trust: result.response.trust,
-              meta: result.response.meta,
+              // A replay of an already-finished run is a cache hit.
+              meta: replayCompleted
+                ? { ...result.response.meta, cached: true }
+                : result.response.meta,
             }),
           });
           clearInterval(interval);
@@ -503,12 +522,17 @@ export class RagController {
           clearInterval(heartbeat);
           subscriber.complete();
         }
-      }, 2000);
+      };
+      const interval = setInterval(tick, 2000);
 
       // Heartbeat
       const heartbeat = setInterval(() => {
         emit({ type: 'ping', data: '' });
       }, HEARTBEAT_INTERVAL_MS);
+
+      // A completed result is replayed at once rather than on the first poll.
+      // (Must run after `heartbeat` exists: tick() clears it when it finishes.)
+      if (replayCompleted) tick();
 
       return () => {
         clearInterval(interval);

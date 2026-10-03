@@ -13,7 +13,9 @@ jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
+import { ChunkerService } from '../../chunker/chunker.service';
 import {
+  summarizeToolOutput,
   createRetrieverNode,
   isDryWell,
   buildDryWellBundle,
@@ -298,11 +300,12 @@ describe('RetrieverNode', () => {
     expect(parsed.success).toBe(true);
     expect(result.bundle.themes).toHaveLength(1);
 
-    // Verify the retry message includes validation error details
+    // Verify the retry message says what was wrong
     const secondCallArgs = mockModel.invoke.mock.calls[1][0];
     const retryMessage = secondCallArgs.find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (m: any) => typeof m.content === 'string' && m.content.includes('validation errors'),
+      (m: any) =>
+        typeof m.content === 'string' && m.content.includes('no themes with usable evidence'),
     );
     expect(retryMessage).toBeDefined();
   });
@@ -541,6 +544,46 @@ describe('RetrieverNode', () => {
       expect(bundle.allSources).toEqual([registeredSource]);
     });
 
+    it('normalizes an invalid evidence label without a repair round-trip', async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      mockModel.invoke.mockResolvedValue({
+        content: JSON.stringify({
+          themes: [
+            {
+              label: 'T',
+              items: [{ sourceId: 7, text: 'x', type: 'criticism', relevance: 0.5 }],
+            },
+          ],
+        }),
+      });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map([[7, registeredSource]]));
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(mockModel.invoke).toHaveBeenCalledTimes(1);
+      expect(bundle.themes[0].items[0].type).toBe('opinion');
+    });
+
+    it('uses salvaged themes when the repair retry also fails, instead of throwing', async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      const brokenMidway =
+        '{"themes":[{"label":"Kept","items":[{"sourceId":7,"text":"ok","type":"evidence","relevance":0.9}]},' +
+        '{"label":"Cut","items":[{"sourceId":7,"text":"He said "hi"';
+      mockModel.invoke
+        .mockResolvedValueOnce({ content: brokenMidway })
+        .mockResolvedValueOnce({ content: 'still not JSON' });
+
+      const node = createRetrieverNode(mockModel, mockTools, new Map([[7, registeredSource]]));
+      const { bundle } = await node({ query: 'rust' });
+
+      expect(mockModel.invoke).toHaveBeenCalledTimes(2);
+      expect(bundle.themes.map((t) => t.label)).toEqual(['Kept']);
+    });
+
     it('still surfaces unexpected ReAct errors', async () => {
       mockReactAgentStream.mockReturnValue(
         (async function* () {
@@ -570,5 +613,35 @@ describe('RetrieverNode', () => {
       expect(reactModel.invoke).not.toHaveBeenCalled();
       expect(mockModel.invoke).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('summarizeToolOutput', () => {
+  it('counts comments in the real get_comments output format', () => {
+    // Generate the observation exactly as the get_comments tool does, so a format
+    // change on either side breaks this test instead of silently showing "No comment content".
+    const chunker = new ChunkerService();
+    const comments = chunker.chunkComments([
+      { id: 1, type: 'comment', by: 'alice', time: 0, text: 'Great tool', parent: 9, depth: 0 },
+      {
+        id: 2,
+        type: 'comment',
+        by: 'bob',
+        time: 0,
+        text: 'Line one\nline two',
+        parent: 1,
+        depth: 1,
+      },
+      { id: 3, type: 'comment', by: 'carol', time: 0, text: 'Agreed', parent: 9, depth: 0 },
+    ]);
+    const raw = chunker.formatForPrompt(chunker.buildContext([], comments, Infinity));
+
+    expect(summarizeToolOutput('get_comments', raw)).toBe('Read 3 comments');
+  });
+
+  it('reports genuinely empty comment results', () => {
+    expect(summarizeToolOutput('get_comments', 'No comments found for story 9.')).toBe(
+      'No comments found',
+    );
   });
 });

@@ -1,11 +1,20 @@
-import { AnalysisResultSchema, type EvidenceBundle } from '@voxpopuli/shared-types';
+import {
+  AnalysisResultSchema,
+  type AnalysisResult,
+  type EvidenceBundle,
+} from '@voxpopuli/shared-types';
 
 // Mock LLM providers
 jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: jest.fn() }));
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-import { createSynthesizerNode } from './synthesizer.node';
+import {
+  applyEvidenceFloor,
+  createMergedSynthesizerNode,
+  createSynthesizerNode,
+} from './synthesizer.node';
+import { buildFallbackResponse } from '../fallback-response';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
   query: 'React vs Vue',
@@ -207,8 +216,20 @@ describe('SynthesizerNode', () => {
     });
     mockModel.invoke.mockResolvedValue({ content: analysisJson });
 
+    // "high" is only kept with enough distinct stories (see applyEvidenceFloor).
+    const wellSourcedBundle: EvidenceBundle = {
+      ...SAMPLE_BUNDLE,
+      allSources: [1, 2, 3].map((storyId) => ({
+        storyId,
+        title: `Story ${storyId}`,
+        url: '',
+        author: 'a',
+        points: 10,
+        commentCount: 0,
+      })),
+    };
     const node = createSynthesizerNode(mockModel);
-    const result = await node({ query: 'React vs Vue', bundle: SAMPLE_BUNDLE });
+    const result = await node({ query: 'React vs Vue', bundle: wellSourcedBundle });
 
     expect(result.analysis.confidence).toBe('high');
     expect(result.analysis.insights[0].evidenceStrength).toBe('strong');
@@ -291,5 +312,75 @@ describe('SynthesizerNode', () => {
 
     const parsed = AnalysisResultSchema.safeParse(result.analysis);
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe('applyEvidenceFloor', () => {
+  const base: AnalysisResult = {
+    summary: 's',
+    insights: [],
+    contradictions: [],
+    confidence: 'high',
+    gaps: ['existing gap'],
+  };
+
+  it('leaves analyses with enough sources untouched', () => {
+    expect(applyEvidenceFloor(base, 3)).toBe(base);
+  });
+
+  it('caps confidence at low with one source and explains the gap', () => {
+    const result = applyEvidenceFloor(base, 1);
+    expect(result.confidence).toBe('low');
+    expect(result.gaps).toEqual([
+      'existing gap',
+      expect.stringContaining('Only 1 Hacker News story was found'),
+    ]);
+  });
+
+  it('caps confidence at medium with two sources, but never raises it', () => {
+    expect(applyEvidenceFloor(base, 2).confidence).toBe('medium');
+    expect(applyEvidenceFloor({ ...base, confidence: 'low' }, 2).confidence).toBe('low');
+  });
+
+  it('flags answers with no HN sources at all', () => {
+    expect(applyEvidenceFloor(base, 0).gaps[1]).toContain('not grounded in HN discussion');
+  });
+});
+
+describe('createMergedSynthesizerNode', () => {
+  it('makes no LLM call and derives confidence from source coverage', async () => {
+    const node = createMergedSynthesizerNode();
+
+    const thin = await node({ bundle: SAMPLE_BUNDLE }); // 1 source
+    expect(thin.analysis.confidence).toBe('low');
+    expect(thin.analysis.gaps[0]).toContain('Only 1 Hacker News story');
+    expect(thin.inputTokens + thin.outputTokens).toBe(0);
+
+    const wellSourced = await node({
+      bundle: {
+        ...SAMPLE_BUNDLE,
+        allSources: [1, 2, 3].map((storyId) => ({ ...SAMPLE_BUNDLE.allSources[0], storyId })),
+      },
+    });
+    expect(wellSourced.analysis.confidence).toBe('high');
+    expect(wellSourced.analysis.gaps).toEqual([]);
+  });
+
+  it('builds a schema-valid extractive analysis, so a Writer failure still reads sensibly', async () => {
+    const { analysis } = await createMergedSynthesizerNode()({ bundle: SAMPLE_BUNDLE });
+
+    expect(AnalysisResultSchema.safeParse(analysis).success).toBe(true);
+    expect(analysis.summary).not.toBe('');
+    expect(analysis.insights[0]).toMatchObject({ claim: 'Performance', themeIndices: [0] });
+    expect(analysis.insights[0].reasoning).toContain('[1]'); // keeps the citation
+
+    const fallback = buildFallbackResponse(analysis, SAMPLE_BUNDLE, {
+      provider: 'mistral',
+      durationMs: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+    });
+    expect(fallback.answer).not.toMatch(/^## \s*$/m); // no empty headline
+    expect(fallback.answer).toContain('### Performance');
   });
 });

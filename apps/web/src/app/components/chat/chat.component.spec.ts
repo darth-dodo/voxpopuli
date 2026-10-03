@@ -194,7 +194,13 @@ describe('ChatComponent', () => {
   it('should call ragService.stream with the trimmed query and selected provider', () => {
     component.query.set('  trending topics  ');
     component.submit();
-    expect(ragServiceStub.stream).toHaveBeenCalledWith('trending topics', 'mistral', true);
+    // 4th arg: not a follow-up
+    expect(ragServiceStub.stream).toHaveBeenCalledWith(
+      'trending topics',
+      'mistral',
+      true,
+      undefined,
+    );
   });
 
   it('should submit on Enter keydown', () => {
@@ -1006,6 +1012,86 @@ describe('ChatComponent', () => {
 
       const el = fixture.nativeElement as HTMLElement;
       expect(el.textContent).toContain('Searching HN and collecting evidence...');
+    });
+
+    it('asks a follow-up with the previous queryId so the backend reuses its sources', () => {
+      ragServiceStub.stream.mockReturnValueOnce(
+        of(
+          { type: 'init', queryId: 'parent-id' },
+          { type: 'pipeline', stage: 'writer', status: 'done', detail: '', elapsed: 1 },
+          { type: 'answer', response: mockAgentResponse() },
+        ),
+      );
+      component.query.set('What does HN think about Rust?');
+      component.submit();
+      component.activeTab.set('answer');
+      fixture.detectChanges();
+
+      const box = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="follow-up"]');
+      expect(box).not.toBeNull();
+
+      ragServiceStub.stream.mockReturnValueOnce(NEVER);
+      component.followUpQuery.set('What are the main complaints?');
+      component.submitFollowUp();
+
+      expect(ragServiceStub.stream).toHaveBeenLastCalledWith(
+        'What are the main complaints?',
+        expect.anything(),
+        true,
+        'parent-id',
+      );
+      expect(component.query()).toBe('What are the main complaints?');
+      expect(component.followUpQuery()).toBe('');
+    });
+
+    it('a normal submit is never sent as a follow-up', () => {
+      ragServiceStub.stream.mockReturnValue(NEVER);
+      component.followUpOf.set('stale-parent');
+      component.query.set('New topic');
+      component.submit();
+
+      expect(ragServiceStub.stream).toHaveBeenLastCalledWith(
+        'New topic',
+        expect.anything(),
+        true,
+        undefined,
+      );
+    });
+
+    it('renders the streamed answer draft while the writer is working', async () => {
+      ragServiceStub.stream.mockReturnValue(NEVER);
+      component.query.set('test');
+      component.submit();
+      component.isPipelineMode.set(true);
+      component.activeTab.set('answer');
+      component.tokenContent.set('## Rust is fast\n\nMost HN commenters agree.');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const draft = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="answer-draft"]',
+      );
+      expect(draft?.querySelector('h2')?.textContent).toContain('Rust is fast');
+      expect(draft?.textContent).toContain('Most HN commenters agree.');
+    });
+
+    it('hides the draft once the final answer arrives', () => {
+      ragServiceStub.stream.mockReturnValue(
+        of(
+          { type: 'pipeline', stage: 'writer', status: 'started', detail: '', elapsed: 0 },
+          { type: 'token', content: '## Draft' },
+          { type: 'answer', response: mockAgentResponse() },
+        ),
+      );
+      component.query.set('test');
+      component.submit();
+      component.activeTab.set('answer');
+      fixture.detectChanges();
+
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="answer-draft"]'),
+      ).toBeNull();
     });
 
     it('should show partial result warning for error responses', () => {

@@ -50,7 +50,10 @@ export async function scoreRun(
 
   const [srcResult, qualResult] = await Promise.all([srcPromise, qualPromise]);
 
-  const effResult = evaluateEfficiency(response.steps.length, query.maxAcceptableSteps);
+  // maxAcceptableSteps budgets tool calls (the agent's step limit counts actions),
+  // so thoughts and observations don't count against it.
+  const toolCalls = response.steps.filter((s) => s.type === 'action').length;
+  const effResult = evaluateEfficiency(toolCalls, query.maxAcceptableSteps);
   const latResult = evaluateLatency(result.durationMs, provider);
   const costResult = evaluateCost(
     response.meta.totalInputTokens,
@@ -58,11 +61,20 @@ export async function scoreRun(
     provider,
   );
 
+  // A run that fell back to the legacy agent only reports the fallback's tokens and
+  // steps; the failed pipeline run is invisible, so it would score as cheap and lean.
+  const fellBack = result.timings?.fallback === true;
+  if (fellBack) {
+    const note = 'fell back to legacy agent (pipeline spend not reported)';
+    effResult.comment = `${effResult.comment}; ${note}`;
+    costResult.comment = `${costResult.comment}; ${note}`;
+  }
+
   const sourceAccuracy = srcResult.score;
   const qualityChecklist = qualResult.score;
-  const efficiency = effResult.score;
+  const efficiency = fellBack ? 0 : effResult.score;
   const latency = latResult.score;
-  const cost = costResult.score;
+  const cost = fellBack ? 0 : costResult.score;
 
   const weighted =
     sourceAccuracy * WEIGHTS.sourceAccuracy +
