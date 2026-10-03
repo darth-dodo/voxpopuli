@@ -380,6 +380,36 @@ describe('WriterNode', () => {
     expect(result.response.sources).toEqual(SAMPLE_BUNDLE.allSources);
   });
 
+  describe('merged mode (fromEvidence)', () => {
+    it('writes from the evidence themes with code-derived confidence and gaps', async () => {
+      mockModel.invoke.mockResolvedValue({
+        content: JSON.stringify({
+          headline: 'H',
+          context: 'C',
+          sections: [
+            { heading: 'A', body: 'a [1]', citedSources: [1] },
+            { heading: 'B', body: 'b [1]', citedSources: [1] },
+          ],
+          bottomLine: 'B',
+        }),
+      });
+
+      const node = createWriterNode(mockModel, { fromEvidence: true });
+      const result = await node({
+        query: 'q',
+        bundle: SAMPLE_BUNDLE,
+        analysis: { ...SAMPLE_ANALYSIS, confidence: 'low', gaps: ['Only 1 story found.'] },
+      });
+
+      const [system, human] = mockModel.invoke.mock.calls[0][0];
+      expect(system.content).toContain('editorial analyst');
+      expect(human.content).toContain('### Theme 1: Perf');
+      expect(human.content).toContain('Confidence: low');
+      expect(human.content).toContain('Known gaps: Only 1 story found.');
+      expect(result.response.sources).toEqual(SAMPLE_BUNDLE.allSources);
+    });
+  });
+
   describe('live draft streaming', () => {
     const output = {
       headline: 'React leads',

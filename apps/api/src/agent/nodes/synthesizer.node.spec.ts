@@ -9,7 +9,12 @@ jest.mock('../../llm/providers/openrouter.provider', () => ({ OpenRouterProvider
 jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-import { applyEvidenceFloor, createSynthesizerNode } from './synthesizer.node';
+import {
+  applyEvidenceFloor,
+  createMergedSynthesizerNode,
+  createSynthesizerNode,
+} from './synthesizer.node';
+import { buildFallbackResponse } from '../fallback-response';
 
 const SAMPLE_BUNDLE: EvidenceBundle = {
   query: 'React vs Vue',
@@ -339,5 +344,43 @@ describe('applyEvidenceFloor', () => {
 
   it('flags answers with no HN sources at all', () => {
     expect(applyEvidenceFloor(base, 0).gaps[1]).toContain('not grounded in HN discussion');
+  });
+});
+
+describe('createMergedSynthesizerNode', () => {
+  it('makes no LLM call and derives confidence from source coverage', async () => {
+    const node = createMergedSynthesizerNode();
+
+    const thin = await node({ bundle: SAMPLE_BUNDLE }); // 1 source
+    expect(thin.analysis.confidence).toBe('low');
+    expect(thin.analysis.gaps[0]).toContain('Only 1 Hacker News story');
+    expect(thin.inputTokens + thin.outputTokens).toBe(0);
+
+    const wellSourced = await node({
+      bundle: {
+        ...SAMPLE_BUNDLE,
+        allSources: [1, 2, 3].map((storyId) => ({ ...SAMPLE_BUNDLE.allSources[0], storyId })),
+      },
+    });
+    expect(wellSourced.analysis.confidence).toBe('high');
+    expect(wellSourced.analysis.gaps).toEqual([]);
+  });
+
+  it('builds a schema-valid extractive analysis, so a Writer failure still reads sensibly', async () => {
+    const { analysis } = await createMergedSynthesizerNode()({ bundle: SAMPLE_BUNDLE });
+
+    expect(AnalysisResultSchema.safeParse(analysis).success).toBe(true);
+    expect(analysis.summary).not.toBe('');
+    expect(analysis.insights[0]).toMatchObject({ claim: 'Performance', themeIndices: [0] });
+    expect(analysis.insights[0].reasoning).toContain('[1]'); // keeps the citation
+
+    const fallback = buildFallbackResponse(analysis, SAMPLE_BUNDLE, {
+      provider: 'mistral',
+      durationMs: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+    });
+    expect(fallback.answer).not.toMatch(/^## \s*$/m); // no empty headline
+    expect(fallback.answer).toContain('### Performance');
   });
 });

@@ -15,6 +15,10 @@ All notable changes to VoxPopuli are documented in this file.
 
 ### Added
 
+- **Follow-up questions** — Under a finished answer, "Ask a follow-up" reuses that answer's evidence (`GET /api/rag/stream?followUpOf=<queryId>`): the Retriever stage returns the stored bundle instead of searching HN again, and the Synthesizer and Writer answer the new question from it. Evidence is kept for 30 min; an expired parent runs as a fresh query. In a real Mistral run a follow-up took 11.0 s with no tool calls (the original took 25.5 s).
+- **Repeated questions are answered instantly** — A completed answer is replayed for 15 min to identical questions (case and whitespace ignored), immediately and marked `cached`, instead of re-running the pipeline. Pipeline and legacy runs are cached separately.
+- **Every source has a date** — The tools record `postedDate` from the HN API in the source registry. Parsing it back out of tool text missed stories whose body text has paragraphs (17 of 25 sources were dated in a real answer).
+- **Experimental merged writer** — `PIPELINE_MERGED_WRITER=true` skips the Synthesizer's LLM call and lets the Writer analyze the evidence directly; confidence and gaps are still derived in code. Off by default; see ADR-010 for the measured trade-off.
 - **Live answer draft** — The Writer stage now streams: its partial JSON is rendered into the answer's markdown as it's generated and sent as append-only `token` deltas, which the answer tab shows as a "Drafting answer…" preview until the final `answer` replaces it (the ~5–6 s Writer stage no longer shows a blank card). Draft and final answer come from the same `renderAnswerMarkdown()`, and a retry after a mid-stream failure runs without streaming so text is never duplicated. Retry wrappers now log the error they swallow.
 - **`GET /api/health/llm`** — Makes a cached (60 s) 1-token call to the active provider and returns `{ provider, ok, latencyMs, error?: 'auth' | 'unavailable' }` (503 when not ok). Use it to confirm provider secrets after a deploy.
 
