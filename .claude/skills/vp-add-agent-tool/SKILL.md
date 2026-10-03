@@ -56,8 +56,9 @@ Use `tool()` from `langchain`, not `new DynamicTool()` (its `func(input: string)
 2. `apps/api/src/agent/system-prompt.ts`: tool line for the legacy agent
 3. `apps/api/src/agent/prompts/retriever.prompt.ts`: tool line for the pipeline (**the default path**)
 4. `apps/api/src/hn/hn.service.ts`: new data method, via `CacheService.getOrSet()`
-5. `apps/api/src/agent/trust.ts`: only if the output carries dates or story IDs used for trust scoring
-6. `apps/api/src/agent/tools.spec.ts`: tests below
+5. If the tool surfaces stories, record each one into the optional `SourceRegistry` (`sources?.set(storyId, { …, postedDate })`, as `search_hn`/`get_story` do). The pipeline's answer sources and their dates come from this registry, not from the LLM or the tool text (ADR-009); the legacy agent still extracts sources from tool output
+6. `apps/api/src/agent/trust.ts`: only if the output carries dates or story IDs used for trust scoring (recency still parses `Posted: YYYY-MM-DD` from observations)
+7. `apps/api/src/agent/tools.spec.ts`: tests below
 
 ## Testing
 
@@ -85,13 +86,14 @@ jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn
 
 ## Quick Reference
 
-| Rule                                     | Why                                                             |
-| ---------------------------------------- | --------------------------------------------------------------- |
-| `z.coerce.number()` for numbers          | Models send `"10"`; plain `z.number()` burns agent steps        |
-| `.describe()` on every field             | The LLM picks arguments from these descriptions                 |
-| Return chunked text via `ChunkerService` | The agent reasons over text; chunker strips HTML, counts tokens |
-| `buildContext(..., Infinity)`            | Budgeting happens per agent, not per tool                       |
-| Data access through `HnService`          | It already caches; respect the 30-comment cap                   |
+| Rule                                     | Why                                                               |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| `z.coerce.number()` for numbers          | Models send `"10"`; plain `z.number()` burns agent steps          |
+| `.describe()` on every field             | The LLM picks arguments from these descriptions                   |
+| Return chunked text via `ChunkerService` | The agent reasons over text; chunker strips HTML, counts tokens   |
+| `buildContext(..., Infinity)`            | Budgeting happens per agent, not per tool                         |
+| Data access through `HnService`          | It already caches; respect the 30-comment cap                     |
+| Fill the `SourceRegistry`                | Pipeline sources are attached by code, not transcribed by the LLM |
 
 ## Verify With a Real Model
 
@@ -104,3 +106,4 @@ Unit tests can't show how a model calls the tool. Run one query end-to-end on th
 - Testing only through `tool.invoke()`, which skips the schema in this repo's mocked setup
 - Testing a re-declared copy of the schema; test the factory's own `tool.schema` so the test breaks when the tool changes
 - Returning raw API JSON instead of chunked, formatted text
+- Surfacing stories without recording them in the `SourceRegistry`, so they never appear as pipeline answer sources

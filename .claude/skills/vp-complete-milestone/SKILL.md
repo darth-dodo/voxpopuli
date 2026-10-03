@@ -36,7 +36,7 @@ So keep a deprecated alias that logs a warning (see `PROVIDER_ALIASES` in `llm.s
 
 ```bash
 pnpm exec nx build api && set -a && source .env && set +a
-LLM_PROVIDER=<old-value> PORT=3100 node apps/api/dist/main.js   # expect "Application is running", then GET /api/health -> 200
+LLM_PROVIDER=<old-value> PORT=<free port> node apps/api/dist/main.js   # expect "Application is running", then GET /api/health -> 200; stop it by its PID
 ```
 
 List the Render dashboard changes the user must make in the PR's unchecked test-plan items.

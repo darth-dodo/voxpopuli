@@ -67,23 +67,25 @@ graph TB
 
     subgraph Backend ["NestJS (apps/api)"]
         RAG["RagController<br/>POST /query | GET /stream"]
+        HEALTH["HealthController<br/>GET /health | GET /health/llm"]
+        STORE["QueryStore<br/>dedup, replay, follow-up evidence"]
         TTS_C["TtsController<br/>POST /narrate | GET /voices"]
         ORCH["OrchestratorService<br/>Pipeline Coordination"]
-        RET["RetrieverAgent<br/>ReAct + Compaction"]
-        SYN["SynthesizerAgent<br/>Single-pass Analysis"]
-        WRT["WriterAgent<br/>Single-pass Prose"]
+        RET["Retriever node<br/>ReAct + Compaction"]
+        SYN["Synthesizer node<br/>Single-pass Analysis"]
+        WRT["Writer node<br/>Streamed Prose"]
         AGENT_LEGACY["AgentService<br/>Legacy ReAct (fallback)"]
         HN["HnService<br/>Algolia + Firebase"]
         CHUNKER["ChunkerService<br/>Token Budgeting"]
         LLM["LlmService<br/>Provider Facade"]
-        TTS_S["TtsService<br/>Podcast Rewrite + Stream"]
-        CACHE["CacheService<br/>node-cache"]
+        TTS_S["TtsService<br/>Podcast Rewrite + Voxtral"]
+        CACHE["CacheService<br/>lru-cache"]
     end
 
     subgraph Providers ["LLM Providers"]
         CLAUDE["Claude Haiku 4.5"]
-        MISTRAL["Mistral Large 3"]
-        OPENROUTER["OpenRouter (Qwen3 32B)"]
+        MISTRAL["Mistral Small"]
+        OPENROUTER["OpenRouter (Qwen3 235B A22B)"]
     end
 
     subgraph External ["External APIs"]
@@ -95,6 +97,9 @@ graph TB
     CHAT <-->|SSE / HTTP| RAG
     AUDIO -->|HTTP| TTS_C
     RAG --> ORCH
+    RAG --> STORE
+    STORE --> CACHE
+    HEALTH --> LLM
     ORCH --> RET
     ORCH --> SYN
     ORCH --> WRT
@@ -128,6 +133,7 @@ graph TB
 graph TD
     APP["AppModule"] --> CONFIG["ConfigModule<br/>(global)"]
     APP --> CACHE_M["CacheModule"]
+    APP --> HEALTH_M["HealthModule"]
     APP --> HN_M["HnModule"]
     APP --> CHUNK_M["ChunkerModule"]
     APP --> LLM_M["LlmModule"]
@@ -136,6 +142,8 @@ graph TD
     APP --> RAG_M["RagModule"]
 
     HN_M -->|injects| CACHE_M
+    HEALTH_M -->|injects| CACHE_M
+    HEALTH_M -->|injects| LLM_M
     AGENT_M -->|imports| HN_M
     AGENT_M -->|imports| CHUNK_M
     AGENT_M -->|imports| LLM_M
@@ -144,9 +152,9 @@ graph TD
 
     subgraph AGENT_M_INTERNAL ["AgentModule Internals"]
         ORCH_S["OrchestratorService"]
-        RET_A["RetrieverAgent"]
-        SYN_A["SynthesizerAgent"]
-        WRT_A["WriterAgent"]
+        RET_A["Retriever node"]
+        SYN_A["Synthesizer node"]
+        WRT_A["Writer node"]
         LEGACY["AgentService (legacy)"]
         ORCH_S --> RET_A
         ORCH_S --> SYN_A
@@ -163,17 +171,18 @@ graph TD
 
 ### 1.3 Tech Stack
 
-| Layer           | Technology                                  | Version                                                 |
-| --------------- | ------------------------------------------- | ------------------------------------------------------- |
-| Monorepo        | Nx                                          | Latest                                                  |
-| Backend         | NestJS                                      | 10+                                                     |
-| Frontend        | Angular                                     | 21                                                      |
-| LLM (quality)   | Claude Haiku 4.5                            | LangChain.js (`@langchain/anthropic`)                   |
-| LLM (cost)      | Mistral Large 3                             | LangChain.js (`@langchain/mistralai`)                   |
-| LLM (speed/dev) | OpenRouter Qwen3 32B                        | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
-| TTS             | Mistral Voxtral (`voxtral-mini-tts-latest`) | native `fetch` → `/v1/audio/speech`, base64 MP3         |
-| Cache           | node-cache                                  | Latest                                                  |
-| Shared Types    | TypeScript lib                              | `@voxpopuli/shared-types`                               |
+| Layer         | Technology                                  | Version                                                 |
+| ------------- | ------------------------------------------- | ------------------------------------------------------- |
+| Monorepo      | Nx                                          | Latest                                                  |
+| Backend       | NestJS                                      | 11                                                      |
+| Frontend      | Angular                                     | 21                                                      |
+| Pipeline      | LangGraph.js (`@langchain/langgraph`)       | `StateGraph` + `createReactAgent` (Retriever)           |
+| LLM (default) | Mistral Small (`mistral-small-latest`)      | LangChain.js (`@langchain/mistralai`)                   |
+| LLM (quality) | Claude Haiku 4.5                            | LangChain.js (`@langchain/anthropic`)                   |
+| LLM (gateway) | OpenRouter Qwen3 235B A22B 2507             | LangChain.js (`@langchain/openai`, OpenRouter base URL) |
+| TTS           | Mistral Voxtral (`voxtral-mini-tts-latest`) | native `fetch` → `/v1/audio/speech`, base64 MP3         |
+| Cache         | lru-cache                                   | 11 (max 5000 entries)                                   |
+| Shared Types  | TypeScript lib                              | `@voxpopuli/shared-types`                               |
 
 ### 1.4 Project Structure
 
@@ -187,28 +196,34 @@ voxpopuli/
 |   |   |   +-- pipeline-graph.ts        # LangGraph StateGraph definition + retry wrappers
 |   |   |   +-- nodes/                   # Pipeline node implementations
 |   |   |   |   +-- retriever.node.ts    # ReAct search + compaction
-|   |   |   |   +-- synthesizer.node.ts  # Single-pass analysis
-|   |   |   |   +-- writer.node.ts       # Single-pass prose
+|   |   |   |   +-- compaction-parse.ts  # parseCompactedThemes (lenient, salvaging parser)
+|   |   |   |   +-- parse-llm-json.ts    # cleanLlmOutput (fences, <think> tags, prose)
+|   |   |   |   +-- synthesizer.node.ts  # Single-pass analysis, applyEvidenceFloor, merged-mode node
+|   |   |   |   +-- writer.node.ts       # Single-pass prose (first attempt streamed)
+|   |   |   |   +-- writer-draft.ts      # renderAnswerMarkdown, WriterDraftStreamer
+|   |   |   +-- fallback-response.ts     # buildFallbackResponse (Writer failed twice)
 |   |   |   +-- agent.service.ts         # Legacy ReAct (fallback)
-|   |   |   +-- tools.ts, system-prompt.ts
-|   |   |   +-- prompts/                 # Per-agent system prompts
-|   |   +-- cache/         # CacheService (node-cache wrapper)
+|   |   |   +-- tools.ts, system-prompt.ts, trust.ts
+|   |   |   +-- prompts/                 # Per-agent system prompts (incl. merged-writer.prompt.ts)
+|   |   +-- cache/         # CacheService (lru-cache wrapper), QueryStore
 |   |   +-- chunker/       # ChunkerService (HTML cleanup, token budgeting)
+|   |   +-- health/        # HealthController (GET /health, GET /health/llm)
 |   |   +-- hn/            # HnService (Algolia + Firebase + caching)
-|   |   +-- llm/           # LlmService, LlmProviderInterface, providers/, invoke-with-retry.ts
-|   |   +-- rag/           # RagController (POST + SSE)
-|   |   +-- tts/           # TtsService, TtsController, podcast-rewrite prompt
+|   |   +-- llm/           # LlmService, LlmProviderInterface, providers/, model-ids.ts,
+|   |   |                  # llm-errors.ts, invoke-with-retry.ts
+|   |   +-- rag/           # RagController (POST + SSE + result lookup)
+|   |   +-- tts/           # TtsService, TtsController, narrator prompt, mp3-xing.ts
 |   +-- web/src/app/
-|       +-- components/    # chat, agent-steps, trust-bar, source-card, meta-bar, provider-selector
+|       +-- components/    # chat, agent-steps, trust-bar, source-card, meta-bar, provider-selector, audio-player
 |       +-- pages/         # design-system (Tailwind token playground)
-|       +-- services/      # rag.service.ts
+|       +-- services/      # rag.service.ts, tts.service.ts
 +-- libs/
-|   +-- shared-types/src/  # All shared interfaces
-|       +-- evidence.types.ts   # EvidenceBundle, ThemeGroup, EvidenceItem
+|   +-- shared-types/src/lib/  # All shared interfaces
+|       +-- evidence.types.ts   # EvidenceBundle, ThemeGroup, EvidenceItem, SourceMetadata
 |       +-- analysis.types.ts   # AnalysisResult, Insight, Contradiction
-|       +-- response.types.ts   # AgentResponse v2, ResponseSection
-|       +-- pipeline.types.ts   # PipelineConfig, PipelineEvent, PipelineResult
-|       +-- index.ts            # barrel export + existing types
+|       +-- response-v2.types.ts # AgentResponseV2, ResponseSection
+|       +-- pipeline.types.ts   # PipelineConfig, PipelineEvent, PipelineResult, PriorEvidence
+|       +-- shared-types.ts     # AgentResponse, AgentStep, QueryResult, LlmHealthResponse, ...
 +-- evals/                 # Eval harness: queries.json, run-eval.ts, evaluators/, feedback.ts, results/
 ```
 
@@ -222,40 +237,49 @@ Single source of truth for all API contracts. Both apps import from `@voxpopuli/
 
 **Key interfaces:**
 
-| Interface         | Purpose                                                                        |
-| ----------------- | ------------------------------------------------------------------------------ |
-| `RagQuery`        | Query request shape                                                            |
-| `AgentResponse`   | Full response: answer + steps + sources + meta                                 |
-| `AgentStep`       | Single reasoning step (thought/action/observation)                             |
-| `AgentSource`     | Story metadata with HN link                                                    |
-| `StoryChunk`      | Chunked story for context window                                               |
-| `CommentChunk`    | Chunked comment for context window                                             |
-| `ToolDefinition`  | Agent tool schema (search_hn, get_story, get_comments)                         |
-| `LlmMessage`      | Provider-agnostic message format                                               |
-| `LlmResponse`     | Provider-agnostic response format                                              |
-| `TtsRequest`      | TTS narration request shape                                                    |
-| `EvidenceItem`    | Compacted insight from HN (1-3 sentences, classified)                          |
-| `ThemeGroup`      | Themed group of evidence with sentiment and raw count                          |
-| `EvidenceBundle`  | Retriever output: themes, sources, timeRange                                   |
-| `Insight`         | Synthesizer finding with claim, strength, themes                               |
-| `Contradiction`   | Where sources disagree, with assessment                                        |
-| `AnalysisResult`  | Synthesizer output: insights, contradictions, confidence                       |
-| `ResponseSection` | Writer section: heading, body, cited sources                                   |
-| `PipelineConfig`  | Per-agent provider map, token budgets (incl. `synthesizerInput`), feature flag |
-| `PipelineEvent`   | SSE event: stage, status, detail, elapsed                                      |
-| `PipelineResult`  | Full result with intermediates, timing, token usage                            |
+| Interface           | Purpose                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `RagQuery`          | Query request shape                                                                   |
+| `AgentResponse`     | Full response: answer + steps + sources + meta (`meta.cached`, `meta.error`)          |
+| `AgentStep`         | Single reasoning step (thought/action/observation)                                    |
+| `AgentSource`       | Story metadata with HN link and `postedDate` (YYYY-MM-DD, from the HN API)            |
+| `StoryChunk`        | Chunked story for context window                                                      |
+| `CommentChunk`      | Chunked comment for context window                                                    |
+| `ToolDefinition`    | Agent tool schema (search_hn, get_story, get_comments)                                |
+| `LlmMessage`        | Provider-agnostic message format                                                      |
+| `LlmResponse`       | Provider-agnostic response format                                                     |
+| `TtsRequest`        | TTS narration request shape                                                           |
+| `EvidenceItem`      | Compacted insight from HN (1-3 sentences, classified)                                 |
+| `ThemeGroup`        | Themed group of evidence with sentiment and raw count                                 |
+| `SourceMetadata`    | Source row recorded by the tools (title, url, author, points, `postedDate`)           |
+| `EvidenceBundle`    | Retriever output: themes, `allSources`, `totalSourcesScanned`, `tokenCount`           |
+| `Insight`           | Synthesizer finding with claim, strength, themes                                      |
+| `Contradiction`     | Where sources disagree, with assessment                                               |
+| `AnalysisResult`    | Synthesizer output: insights, contradictions, confidence                              |
+| `ResponseSection`   | Writer section: heading, body, cited sources                                          |
+| `AgentResponseV2`   | Writer output: headline, context, 2-4 sections, bottom line, sources                  |
+| `PipelineConfig`    | Per-agent provider map, token budgets (incl. `synthesizerInput`), feature flag        |
+| `PipelineEvent`     | SSE event: stage, status, detail, elapsed                                             |
+| `PipelineResult`    | Full result with intermediates, timing, token usage                                   |
+| `PriorEvidence`     | A finished run's question, `EvidenceBundle` and Retriever steps (follow-ups)          |
+| `QueryResult`       | Stored query lifecycle: status, buffered events/steps, response, error                |
+| `LlmHealthResponse` | `GET /api/health/llm` result: provider, ok, latency, `error: 'auth' \| 'unavailable'` |
 
 ### 2.2 CacheModule
 
-Wraps `node-cache` with typed get/set and TTL management.
+`CacheService` wraps `lru-cache` (max 5000 entries, per-entry TTL) with typed get/set, a cache-aside `getOrSet<T>()`, and hit/miss stats for the health endpoint. The module also provides `QueryStore` (see Section 2.7).
 
-| Method                           | TTL    | Description                      |
-| -------------------------------- | ------ | -------------------------------- |
-| `getOrSet<T>(key, fetcher, ttl)` | varies | Cache-aside pattern              |
-| Search results                   | 15 min | Algolia responses                |
-| Stories                          | 1 hour | Firebase item data               |
-| Comments                         | 30 min | Firebase comment data            |
-| Query results                    | 10 min | Full AgentResponse by query hash |
+| Entry                            | TTL    | Description                                         |
+| -------------------------------- | ------ | --------------------------------------------------- |
+| `getOrSet<T>(key, fetcher, ttl)` | varies | Cache-aside pattern                                 |
+| Search results                   | 15 min | Algolia responses                                   |
+| Stories                          | 1 hour | Firebase item data                                  |
+| Comments                         | 30 min | Firebase comment data                               |
+| `POST /api/rag/query` results    | 10 min | Full AgentResponse keyed by query + mode            |
+| QueryStore: running query        | 5 min  | Buffered pipeline events and steps                  |
+| QueryStore: completed answer     | 15 min | Replayed to identical questions (`meta.cached`)     |
+| QueryStore: evidence             | 30 min | `PriorEvidence` for follow-up questions             |
+| LLM health probe                 | 60 s   | Result of `GET /api/health/llm` (limits probe cost) |
 
 ### 2.3 HnModule
 
@@ -266,7 +290,11 @@ Two HTTP clients behind one service, all calls wrapped with CacheService.
 | Algolia  | `hn.algolia.com/api/v1`         | `search()`, `searchByDate()`    |
 | Firebase | `hacker-news.firebaseio.com/v0` | `getItem()`, `getCommentTree()` |
 
-**Comment tree fetching:** Parallel batches of 10, hard cap 30 comments, skip deleted/dead. See product.md Section 6.3.
+**Comment tree fetching:** `getCommentTree(storyId, maxDepth = 3)` fetches one depth level at a time, with every parent's replies requested in parallel, so a tree costs one round-trip per depth rather than one per comment. Limits: 15 top-level comments, 3 replies per comment, 30 comments in total (depth-first order), deleted/dead items skipped. Depth-2 replies are only fetched for depth-1 comments that still fall inside the cap. See product.md Section 6.3.
+
+**Retries:** Algolia and Firebase calls retry up to 3 times with exponential backoff and jitter on network errors and 5xx; 4xx responses are not retried.
+
+**Search filter relaxation (`search_hn` tool):** if a search with `min_points` returns fewer than `MIN_FILTERED_HITS` (3) stories, the tool re-runs it without the filter. If that finds more stories it uses them and prepends a note telling the model the filter was removed; otherwise the note says removing the filter found nothing extra, so the model doesn't repeat the search itself.
 
 ### 2.4 ChunkerModule
 
@@ -304,22 +332,28 @@ Provider interface + facade pattern, implemented via LangChain.js. Implemented i
 
 All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangChain handles tool-calling protocols (tool_use/tool_result content blocks, OpenAI-compatible function calls) internally, so the provider interface is simpler than originally specified -- no `formatTools()` or `buildToolResultMessage()` methods are needed.
 
-| Component              | Responsibility                                                                                 |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(): BaseChatModel }`                              |
-| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                            |
-| `MistralProvider`      | `ChatMistralAI` wrapping `mistral-large-latest` (262k context)                                 |
-| `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-235b-a22b-2507` (128k budget) |
-| `LlmService`           | Facade: reads `LLM_PROVIDER` env, lazy provider instantiation, per-request override            |
+| Component              | Responsibility                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(options?: ModelOptions): BaseChatModel }`                                                  |
+| `ModelOptions`         | Per-call-site tuning; currently `{ maxTokens?: number }` (an output-token cap)                                                           |
+| `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                                                                      |
+| `MistralProvider`      | `FailFastChatMistralAI` (a `ChatMistralAI` subclass) wrapping `mistral-small-latest` (262k context)                                      |
+| `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-235b-a22b-2507` or `OPENROUTER_MODEL` (128k budget, throughput routing) |
+| `LlmService`           | Facade: reads `LLM_PROVIDER` env (default `mistral`), lazy provider instantiation, per-request override                                  |
+| `model-ids.ts`         | Single registry of model IDs (LLM and TTS)                                                                                               |
+| `llm-errors.ts`        | `isAuthError()`, `LlmAuthError`, `failFastOnClientError()`, `PROVIDER_KEY_ENV`                                                           |
+| `invoke-with-retry.ts` | `invokeWithRetry()` for pipeline LLM calls: on a TPM / request-too-large error, retries once with the longest message cut in half        |
 
 **Key implementation details:**
 
-- **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. The `ChatModel` instance within each provider is also lazily created on the first `getModel()` call.
+- **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. Each provider lazily creates its `ChatModel` on the first `getModel()` call and caches one instance per `maxTokens` value.
 - **API key validation:** Each provider validates its API key at construction time and throws immediately if missing.
-- **Per-request override:** `LlmService.getModel(providerOverride?)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call.
-- **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `openrouter`, `claude`, `mistral`.
+- **Per-request override:** `LlmService.getModel(providerOverride?, options?: ModelOptions)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call. The Retriever's ReAct model is requested with `{ maxTokens: 768 }`; the LLM health probe uses `{ maxTokens: 5 }`.
+- **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `openrouter`, `claude`, `mistral`. The deprecated name `groq` is aliased to `openrouter` with a warning.
+- **OpenRouter output cap:** Without a call-site cap, OpenRouter requests send `max_tokens: 8192`, because some hosts otherwise default the completion to the whole context window and reject the request. Provider routing prefers the highest-throughput host (`provider: { sort: 'throughput' }`).
+- **Fail fast on bad keys:** `isAuthError()` recognises 401/403 from `status`, `statusCode` (Mistral SDK) or `response.status`, and auth phrases in the message. LangChain's retry layer does not read Mistral's `statusCode`, so a rejected key used to be retried with backoff for about 2 minutes. `FailFastChatMistralAI` disables the inner retries and wraps `completionWithRetry` in its own `AsyncCaller` (6 retries) whose `failFastOnClientError` policy stops on auth errors, aborts and other 4xx, and retries only 408, 429 and 5xx. `LlmAuthError` names the env var to fix (`MISTRAL_API_KEY`, `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`).
 
-**Tests:** 22 unit tests covering provider resolution, lazy instantiation, API key validation, override support, and error handling. See `docs/adr/003-llm-provider-architecture.md` for design rationale.
+**Tests:** See `apps/api/src/llm/*.spec.ts` and `providers/*.spec.ts`. See `docs/adr/003-llm-provider-architecture.md` for design rationale.
 
 ### 2.6 AgentModule
 
@@ -327,155 +361,156 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 
 #### Multi-Agent Pipeline (v3.0)
 
-| Component             | Pattern                    | Description                                                                              |
-| --------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `OrchestratorService` | Pipeline coordinator       | Runs Retriever → Synthesizer → Writer via LangGraph StateGraph, emits SSE PipelineEvents |
-| `RetrieverAgent`      | ReAct loop + compaction    | Searches HN, collects data, compacts into `EvidenceBundle`                               |
-| `SynthesizerAgent`    | Single-pass structured I/O | Extracts insights from bundle, produces `AnalysisResult`                                 |
-| `WriterAgent`         | Single-pass structured I/O | Composes prose from analysis, produces `AgentResponse`                                   |
+| Component             | Pattern                    | Description                                                                                          |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `OrchestratorService` | Pipeline coordinator       | Builds and streams the LangGraph `StateGraph` (Retriever → Synthesizer → Writer), emits SSE events   |
+| Retriever node        | ReAct loop + compaction    | Searches HN, records sources in a `SourceRegistry`, compacts raw data into `EvidenceBundle` themes   |
+| Synthesizer node      | Single-pass structured I/O | Extracts insights from the bundle, produces `AnalysisResult`, applies the evidence floor             |
+| Writer node           | Single-pass structured I/O | Composes prose from the analysis, produces `AgentResponseV2`; its first attempt streams a live draft |
+
+The nodes are factory functions (`createRetrieverNode`, `createSynthesizerNode`, `createWriterNode`) in `agent/nodes/`, not separate Nest services. The orchestrator builds them per request.
 
 **Pipeline flow:**
 
-The pipeline is orchestrated by a LangGraph `StateGraph` defined in `pipeline-graph.ts`. The graph declares a `PipelineAnnotation` that tracks query, bundle, analysis, response, steps, and token usage across nodes. Each node corresponds to one pipeline stage, connected by linear edges (retriever → synthesizer → writer).
+The pipeline is orchestrated by a LangGraph `StateGraph` defined in `pipeline-graph.ts`. The graph declares a `PipelineAnnotation` that tracks query, bundle, analysis, response, steps, and token usage across nodes. Each node corresponds to one pipeline stage, connected by linear edges (retriever → synthesizer → writer). The orchestrator streams the graph with `streamMode: ['updates', 'custom']`: `updates` chunks mark a node finishing, `custom` chunks carry live events written by the nodes (`retriever_step`, `writer_draft`).
 
 ```
-Query → OrchestratorService.run(query, config)
-  ├── LangGraph StateGraph compiles and streams through:
-  │     retriever node  →  EvidenceBundle
-  │     synthesizer node  →  AnalysisResult
-  │     writer node  →  AgentResponseV2
-  └── SSE PipelineEvents emitted at each stage transition
+Query → OrchestratorService.runWithFallback(query, config, prior?)
+  └── runStream():
+        sources = new SourceRegistry()            (filled by search_hn / get_story)
+        retriever node  →  EvidenceBundle         (or stored PriorEvidence for a follow-up)
+          custom 'retriever_step' events → SSE thought / action / observation
+        synthesizer node  →  AnalysisResult       (applyEvidenceFloor; no LLM in merged mode)
+        writer node  →  AgentResponseV2           (prose only; sources attached by code)
+          custom 'writer_draft' events → SSE token (append-only markdown deltas)
+        complete → AgentResponse (answer = renderAnswerMarkdown(response)) + PriorEvidence
+  └── SSE `pipeline` events at each stage start / done / error
 ```
 
-**Retry logic:** All three pipeline nodes use a shared `invokeWithRetry` utility (`apps/api/src/llm/invoke-with-retry.ts`) that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. The Synthesizer and Writer nodes attempt a second invocation with a "respond with valid JSON only" instruction on parse failure before falling back.
+**Who writes what:** The LLMs only generate what needs judgement. The tools record every story they surface (`SourceMetadata`, including `postedDate` from the HN API) into a per-request `SourceRegistry`; the compactor outputs only `themes`; the Writer outputs only prose fields (`headline`, `context`, `sections`, `bottomLine`). Code fills in `EvidenceBundle.allSources`, `totalSourcesScanned` and `tokenCount`, and attaches `sources` to the Writer's output. Transcribing the source table was slow (thousands of output tokens) and produced null or invented fields. See `docs/adr/009-pipeline-latency.md`.
 
-**LangGraph wrappers:** `pipeline-graph.ts` also exports `withRetry` (single retry wrapper for a node function) and `withWriterFallback` (retry once, then fall back to a raw response builder). These are applied when compiling the graph.
+**Retry logic:** Pipeline LLM calls go through `invokeWithRetry` (`apps/api/src/llm/invoke-with-retry.ts`), which retries once with the longest message halved when a provider returns a TPM / request-too-large error. The Retriever's ReAct model additionally uses LangChain `withRetry` (up to 3 attempts, 15 s wait, TPM errors only). Other transient errors are retried inside the provider client (LangChain's `AsyncCaller`; for Mistral, `FailFastChatMistralAI`). The Synthesizer and Writer each make one in-node repair call on a parse or schema failure (see JSON Parse Safety).
 
-**Configuration:** `PipelineConfig` controls provider-per-agent mapping, token budgets (including `synthesizerInput` for bundle size guarding), and timeout.
+**LangGraph wrappers:** `pipeline-graph.ts` exports `withRetry` (run a node function once more if it throws) and `withWriterFallback` (retry once, then return a fallback state). Both log the swallowed error's first line as a warning (`Node failed, retrying once: …`, `Writer failed, retrying once: …`, `Writer retry failed, using fallback response: …`). The Writer retry runs without the graph config, so it cannot stream a second copy of the draft into the UI.
 
-**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
+**Configuration:** `PipelineConfig` holds the provider-per-agent mapping, token budgets (including `synthesizerInput`) and a timeout. Only `providerMap` is read by the orchestrator today; `tokenBudgets` and `timeout` are defined in the schema but not enforced. Output length is bounded by the prompts, the Retriever's ReAct cap (`RETRIEVER_REACT_MAX_TOKENS = 768`) and, for OpenRouter, the provider's 8192-token default cap.
 
-Additional presets (`optimized`, `speed`, `cost`) are deferred until eval data shows a need for per-stage provider splitting. The eval harness can use cache bypass via environment variable (`CACHE_DISABLED=true`) rather than a dedicated preset.
+**Default configuration:** All three agents use the provider passed by the client, or the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Schema defaults: token budgets retriever 2000, synthesizer 1500, synthesizerInput 4000, writer 1000; timeout 30 s.
 
-**Eval mode:** The eval harness disables caching via `CACHE_DISABLED=true` environment variable and uses the default pipeline config with extended timeout (60s). No dedicated preset needed.
+**Merged writer mode (opt-in):** With `PIPELINE_MERGED_WRITER=true` the Synthesizer's LLM call is skipped. `createMergedSynthesizerNode()` builds an extractive `AnalysisResult` in code (`analysisFromThemes()`: one insight per theme, evidence floor applied), and the Writer runs in `fromEvidence` mode with `MERGED_WRITER_SYSTEM_PROMPT`, writing directly from the formatted evidence themes plus the confidence and gaps. The UI still shows three stages; the Synthesizer completes at once as "Merged into writer". If the Writer fails twice, the fallback response is built from the extractive analysis. Off by default; see `docs/adr/010-merged-writer-and-model-speed.md` for the eval comparison (27% lower mean latency on its run).
 
-**Feature flag:** `PipelineConfig.useMultiAgent` (default: `true`). The frontend always passes `useMultiAgent: true`, making the pipeline the default mode. When `false`, falls back to legacy `AgentService`.
+**Follow-up questions:** When a pipeline run completes, the orchestrator returns its evidence as `PriorEvidence` (`{ query, bundle, steps }`), and the controller stores it for 30 minutes. A request with `followUpOf=<queryId>` swaps the Retriever node for one that returns the stored bundle immediately (query annotated as a follow-up to the original question), so only the Synthesizer and Writer run. If the evidence has expired, the question runs as a fresh query.
+
+**Eval mode:** The eval harness talks to the API over HTTP (SSE pipeline by default) and uses the default pipeline config. There is no dedicated preset.
+
+**Feature flag:** On `GET /api/rag/stream` the pipeline runs only when the request passes `useMultiAgent=true`; any other value uses the legacy `AgentService`. The frontend always sends `useMultiAgent=true`, so the pipeline is the production path. `POST /api/rag/query` uses the pipeline when the body has `useMultiAgent: true`. (`PipelineConfigSchema.useMultiAgent` defaults to `false` but is not what selects the path.)
 
 #### PipelineEvent Detail Contracts
 
-The `detail` field is a free-form string for SSE simplicity, but both backend emitters and frontend renderers must follow these conventions:
+The `detail` field is a free-form string for SSE simplicity. These are the strings `OrchestratorService` emits today (the schema also allows a `progress` status, which the orchestrator does not currently emit; live progress comes through the Retriever's step events instead):
 
-**Retriever progress details:**
+| Stage       | Status    | Detail                                                                                                                            |
+| ----------- | --------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| retriever   | `started` | `Searching HN for "{query}"...` (follow-up: `Reusing {n} sources from "{original question}"...`)                                  |
+| retriever   | `done`    | `{n} themes from {m} sources`                                                                                                     |
+| synthesizer | `started` | `Analyzing {n} themes...`                                                                                                         |
+| synthesizer | `done`    | `{n} insights, confidence: {level}` (merged mode: `Merged into writer, confidence: {level}`)                                      |
+| writer      | `started` | `Composing headline and sections...`                                                                                              |
+| writer      | `done`    | `{n} sections, {m} sources` (Writer failed twice: `Using fallback response from analysis`)                                        |
+| any         | `error`   | `API key rejected`, `Rate limit reached — retrying with fallback agent...`, or `Pipeline error — retrying with fallback agent...` |
 
-- `"Reformulating query..."`
-- `"Searching HN for '{searchTerm}'..."`
-- `"Fetching comments from {n} stories..."`
-- `"Compacting {n} sources into themes..."`
-
-**Retriever done summary:** `"{n} themes from {m} sources (~{t} tokens)"`
-
-**Synthesizer progress details:**
-
-- `"Analyzing {n} themes..."`
-- `"Extracting insights and contradictions..."`
-
-**Synthesizer done summary:** `"{n} insights, {m} contradictions, confidence: {level}"`
-
-**Writer progress details:**
-
-- `"Composing headline and sections..."`
-- `"Attaching citations..."`
-
-**Writer done summary:** `"{n} sections, {m} sources cited"`
-
-**Error detail (any stage):** The error message string. Frontend displays as-is.
+Error events are emitted only for stages that had not already completed. The frontend displays the detail as-is.
 
 #### Bundle Size Guard
 
-Before passing the `EvidenceBundle` to the Synthesizer, the Orchestrator validates that `bundle.tokenCount` does not exceed 4000 tokens. If oversized, the Orchestrator truncates to the highest-relevance themes. Implementation details deferred to M8 implementation.
+The original plan was for the Orchestrator to check `bundle.tokenCount` against `tokenBudgets.synthesizerInput` (4000) and trim low-relevance themes. This is **not implemented**. The bundle is bounded instead by the compactor: its prompt asks for 3-6 themes in under 600 tokens, `parseCompactedThemes()` keeps at most 6 themes, and the raw data passed to the compactor is truncated to 50k characters.
 
 #### Orchestrator Failure Modes
 
-The pipeline can fail at three points. Each has a different recovery strategy:
+Each failure point has a different recovery strategy:
 
-| Failure Point                                     | What Happened                   | Recovery Strategy                                                                                                                                                  |
-| ------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Retriever fails                                   | No evidence collected           | Fall back to legacy `AgentService` via `runWithFallback()`                                                                                                         |
-| Retriever succeeds, Synthesizer fails             | Evidence exists but no analysis | **Retry Synthesizer once** with same `EvidenceBundle`. If second attempt fails, fall back to legacy.                                                               |
-| Retriever + Synthesizer succeed, Writer fails     | Analysis exists but no prose    | **Retry Writer once** with same `AnalysisResult`. If second attempt fails, return a raw/fallback response built directly from `AnalysisResult` fields.             |
-| Any stage: provider rejects the API key (401/403) | Nothing can succeed on this key | **No fallback.** Emit `API key rejected` for unfinished stages and throw `LlmAuthError`, which names the env var to fix. The legacy agent would fail the same way. |
+| Failure Point                                     | What Happened                   | Recovery Strategy                                                                                                                                                                                                                      |
+| ------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retriever hits its tool budget                    | `GraphRecursionError`           | **Not a failure.** The ReAct loop stops and the evidence collected so far is compacted.                                                                                                                                                |
+| Retriever finds almost nothing                    | Dry well                        | Compaction is skipped and a one-theme "no substantial discussion" bundle is returned; the evidence floor then sets low confidence.                                                                                                     |
+| Compaction output is malformed                    | Bad JSON or labels              | `parseCompactedThemes()` normalizes labels and salvages themes before a JSON syntax error; one repair call asks for the complete object. Only when neither attempt yields a usable theme does the Retriever throw (→ legacy fallback). |
+| Retriever fails                                   | No evidence collected           | Fall back to legacy `AgentService` via `runWithFallback()`, **on the provider the user chose** (`config.providerMap.retriever`).                                                                                                       |
+| Retriever succeeds, Synthesizer fails             | Evidence exists but no analysis | **Retry Synthesizer once** (`withRetry`) with the same `EvidenceBundle`. If the second attempt fails, fall back to legacy.                                                                                                             |
+| Retriever + Synthesizer succeed, Writer fails     | Analysis exists but no prose    | **Retry Writer once** (`withWriterFallback`, without streaming) with the same `AnalysisResult`. If that fails, return a fallback response built directly from `AnalysisResult` fields (`meta.error: true`).                            |
+| Any stage: provider rejects the API key (401/403) | Nothing can succeed on this key | **No fallback.** Emit `API key rejected` for unfinished stages and throw `LlmAuthError`, which names the env var to fix. The legacy agent would fail the same way.                                                                     |
 
 **Key rule:** Never re-run the Retriever on a downstream failure. The Retriever is the slowest and most expensive stage (ReAct loop + HN API calls). If its output exists, reuse it.
 
-**Partial-stage error reporting:** `OrchestratorService.runWithFallback()` tracks which pipeline stages completed before an error occurred and only emits error events for stages that did not complete. Previously, all three stages were marked as error during fallback even if the Retriever had already succeeded.
+**Partial-stage error reporting:** `OrchestratorService.runWithFallback()` tracks which pipeline stages completed before an error occurred and only emits error events for stages that did not complete, then emits a `thought` step ("Pipeline unavailable — switching to single-agent mode.") before streaming the legacy agent's events.
 
-**Fallback response construction:** When the Writer fails after retry, `buildFallbackResponse()` constructs a minimal `AgentResponse` directly from `AnalysisResult` fields:
+**Fallback response construction:** When the Writer fails after retry, `buildFallbackResponse()` (`fallback-response.ts`) constructs a minimal `AgentResponse` directly from `AnalysisResult` fields:
 
-- `headline` = `analysis.summary`
-- `sections` = one `ResponseSection` per insight (claim as heading, reasoning as body)
-- `bottomLine` = `"Analysis confidence: ${analysis.confidence}. Gaps: ${analysis.gaps.join(', ')}"`
-- `sources` = `bundle.allSources`
+- headline (`## …`) = `analysis.summary`
+- one `###` section per insight (claim as heading, reasoning as body)
+- `**Bottom line:**` = `Confidence: {confidence}. Gaps: {gaps joined with '; '}.`
+- `sources` = `bundle.allSources` (with `postedDate`); `meta.error = true`
 
 This ensures the user always gets something useful, even if the Writer agent is down. The response won't be polished prose, but it will contain the actual analysis.
 
 #### JSON Parse Safety
 
-The Synthesizer and Writer both depend on parsing structured JSON from LLM output. LLMs sometimes return invalid JSON (trailing commas, markdown fencing, hallucinated fields). The Orchestrator must:
+The compactor, Synthesizer and Writer all parse structured JSON from LLM output. LLMs sometimes return invalid JSON (trailing commas, markdown fencing, reasoning tags, hallucinated fields). Each node:
 
-1. Strip markdown code fences (` ```json ... ``` `) before parsing
-2. Attempt `JSON.parse()` with a try/catch
-3. On parse failure, retry the agent once with an appended "Respond with valid JSON only" instruction
-4. Validate parsed output against the expected interface (check required fields exist)
+1. Cleans the output with `cleanLlmOutput()`: strips `<think>…</think>` blocks and markdown code fences, and trims prose around the outermost JSON object
+2. Parses with `JSON.parse()` and validates against the Zod schema (`AnalysisResultSchema`, the Writer's output schema without `sources`)
+3. On failure, makes one repair call that includes its previous answer and either the validation errors or "not valid JSON", and asks for the **complete** JSON object
+4. If the repair also fails, throws, which triggers the node-level wrapper (Synthesizer: retry then legacy fallback; Writer: retry then fallback response)
 
-This is more likely to fail in practice than bundle size overflow or partial pipeline failure.
+The compactor is more lenient (see Retriever Agent): a complete response with odd labels is accepted without a repair call, and partially valid output is salvaged.
 
 #### Retriever Agent
 
 The only agent with a ReAct loop (it needs tools and iteration). Two phases:
 
-1. **Collection (ReAct):** Uses `search_hn`, `get_story`, `get_comments` tools. Max 8 iterations. Stops when evidence is sufficient or rounds exhausted.
-2. **Compaction (single LLM call):** Converts raw HN data into 3-6 `ThemeGroup`s at ~600 tokens total. Each evidence item is classified (`evidence` | `anecdote` | `opinion` | `consensus`) and scored for relevance.
+1. **Collection (ReAct):** LangGraph `createReactAgent` with `search_hn`, `get_story`, `get_comments`. Max 8 iterations (`recursionLimit` 17). The ReAct model is output-capped at 768 tokens per turn (`RETRIEVER_REACT_MAX_TOKENS`), because its turns only emit tool calls and the cap bounds the occasional closing monologue. Each tool call and result is written to the graph's custom stream as a `retriever_step` event; observations are sent as short summaries (`summarizeToolOutput()`, e.g. `Found 8 stories`, `Read 24 comments` counted from `[Story <id>]` lines) while the full tool output is kept for trust computation. If the loop exceeds its recursion limit (`GraphRecursionError`), collection stops and the evidence gathered so far is compacted rather than failing the run.
+2. **Compaction (single LLM call):** Converts raw HN data (truncated to 50k chars) into 3-6 `ThemeGroup`s at ~600 tokens. Each evidence item is classified (`evidence` | `anecdote` | `opinion` | `consensus`) and scored for relevance. The compactor writes only `themes`; the source table comes from the `SourceRegistry`.
+
+**Compaction parsing:** `parseCompactedThemes()` (`nodes/compaction-parse.ts`) is deliberately lenient, because a rejected compaction sent the whole query to the legacy agent:
+
+- Unknown item `type` becomes `opinion`; `relevance` is clamped to 0-1 (default 0.5); items without a numeric `sourceId` or text are dropped; at most 6 themes are kept.
+- If the JSON has a syntax error (e.g. an unescaped quote mid-array), everything before the error is parsed with `parsePartialJson` and the themes found there are kept (`salvaged: true`).
+- A complete response is used immediately. A salvaged or unusable one triggers one repair call; the complete retry wins, otherwise the best salvaged result is used. The Retriever throws only if neither attempt produced a usable theme.
 
 **Critical boundary:** No raw HN data crosses into the Synthesizer. Only the compacted `EvidenceBundle` passes through.
 
-**Dry-well circuit breaker:** If the Retriever executes 3 consecutive tool calls that return zero relevant results (no stories above 5 points, no comments with substance), the ReAct loop exits early. The Retriever compacts whatever it has collected so far and returns a partial `EvidenceBundle`.
-
-This prevents burning 8 iterations on a topic HN hasn't discussed. When early exit triggers:
-
-- `themes` may be empty or sparse
-- `totalSourcesScanned` will be low
-- The Synthesizer handles this gracefully by setting `confidence: 'low'` and populating `gaps` with "Limited HN discussion found on this topic."
+**Dry-well circuit breaker:** After collection, `isDryWell()` checks the raw data. If it is under 200 characters, or contains nothing story-like (no point counts or story references), the compaction call is skipped and `buildDryWellBundle()` returns a single "No substantial discussion found" theme with no sources. The evidence floor then caps confidence at `low` and adds a gap saying the answer is not grounded in HN discussion.
 
 #### Synthesizer Agent
 
-Single-pass structured output. Receives `EvidenceBundle`, produces `AnalysisResult`:
+Single-pass structured output. Receives the `EvidenceBundle` (rendered as compact text by `formatBundleForSynthesizer()`), produces `AnalysisResult`:
 
-- 3-5 insights ranked by evidence strength (cap enforced)
+- 1-5 insights ranked by evidence strength (cap enforced by the schema)
 - Contradictions where sources disagree
 - Overall confidence rating (`high` | `medium` | `low`)
 - Gaps in coverage
 
-No tools, no iteration. The input is complete and bounded (~600 tokens).
+No tools, no iteration. The input is complete and bounded (~600 tokens of themes plus the source list).
+
+**Evidence floor:** `applyEvidenceFloor(analysis, sourceCount)` keeps the stated confidence honest. The compactor can build several themes from one story's comments, after which the model would report `high` confidence. With fewer than 3 distinct sources (`THIN_EVIDENCE_SOURCES`), confidence is capped (0-1 sources → `low`, 2 → `medium`) and a gap is added that says how few stories were found. The Writer's prompt surfaces both.
 
 #### Writer Agent
 
-Single-pass structured output. Receives `AnalysisResult` + `EvidenceBundle` (for source IDs only), produces `AgentResponse`.
+Single-pass structured output. Receives `AnalysisResult` + the source table (`bundle.allSources`, for citation IDs only), produces `AgentResponseV2`:
 
 - Headline (lead with the answer, not the sources)
 - Context paragraph (why this matters)
-- 2-4 themed sections with inline citations
+- 2-4 themed sections with inline `[storyId]` citations and a `citedSources` list
 - Bottom line takeaway
 
-**Critical prompt constraint:** The Writer receives the `EvidenceBundle` alongside the `AnalysisResult`, but ONLY as a citation lookup table. The Writer's system prompt must explicitly prohibit re-analysis:
+The Writer outputs prose fields only; `sources` is attached from the bundle by code. `renderAnswerMarkdown()` turns the result into the answer markdown (`## headline`, context, `### section` headings, `**Bottom line:**`).
+
+**Streamed draft:** When the graph supplies a stream writer, the Writer's first attempt uses `model.stream()`. `WriterDraftStreamer` (`nodes/writer-draft.ts`) partially parses the growing JSON (after any `<think>` block), renders it with the same `renderAnswerMarkdown()`, and emits only the new suffix as a `writer_draft` event, which the orchestrator forwards as an SSE `token` event. Deltas are append-only: renderings that are not an extension of the text already sent are skipped, and `endsMidEscape()` holds back text that stops inside a JSON string escape. The final `answer` event replaces the draft, so an imperfect delta only affects the preview. If the provider fails before producing any output, the Writer falls back to a normal `invokeWithRetry` call; a failure mid-stream is rethrown so `withWriterFallback` retries (without streaming).
+
+**Critical prompt constraint:** The Writer receives the source table alongside the `AnalysisResult`, but ONLY as a citation lookup table. The Writer's system prompt explicitly prohibits re-analysis:
 
 ```
 ## CITATION RULES
-You receive two inputs:
-1. AnalysisResult -- this is your SOLE source of truth for claims and insights.
-2. EvidenceBundle -- this is ONLY for looking up source IDs to create citations.
-
 You MUST NOT:
-- Re-interpret evidence items in the bundle.
 - Draw conclusions that contradict or extend the AnalysisResult.
 - Add insights not present in AnalysisResult.insights.
 - Change the confidence level or gaps.
@@ -485,52 +520,74 @@ If AnalysisResult lists a gap, your response includes that gap as a disclaimer.
 You are a composer, not an analyst.
 ```
 
-**Why this matters:** Without this constraint, the Writer will second-guess the Synthesizer. Different LLM providers will produce inconsistent answers because the Writer re-analyzes the same evidence and reaches different conclusions. The Synthesizer is the single source of truth for what the evidence means. The Writer decides how to say it.
+**Why this matters:** Without this constraint, the Writer will second-guess the Synthesizer. Different LLM providers will produce inconsistent answers because the Writer re-analyzes the same evidence and reaches different conclusions. The Synthesizer is the single source of truth for what the evidence means. The Writer decides how to say it. (Merged writer mode deliberately relaxes this: the Writer analyzes the themes itself, but confidence and gaps still come from code.)
 
-**Test case:** Pass an `AnalysisResult` with `confidence: 'low'` and an `EvidenceBundle` with strong-looking evidence. Assert that the Writer's output reflects low confidence (matches the analysis), not high confidence (re-derived from the bundle).
+**Test case:** Pass an `AnalysisResult` with `confidence: 'low'` and a source table with strong-looking sources. Assert that the Writer's output reflects low confidence (matches the analysis), not high confidence.
 
 #### Legacy AgentService (Fallback)
 
 The original ReAct agent from v0.5.0. Retained as a fallback path via `OrchestratorService.runWithFallback()`.
 
-| Method                      | Description                                   |
-| --------------------------- | --------------------------------------------- |
-| `run(query, options)`       | Execute full ReAct loop, return AgentResponse |
-| `executeTool(name, params)` | Dispatch to HnService, return chunked results |
+| Method                      | Description                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `runStream(query, options)` | AsyncGenerator: yields each step during the ReAct loop, then the final response |
+| `run(query, options)`       | Consumes `runStream()` and returns the `AgentResponse`                          |
+
+Built with LangChain `createAgent`. Options: `maxSteps` (1-7) and `provider`.
 
 **Constraints:** Max 7 steps, 180s global timeout, 5 concurrent runs (semaphore).
 
-**Tools:** `search_hn`, `get_story`, `get_comments`. Defined in `tools.ts`, system prompt in `system-prompt.ts`.
+**Tools:** `search_hn`, `get_story`, `get_comments`. Defined in `tools.ts`, system prompt in `system-prompt.ts`. The legacy agent creates its tools without a `SourceRegistry` and still parses its source list from the tool text, so its sources have no `postedDate`.
 
 ### 2.7 RagModule
 
-Thin controller layer. No business logic.
+Thin controller layer over `OrchestratorService`, `AgentService` and `QueryStore`. No pipeline logic.
 
-| Endpoint                    | Method | Description                                                |
-| --------------------------- | ------ | ---------------------------------------------------------- |
-| `/api/rag/query`            | POST   | Full blocking response                                     |
-| `/api/rag/stream`           | GET    | SSE streaming of reasoning steps                           |
-| `/api/rag/query/:id/result` | GET    | Fetch stored query result by queryId (202 while in-flight) |
-| `/api/health`               | GET    | Provider status + cache stats                              |
+| Endpoint                    | Method | Description                                                                        |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------- |
+| `/api/rag/query`            | POST   | Full blocking response (pipeline when `useMultiAgent: true`), cached 10 min        |
+| `/api/rag/stream`           | GET    | SSE stream. Query params: `query`, `provider`, `useMultiAgent`, `followUpOf`       |
+| `/api/rag/query/:id/result` | GET    | Fetch stored query result by queryId (202 while in-flight, 404 if unknown/expired) |
+| `/api/health`               | GET    | Liveness: uptime, cache stats, heap memory (`HealthController`)                    |
+| `/api/health/llm`           | GET    | Live 1-call provider probe, cached 60 s; 503 with `error: 'auth' \| 'unavailable'` |
 
-**QueryStore:** An in-memory `QueryStore` service manages query result lifecycle. It stores completed results keyed by queryId and buffers SSE events for in-flight queries. The `findRunning` method enables query deduplication so that reconnecting clients are routed to `pollExistingQuery` instead of spawning a new agent run. The `GET /api/rag/query/:id/result` endpoint returns a 202 response with a full `QueryResult` shape (including `response: null`, `error: null`, `createdAt`, and `completedAt: null`) while the query is still running, enforced at compile time via `satisfies QueryResult`. Once the query completes, it returns 200 with the populated result.
+**SSE event types** (`GET /api/rag/stream`). Every event carries an incrementing `id`; the first one sets `retry: 5000`.
 
-**Middleware:** Rate limiting (10/min per IP, 60/min global) via `express-rate-limit`.
+| Event                                | Payload                                                         | When                                                                        |
+| ------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `init`                               | `{ queryId }`                                                   | Always first; the client uses it for result lookup and follow-ups           |
+| `pipeline`                           | `PipelineEvent` (`stage`, `status`, `detail`, `elapsed`)        | Stage started / done / error (pipeline mode only)                           |
+| `thought` / `action` / `observation` | `AgentStep` (without `toolOutput`)                              | Retriever ReAct steps, or legacy agent steps                                |
+| `token`                              | `{ content }`: append-only markdown delta of the Writer's draft | While the Writer's first attempt streams (pipeline mode only)               |
+| `answer`                             | `{ answer, sources, trust, meta }`                              | Final answer; replaces any draft. `meta.cached: true` on a replay           |
+| `error`                              | `{ message }`                                                   | Run failed (e.g. `LlmAuthError`, or the legacy fallback also failed)        |
+| `ping`                               | empty                                                           | Heartbeat every 10 s (keeps mobile connections open, feeds stall detection) |
+
+**QueryStore:** An in-memory `QueryStore` (`apps/api/src/cache/query-store.ts`, on top of `CacheService`) manages the query lifecycle. `create()` returns a UUID queryId; pipeline events and steps are buffered with `appendEvent()` / `appendStep()`; `complete()` / `fail()` set the final state.
+
+- **Dedup and replay:** Before starting a run, the controller calls `findReusable(query, storeKey)`. The key hashes the query with case and whitespace normalized, plus a mode-specific store key: `<provider>:pipeline`, `<provider>:legacy`, or `<provider>:pipeline:followup:<parentId>` (`provider` is `default` when the client didn't send one). If an identical query is **still running**, the new SSE connection attaches to it via `pollExistingQuery()` (polls the store every 2 s and re-emits buffered events) instead of spawning a second agent run. If one **completed within the last 15 minutes** (`COMPLETED_TTL = 900`), the stored answer is replayed immediately, with `meta.cached: true`. Failed queries are never reused. A running entry lives 5 minutes (`QUERY_TTL`).
+- **Follow-up evidence:** When a pipeline run completes with evidence, the controller calls `setEvidence(queryId, PriorEvidence)` (kept 30 minutes, `EVIDENCE_TTL = 1800`). `GET /api/rag/stream?followUpOf=<queryId>` looks it up with `getEvidence()` and passes it to the orchestrator, which skips the Retriever. Follow-ups are keyed by their parent, so they never replay an unrelated answer; an expired parent makes the question run as a fresh query.
+- **Result endpoint:** `GET /api/rag/query/:id/result` returns a 202 response with a full `QueryResult` shape (including `response: null`, `error: null`, `createdAt`, and `completedAt: null`) while the query is still running, enforced at compile time via `satisfies QueryResult`. Once the query completes, it returns 200 with the populated result.
+
+**Middleware:** A global rate limit of 60 requests/min, implemented in the controller (timestamp array, no per-IP tracking); 429 when exceeded. `TtsController` has its own limiter. Input validation via `class-validator` DTO (`query` max 500 chars) and a global exception filter.
 
 ### 2.8 TtsModule
 
-See product.md Section 18 for full pipeline, voice config, and cost analysis.
+Narration via Mistral Voxtral, using the same `MISTRAL_API_KEY` as the LLM provider. See product.md Section 18 and `docs/adr/008-voxtral-tts.md`.
 
-| Method                              | Description                                    |
-| ----------------------------------- | ---------------------------------------------- |
-| `TtsService.narrate(text, sources)` | Full pipeline: rewrite + stream audio          |
-| `TtsService.rewriteForSpeech(text)` | LLM call to convert markdown to podcast script |
-| `TtsService.synthesize(script)`     | Voxtral TTS → MP3 buffer                       |
+| Method                                  | Description                                                                                           |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `TtsService.narrate(text, options)`     | Full pipeline: optional rewrite (default on), then synthesize. Options: `rewrite`, `voiceId`          |
+| `TtsService.rewriteForSpeech(text)`     | Single-turn LLM call (active provider) turning the answer into a podcast script, capped at 2500 chars |
+| `TtsService.synthesize(script, voice?)` | `POST https://api.mistral.ai/v1/audio/speech` (native `fetch`, 60 s timeout) → base64 MP3 → Buffer    |
+| `addXingHeader(mp3)` (`mp3-xing.ts`)    | Adds a Xing VBR header with the exact frame count, byte count and seek table                          |
 
-| Endpoint           | Method | Description                  |
-| ------------------ | ------ | ---------------------------- |
-| `/api/tts/narrate` | POST   | Streaming MP3 audio response |
-| `/api/tts/voices`  | GET    | Active narrator info         |
+Voxtral returns variable-bitrate MP3 without a Xing header, so browsers misjudge the duration; iOS Safari stopped playback early. `synthesize()` therefore passes the audio through `addXingHeader()` before returning it.
+
+| Endpoint           | Method | Description                                                                               |
+| ------------------ | ------ | ----------------------------------------------------------------------------------------- |
+| `/api/tts/narrate` | POST   | MP3 response (`audio/mpeg`, `Content-Length`, `X-TTS-Characters`); input max 10,000 chars |
+| `/api/tts/voices`  | GET    | Active narrator: voice id and model (`MISTRAL_TTS_VOICE`, `MISTRAL_TTS_MODEL`)            |
 
 ### 2.9 Frontend Architecture
 
@@ -539,31 +596,32 @@ See product.md Section 18 for full pipeline, voice config, and cost analysis.
 All components are **Angular 21 standalone components** (no NgModules). Reactive state is managed with **Angular signals** -- no RxJS stores or BehaviorSubjects.
 
 ```
-ChatComponent (page shell — sticky header with query input, answer display, cancel button, background-resilient elapsed timer)
+ChatComponent (page shell — sticky header with query input, live draft, answer display, follow-up box, cancel button, background-resilient elapsed timer)
 ├── AgentStepsComponent    — pipeline stage timeline (retriever/synthesizer/writer) with per-stage elapsed counters and stall detection; shows PipelineEvent progress; falls back to ReAct step view for legacy mode
 ├── TrustBarComponent      — trust metadata visualization (source count, recency, diversity)
 ├── SourceCardComponent    — story card with title, author, points, HN link
 ├── MetaBarComponent       — response metadata (provider, timing, step count)
+├── AudioPlayerComponent   — Listen button and narration playback
 └── ProviderSelectorComponent — LLM provider dropdown
 ```
 
-| Component                   | Responsibility                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatComponent`             | Page shell: query input (sticky header), answer display with `ngx-markdown` rendering, query display during streaming, cancel button, background-resilient elapsed timer. Event handling is extracted into a shared `handleStreamEvent()` method used by both `submit()` (via `reconnectStream()`) and the visibility handler's reconnect path. |
-| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE with per-stage elapsed counters (capped at stall threshold); legacy mode falls back to ReAct step view                                                                                                                                              |
-| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                                                                                                                                                                                                                              |
-| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                                                                                                                                                                                                                                  |
-| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                                                                                                                                                                                                                           |
-| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                                                                                                                                                                                                                           |
-| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download (M5)                                                                                                                                                                                                                                                                                       |
-| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming with 300-second stall detection watchdog                                                                                                                                                                                                                                |
-| `TtsService`                | HTTP client for TTS endpoint, audio blob management (M5)                                                                                                                                                                                                                                                                                        |
+| Component                   | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ChatComponent`             | Page shell: query input (sticky header), answer display with `ngx-markdown` rendering, query display during streaming, cancel button, background-resilient elapsed timer. `token` events are appended to a `tokenContent` signal shown as a "Drafting answer…" card (`data-testid="answer-draft"`) until the `answer` event replaces it. Under a finished answer, an "Ask a follow-up" box (`data-testid="follow-up"`) re-streams with `followUpOf=<queryId>`. Event handling is extracted into a shared `handleStreamEvent()` method used by both `submit()` (via `reconnectStream()`) and the visibility handler's reconnect path. |
+| `AgentStepsComponent`       | Pipeline stage timeline showing retriever/synthesizer/writer progress via PipelineEvent SSE with per-stage elapsed counters (capped at 180 s, `MAX_STAGE_ELAPSED_MS`); research rows count comments from `[Story <id>]` lines; legacy mode falls back to ReAct step view                                                                                                                                                                                                                                                                                                                                                             |
+| `TrustBarComponent`         | Trust metadata badges (source count, recency, viewpoint diversity)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `SourceCardComponent`       | Story card with title, author, points, HN link                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `MetaBarComponent`          | Response metadata: provider name, latency, step count                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `ProviderSelectorComponent` | LLM provider dropdown                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `AudioPlayerComponent`      | Listen button, play/pause, progress, speed, download. On the Listen tap it "unlocks" the audio element (iOS Safari only allows `play()` inside a user gesture, and the narration arrives seconds later) and reuses that element for playback                                                                                                                                                                                                                                                                                                                                                                                         |
+| `RagService`                | HTTP POST for blocking queries + native `EventSource` for SSE streaming (`init`, `pipeline`, step, `token`, `answer`, `error` events; optional `followUpOf`) with 300-second stall detection watchdog                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `TtsService`                | HTTP client for `POST /api/tts/narrate`, audio blob management                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 #### Styling
 
 - **Tailwind CSS v4** with CSS-first `@theme` configuration (no `tailwind.config.js`)
 - Design system utility classes: `vp-card`, `vp-prose`, `vp-badge`, etc.
-- Light/dark theme via CSS custom property overrides on `:root` / `.dark`
+- Dark theme by default; light theme via CSS custom property overrides under a `.light` class on `<html>`
 - Markdown rendering via `ngx-markdown` (used in ChatComponent for answer display)
 
 #### Dev Server Setup
@@ -627,7 +685,7 @@ Epic (Linear Project or Cycle)
 
 - **Story: Implement CacheModule** (AI-103)
 
-  - Install `node-cache`
+  - Install `node-cache` _(since replaced by `lru-cache`)_
   - Implement `CacheService` with typed `getOrSet<T>()` pattern
   - Configure TTLs per data type
   - Add cache stats method (hits, misses, keys)
@@ -678,9 +736,9 @@ Epic (Linear Project or Cycle)
   - Simplified from original spec: `{ name, maxContextTokens, getModel(): BaseChatModel }`
   - `chat()`, `formatTools()`, `buildToolResultMessage()` not needed -- LangChain.js handles tool protocols internally
   - No separate `ChatOptions`, `LlmMessage`, or `LlmResponse` types needed at the provider level
-- **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `qwen/qwen3-32b`, 131k)
+- **Story: Implement GroqProvider** (AI-110) -- DONE (`ChatGroq`, `qwen/qwen3-32b`, 131k) _(since replaced by `OpenRouterProvider`; `groq` is now an alias for `openrouter`)_
 - **Story: Implement ClaudeProvider** (AI-111) -- DONE (`ChatAnthropic`, `claude-haiku-4-5-20251001`, 200k)
-- **Story: Implement MistralProvider** (AI-112) -- DONE (`ChatMistralAI`, `mistral-large-latest`, 262k)
+- **Story: Implement MistralProvider** (AI-112) -- DONE (`ChatMistralAI`, `mistral-large-latest`, 262k) _(now `FailFastChatMistralAI` with `mistral-small-latest`)_
 - **Story: Implement LlmService facade** (AI-113) -- DONE (lazy instantiation, per-request override, 22 tests)
 
 ---
@@ -689,7 +747,7 @@ Epic (Linear Project or Cycle)
 
 **Goal:** The ReAct loop works end-to-end. Ask a question, get a sourced answer.
 **Demo:** `curl POST /api/rag/query` returns a full `AgentResponse` with steps and sources.
-**Status:** DONE -- 14 issues, live-tested with Mistral. Current test counts: 293 API tests, 243 Web tests (536 total).
+**Status:** DONE -- 14 issues, live-tested with Mistral. Test counts at M3 completion: 293 API tests, 243 Web tests (536 total). _These counts are historical; the suites have grown since._
 
 #### Epic 3.1: ReAct Agent
 
@@ -740,6 +798,9 @@ Epic (Linear Project or Cycle)
 
 **Goal:** Click Listen on any answer and hear it narrated as a podcast.
 **Demo:** Ask a question, get an answer, click Listen, hear the podcast-style narration.
+**Status:** IMPLEMENTED. Originally built on ElevenLabs, since replaced by Mistral Voxtral (`docs/adr/008-voxtral-tts.md`). See Section 2.8 for the current design.
+
+_The stories below are the original ElevenLabs plan. Current implementation: no SDK (native `fetch` to `/v1/audio/speech`), a complete MP3 response rather than a stream, voice and model from `MISTRAL_TTS_VOICE` / `MISTRAL_TTS_MODEL`, a Xing header added for correct duration, and an iOS gesture unlock in the player._
 
 #### Epic 5.1: TTS Backend
 
@@ -825,22 +886,33 @@ npx tsx evals/run-eval.ts --timeout 600 --concurrency 5
 
 # Disable LangSmith sync
 npx tsx evals/run-eval.ts --no-langsmith
+
+# Evaluate the legacy single agent instead of the pipeline
+npx tsx evals/run-eval.ts --legacy
+
+# Compare latency against an earlier report
+npx tsx evals/run-eval.ts --baseline evals/results/<earlier-report>.json
 ```
 
 **Commander CLI flags:**
 
-| Flag                  | Alias | Default         | Description                       |
-| --------------------- | ----- | --------------- | --------------------------------- |
-| `--provider <name>`   | `-p`  | `$LLM_PROVIDER` | LLM provider to eval              |
-| `--compare <a,b>`     | `-c`  | --              | Side-by-side provider comparison  |
-| `--query <id>`        | `-q`  | --              | Run a single query by ID          |
-| `--category <name>`   | `-C`  | --              | Filter queries by category        |
-| `--list`              |       | false           | List available queries and exit   |
-| `--dry-run`           |       | false           | Show what would execute           |
-| `--no-langsmith`      |       | false           | Disable LangSmith sync            |
-| `--timeout <seconds>` | `-t`  | 300             | Per-query timeout in seconds      |
-| `--concurrency <n>`   | `-n`  | 3               | Parallel query execution (max 5)  |
-| `--no-judge`          |       | false           | Skip LLM-as-judge for faster runs |
+| Flag                  | Alias | Default         | Description                                          |
+| --------------------- | ----- | --------------- | ---------------------------------------------------- |
+| `--provider <name>`   | `-p`  | `$LLM_PROVIDER` | LLM provider to eval                                 |
+| `--compare <a,b>`     | `-c`  | --              | Side-by-side provider comparison                     |
+| `--query <id>`        | `-q`  | --              | Run a single query by ID                             |
+| `--category <name>`   | `-C`  | --              | Filter queries by category                           |
+| `--list`              |       | false           | List available queries and exit                      |
+| `--dry-run`           |       | false           | Show what would execute                              |
+| `--no-langsmith`      |       | false           | Disable LangSmith sync                               |
+| `--timeout <seconds>` | `-t`  | 300             | Per-query timeout in seconds                         |
+| `--concurrency <n>`   | `-n`  | 3               | Parallel query execution (max 5)                     |
+| `--no-judge`          |       | false           | Skip LLM-as-judge for faster runs                    |
+| `--legacy`            |       | false           | Evaluate the legacy single agent (default: pipeline) |
+| `--no-stream`         |       | false           | Use `POST /rag/query` instead of SSE (default: SSE)  |
+| `--baseline <report>` |       | --              | Print latency change vs a previous results JSON      |
+
+_`--multi-agent` and `--stream` are still accepted as no-ops: the pipeline over SSE is now the default, matching production. Reports include `summary.latency` (mean/p50/p95, per-stage timings, fallback count)._
 
 #### Project Structure
 
@@ -995,10 +1067,10 @@ evals/
   - LangGraph `StateGraph` pipeline: Retriever → Synthesizer → Writer (defined in `pipeline-graph.ts`)
   - `PipelineAnnotation` tracks query, bundle, analysis, response, steps, and token usage across nodes
   - SSE `PipelineEvent` emissions at each stage transition
-  - Global timeout via `Promise.race`
+  - Global timeout via `Promise.race` _(not implemented: `PipelineConfig.timeout` is currently unused)_
   - `runWithFallback()` degrades to legacy `AgentService` on error
-  - Shared `invokeWithRetry` utility for all three nodes (exponential backoff, TPM rate limit detection)
-  - `PipelineConfig` resolution (presets + global provider default)
+  - Shared `invokeWithRetry` utility for all three nodes (TPM rate limit detection, truncate-and-retry)
+  - `PipelineConfig` resolution (global provider default; presets deferred)
 
 - **Story: Implement orchestrator partial failure recovery** (AI-TBD)
 
@@ -1009,11 +1081,11 @@ evals/
 
 - **Story: Implement Retriever dry-well circuit breaker** (AI-TBD)
 
-  - `shouldExitEarly()` after 3 consecutive empty tool results
+  - `shouldExitEarly()` after 3 consecutive empty tool results _(as built: `isDryWell()` checks the collected raw data after the loop and skips compaction; see Section 2.6)_
   - Partial EvidenceBundle with sparse themes
   - Test: query about obscure topic → early exit → low confidence response
 
-- **Story: Implement bundle size guard in Orchestrator** (AI-TBD)
+- **Story: Implement bundle size guard in Orchestrator** (AI-TBD) _(not implemented; see Section 2.6, Bundle Size Guard)_
   - `validateBundleSize()` before Synthesizer
   - `trimBundle()` with relevance-based pruning
   - Test: oversized bundle → trimmed to budget → Synthesizer succeeds
@@ -1106,7 +1178,7 @@ graph LR
     style M2 fill:#d1fae5,stroke:#065f46
     style M3 fill:#d1fae5,stroke:#065f46
     style M4 fill:#d1fae5,stroke:#065f46
-    style M5 fill:#ede9fe,stroke:#5b21b6
+    style M5 fill:#d1fae5,stroke:#065f46
     style M6 fill:#d1fae5,stroke:#065f46
     style M7 fill:#d1fae5,stroke:#065f46
     style M8 fill:#d1fae5,stroke:#065f46
@@ -1118,7 +1190,7 @@ graph LR
 
 **M8 (Multi-Agent Pipeline)** depends on M6 (eval harness, for A/B testing) and M4 (frontend, for pipeline timeline UI).
 
-**Current status:** M1-M4, M6-M8 complete. M5 (voice) and M7 (deploy) remaining.
+**Current status:** M1-M6 and M8 complete (M5 TTS now on Mistral Voxtral). M7 (deploy) is the remaining milestone. Post-M8 work (pipeline latency, fail-fast auth errors, streamed drafts, answer replay and follow-ups, merged writer) is recorded in ADR-009, ADR-010 and the CHANGELOG.
 
 ---
 
@@ -1126,18 +1198,18 @@ graph LR
 
 As a solo developer, this is the recommended build order. Each milestone builds on the last and ends with something testable.
 
-| Order | Milestone                  | Stories | Depends On | Status      |
-| ----- | -------------------------- | ------- | ---------- | ----------- |
-| 1     | M1: Scaffold & Data Layer  | 16      | --         | COMPLETE    |
-| 2     | M2: LLM & Chunker          | 8       | M1         | COMPLETE    |
-| 3     | M3: Agent Core             | 14      | M2         | COMPLETE    |
-| 4     | M4: Frontend               | 22      | M3         | COMPLETE    |
-| 5     | M7: Deploy & Observability | 13      | M3         | ~87%        |
-| 6     | M6: Eval Harness           | 12      | M3         | COMPLETE    |
-| 7     | M5: Voice Output           | 5       | M3, M4     | Not started |
-| 8     | M8: Multi-Agent Pipeline   | ~20     | M3, M4, M6 | COMPLETE    |
+| Order | Milestone                  | Stories | Depends On | Status   |
+| ----- | -------------------------- | ------- | ---------- | -------- |
+| 1     | M1: Scaffold & Data Layer  | 16      | --         | COMPLETE |
+| 2     | M2: LLM & Chunker          | 8       | M1         | COMPLETE |
+| 3     | M3: Agent Core             | 14      | M2         | COMPLETE |
+| 4     | M4: Frontend               | 22      | M3         | COMPLETE |
+| 5     | M7: Deploy & Observability | 13      | M3         | ~87%     |
+| 6     | M6: Eval Harness           | 12      | M3         | COMPLETE |
+| 7     | M5: Voice Output           | 5       | M3, M4     | COMPLETE |
+| 8     | M8: Multi-Agent Pipeline   | ~20     | M3, M4, M6 | COMPLETE |
 
-> **M8 is now complete.** The multi-agent pipeline (Retriever → Synthesizer → Writer) is implemented with per-stage failure recovery. M5 (voice) and M7 (deploy) are the remaining milestones.
+> **M8 is now complete.** The multi-agent pipeline (Retriever → Synthesizer → Writer) is implemented with per-stage failure recovery. M7 (deploy) is the remaining milestone.
 
 **Total: 8 milestones, ~100 stories.**
 
@@ -1151,8 +1223,12 @@ LLM_PROVIDER=mistral                        # claude | mistral | openrouter
 
 # API Keys (only active provider required)
 OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_MODEL=                           # optional slug override (default: qwen/qwen3-235b-a22b-2507)
 MISTRAL_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
+
+# Experimental: skip the Synthesizer's LLM call (see ADR-010)
+PIPELINE_MERGED_WRITER=false
 
 # TTS via Mistral Voxtral (uses MISTRAL_API_KEY)
 MISTRAL_TTS_MODEL=voxtral-mini-tts-latest    # optional override
@@ -1160,6 +1236,12 @@ MISTRAL_TTS_VOICE=en_paul_neutral            # preset slug or custom voice UUID
 
 # Server
 PORT=3000
+LOG_LEVEL=info
+NODE_ENV=development
+FRONTEND_URL=http://localhost:4200          # CORS origin(s), comma-separated
+
+# Sentry (optional)
+SENTRY_DSN=
 
 # LangSmith (optional -- leave empty to disable tracing and eval dashboard)
 LANGSMITH_API_KEY=
@@ -1175,42 +1257,49 @@ EVAL_JUDGE_PROVIDER=mistral
 
 ## 7. Key Technical Constraints
 
-| Constraint                      | Value                       | Rationale                                        |
-| ------------------------------- | --------------------------- | ------------------------------------------------ |
-| Max agent steps                 | 7                           | Cost + latency cap                               |
-| Agent timeout                   | 180s                        | Prevent runaway loops                            |
-| Concurrent agents               | 5                           | Prevent cost blowout                             |
-| Comment cap                     | 30 per story                | Firebase API latency                             |
-| Query max length                | 500 chars                   | Input sanity                                     |
-| Rate limit (per IP)             | 10 req/min                  | Abuse prevention                                 |
-| Rate limit (global)             | 60 req/min                  | Cost protection                                  |
-| Cache TTL (search)              | 15 min                      | Freshness vs cost                                |
-| Cache TTL (stories)             | 1 hour                      | Stable data                                      |
-| Cache TTL (comments)            | 30 min                      | Semi-stable data                                 |
-| Cache TTL (query result)        | 10 min                      | Token savings                                    |
-| Context window (Claude)         | 200k tokens                 | `claude-haiku-4-5-20251001` via LangChain        |
-| Context window (Mistral)        | 262k tokens                 | `mistral-large-latest` via LangChain             |
-| Context window (OpenRouter)     | 128k tokens                 | `qwen/qwen3-235b-a22b-2507` (smallest host cap)  |
-| Token budget (Claude)           | 80k of 200k                 | Conservative headroom                            |
-| Token budget (Mistral)          | 100k of 262k                | Conservative headroom                            |
-| Token budget (OpenRouter)       | 50k of 131k                 | Conservative headroom                            |
-| Token estimation                | 1 char / 4                  | Character-based, no tiktoken dependency          |
-| TTS max chars                   | 2500                        | Narration script cap (cost + latency)            |
-| Eval query count                | 27                          | 20 general + 7 trust-specific                    |
-| Eval default timeout            | 300s                        | Per-query timeout (configurable via CLI)         |
-| Eval concurrency                | 3 (max 5)                   | Parallel queries, capped at API semaphore        |
-| Eval pass threshold             | 0.6 weighted                | Minimum score for a query to "pass"              |
-| Eval judge provider             | Mistral                     | Default for LLM-as-judge calls                   |
-| Eval score weights              | 30/30/15/15/10              | Source/Quality/Efficiency/Latency/Cost           |
-| LangSmith free tier             | 5k traces/mo                | Sufficient for eval harness usage                |
-| Pipeline timeout                | 30s default                 | Global pipeline timeout cap                      |
-| Retriever max iterations        | 8                           | ReAct loop safety cap                            |
-| Retriever dry-well exit         | 3 consecutive empty results | Prevent wasting iterations on undiscussed topics |
-| Retriever compaction truncation | 50k chars                   | Prevent blowing compactor context window         |
-| Synthesizer input budget        | 4000 tokens                 | Prevent oversized bundles from choking analysis  |
-| Synthesizer insight cap         | 5                           | Prevent unfocused analysis                       |
-| Writer section cap              | 4                           | Prevent rambling responses                       |
-| Pipeline output tokens          | 2000/1500/1000              | Retriever/Synthesizer/Writer budgets             |
+| Constraint                      | Value                      | Rationale                                        |
+| ------------------------------- | -------------------------- | ------------------------------------------------ |
+| Max agent steps                 | 7                          | Cost + latency cap                               |
+| Agent timeout                   | 180s                       | Prevent runaway loops                            |
+| Concurrent agents               | 5                          | Prevent cost blowout                             |
+| Comment cap                     | 30 per story               | Firebase API latency                             |
+| Query max length                | 500 chars                  | Input sanity                                     |
+| Rate limit (global)             | 60 req/min                 | Cost protection (no per-IP limit)                |
+| Cache TTL (search)              | 15 min                     | Freshness vs cost                                |
+| Cache TTL (stories)             | 1 hour                     | Stable data                                      |
+| Cache TTL (comments)            | 30 min                     | Semi-stable data                                 |
+| Cache TTL (POST query result)   | 10 min                     | Token savings                                    |
+| Completed-answer replay (SSE)   | 15 min                     | One pipeline run per popular question per window |
+| Follow-up evidence TTL          | 30 min                     | Follow-ups skip the Retriever                    |
+| LLM health probe cache          | 60 s                       | Probe can't be used to run up provider costs     |
+| Context window (Claude)         | 200k tokens                | `claude-haiku-4-5-20251001` via LangChain        |
+| Context window (Mistral)        | 262k tokens                | `mistral-small-latest` via LangChain             |
+| Context window (OpenRouter)     | 128k tokens                | `qwen/qwen3-235b-a22b-2507` (smallest host cap)  |
+| Token budget (Claude)           | 80k of 200k                | Conservative headroom                            |
+| Token budget (Mistral)          | 100k of 262k               | Conservative headroom                            |
+| Token budget (OpenRouter)       | 50k of 128k                | Conservative headroom                            |
+| Token estimation                | 1 char / 4                 | Character-based, no tiktoken dependency          |
+| TTS max chars                   | 2500                       | Narration script cap (cost + latency)            |
+| Eval query count                | 27                         | 20 general + 7 trust-specific                    |
+| Eval default timeout            | 300s                       | Per-query timeout (configurable via CLI)         |
+| Eval concurrency                | 3 (max 5)                  | Parallel queries, capped at API semaphore        |
+| Eval pass threshold             | 0.6 weighted               | Minimum score for a query to "pass"              |
+| Eval judge provider             | Mistral                    | Default for LLM-as-judge calls                   |
+| Eval score weights              | 30/30/15/15/10             | Source/Quality/Efficiency/Latency/Cost           |
+| LangSmith free tier             | 5k traces/mo               | Sufficient for eval harness usage                |
+| Pipeline timeout                | 30s (config only)          | Defined in `PipelineConfig`, not enforced        |
+| Retriever max iterations        | 8 (`recursionLimit` 17)    | ReAct loop safety cap; overflow is compacted     |
+| Retriever ReAct output cap      | 768 tokens per turn        | Output tokens dominate latency (ADR-009)         |
+| Retriever dry-well check        | < 200 chars or no stories  | Skip compaction when HN has nothing on the topic |
+| Retriever compaction truncation | 50k chars                  | Prevent blowing compactor context window         |
+| Compaction theme cap            | 6                          | Bounds the bundle passed to the Synthesizer      |
+| `search_hn` filter relaxation   | < 3 hits with `min_points` | Retry without the points filter                  |
+| Evidence floor                  | < 3 sources                | Caps confidence (≤1 → low, 2 → medium) + gap     |
+| Synthesizer input budget        | 4000 tokens (config only)  | Planned bundle guard; not enforced               |
+| Synthesizer insight cap         | 5                          | Prevent unfocused analysis                       |
+| Writer section count            | 2-4                        | Prevent rambling responses                       |
+| Pipeline output budgets         | 2000/1500/1000 (config)    | Defined in `PipelineConfig`, not enforced        |
+| OpenRouter default output cap   | 8192 tokens                | Some hosts reject requests without `max_tokens`  |
 
 ---
 
@@ -1243,11 +1332,18 @@ A story is **not done** until all of the following are met:
 | Constraints (Section 7)            | NFRs (Section 13), Rate limiting (Section 3.7)                                           |
 | Milestones (Section 3)             | Roadmap (Section 14)                                                                     |
 | Multi-agent pipeline (Section 2.6) | Pipeline architecture (Section 3.3), Pipeline config (Section 9.5), Types (Section 13.9) |
+| RagModule / QueryStore (2.7)       | API contracts (Section 7)                                                                |
 
 ### ADRs
 
-| ADR                                            | Milestone | Decision                                                  |
-| ---------------------------------------------- | --------- | --------------------------------------------------------- |
-| `docs/adr/002-chunker-strategy.md`             | M2        | Token budgeting approach and priority ordering            |
-| `docs/adr/003-llm-provider-architecture.md`    | M2        | LangChain.js wrapper pattern, lazy provider instantiation |
-| `docs/adr/006-adaptive-query-decomposition.md` | M8        | LangGraph pipeline design, adaptive query decomposition   |
+| ADR                                             | Milestone | Decision                                                    |
+| ----------------------------------------------- | --------- | ----------------------------------------------------------- |
+| `docs/adr/002-chunker-strategy.md`              | M2        | Token budgeting approach and priority ordering              |
+| `docs/adr/003-llm-provider-architecture.md`     | M2        | LangChain.js wrapper pattern, lazy provider instantiation   |
+| `docs/adr/004-react-agent-design.md`            | M3        | ReAct agent design, tool selection, LangChain `createAgent` |
+| `docs/adr/005-true-sse-streaming.md`            | --        | AsyncGenerator-based mid-loop SSE streaming                 |
+| `docs/adr/006-adaptive-query-decomposition.md`  | M8        | LangGraph pipeline design, adaptive query decomposition     |
+| `docs/adr/007-query-id-resilience.md`           | --        | Query IDs: decouple result delivery from SSE                |
+| `docs/adr/008-voxtral-tts.md`                   | M5        | Mistral Voxtral for text-to-speech                          |
+| `docs/adr/009-pipeline-latency.md`              | Post-M8   | Cut latency by generating less (source registry, caps)      |
+| `docs/adr/010-merged-writer-and-model-speed.md` | Post-M8   | Opt-in merged writer, model throughput                      |

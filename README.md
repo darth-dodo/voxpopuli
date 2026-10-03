@@ -40,7 +40,10 @@ VoxPopuli is an **agentic RAG system over Hacker News**. A multi-agent pipeline 
 
 - **Grounded answers.** Every claim comes from real HN stories and comments, with inline links back to the source thread.
 - **Visible reasoning.** Watch the Retriever search, the Synthesizer weigh evidence, and the Writer compose, live, stage by stage.
-- **Trust signals.** Each answer reports how many sources were verified, how recent they are, and whether the discussion is balanced, one-sided, or contested.
+- **Live draft.** The answer appears as a draft while the Writer is still composing it, then is replaced by the final, cited version.
+- **Trust signals.** Each answer reports how many sources were verified, how recent they are, and whether the discussion is balanced, one-sided, or contested. With fewer than three sources, the stated confidence is capped and the gap is called out.
+- **Follow-up questions.** Ask a follow-up under an answer and it is answered from the same evidence, without searching HN again (evidence is kept for 30 minutes).
+- **Instant repeats.** Asking the same question again (same provider, ignoring case and spacing) within 15 minutes replays the completed answer instead of re-running the pipeline.
 - **Choice of model.** Switch between Mistral, Claude, and Qwen3 (via OpenRouter) per question.
 - **Listen mode.** One click turns an answer into a short podcast-style narration (rewritten for speech, voiced by Mistral Voxtral) with playback speed and MP3 download.
 - **Resilient on mobile.** Results are stored server-side by query ID, so locking your phone or switching tabs doesn't lose a run in progress.
@@ -78,8 +81,10 @@ flowchart LR
 
 1. **Retriever**: a ReAct agent decomposes the question (comparisons, temporal questions, multi-faceted topics), searches HN via Algolia, reads Firebase comment trees, then compacts the raw material into a structured `EvidenceBundle`.
 2. **Synthesizer**: extracts insights, contradictions, confidence, and knowledge gaps from the bundle.
-3. **Writer**: produces the editorial answer with a headline, sections, citations, and a bottom line.
+3. **Writer**: produces the editorial answer with a headline, sections, citations, and a bottom line, streaming a draft to the browser as it writes.
 4. **Trust metadata**: computed afterwards by a pure function covering source verification, recency, viewpoint diversity, and Show HN bias.
+
+The LLMs only write judgement: the tools record each source's metadata (title, points, posted date) as they fetch it, and code attaches those sources to the answer ([ADR-009](docs/adr/009-pipeline-latency.md)). An opt-in merged mode (`PIPELINE_MERGED_WRITER=true`) skips the Synthesizer's LLM call and lets the Writer analyze the evidence directly ([ADR-010](docs/adr/010-merged-writer-and-model-speed.md)).
 
 Each stage retries once. If the pipeline fails, it falls back to a single-agent ReAct loop on the same provider and keeps the output of any stage that already completed; a rejected API key ends the query immediately with a message naming the env var to fix. Every step streams to the UI over Server-Sent Events.
 
@@ -106,7 +111,7 @@ Each stage retries once. If the pipeline fails, it falls back to a single-agent 
 | Frontend      | Angular 21: standalone components, signals, Tailwind CSS v4, "Data Noir Editorial" design system                    |
 | Orchestration | LangGraph `StateGraph` with per-stage retry, fallback, and a dry-well circuit breaker                               |
 | LLMs          | LangChain.js facade over Mistral (`mistral-small-latest`, default), Claude (Haiku 4.5), and OpenRouter (Qwen3 235B) |
-| Streaming     | SSE from an `AsyncGenerator`, plus a query store for stored results, reconnect, and dedup                           |
+| Streaming     | SSE from an `AsyncGenerator`, plus a query store for stored results, reconnect, dedup, and 15-minute replay         |
 | Data          | HN Algolia (search) and HN Firebase (items and comments), behind an in-memory LRU cache                             |
 | Voice         | Mistral Voxtral TTS (`voxtral-mini-tts-latest`) with an LLM-rewritten narration script                              |
 | Evaluation    | Custom 5-evaluator harness with LangSmith tracing                                                                   |
@@ -157,36 +162,37 @@ Open http://localhost:4200 and ask something like _"What does HN think about htm
 
 All configuration is through environment variables (see [`.env.example`](.env.example)). Only the active provider's key is required.
 
-| Variable              | Default                     | Purpose                                                  |
-| --------------------- | --------------------------- | -------------------------------------------------------- |
-| `LLM_PROVIDER`        | `mistral`                   | Default provider: `mistral`, `claude`, or `openrouter`   |
-| `MISTRAL_API_KEY`     | —                           | Mistral LLM, and Voxtral TTS for Listen mode             |
-| `ANTHROPIC_API_KEY`   | —                           | Claude provider                                          |
-| `OPENROUTER_API_KEY`  | —                           | OpenRouter provider                                      |
-| `OPENROUTER_MODEL`    | `qwen/qwen3-235b-a22b-2507` | OpenRouter model slug                                    |
-| `MISTRAL_TTS_MODEL`   | `voxtral-mini-tts-latest`   | Voxtral TTS model                                        |
-| `MISTRAL_TTS_VOICE`   | `en_paul_neutral`           | Narrator voice: a Voxtral preset slug or custom voice ID |
-| `PORT`                | `3000`                      | API port                                                 |
-| `FRONTEND_URL`        | `http://localhost:4200`     | Allowed CORS origin                                      |
-| `LOG_LEVEL`           | `info`                      | Pino log level                                           |
-| `SENTRY_DSN`          | —                           | Error reporting (optional)                               |
-| `LANGSMITH_API_KEY`   | —                           | Tracing and eval dashboards (optional)                   |
-| `EVAL_JUDGE_PROVIDER` | `mistral`                   | Provider for the LLM-as-judge evaluator                  |
+| Variable                 | Default                     | Purpose                                                  |
+| ------------------------ | --------------------------- | -------------------------------------------------------- |
+| `LLM_PROVIDER`           | `mistral`                   | Default provider: `mistral`, `claude`, or `openrouter`   |
+| `PIPELINE_MERGED_WRITER` | `false`                     | Experimental: skip the Synthesizer's LLM call (ADR-010)  |
+| `MISTRAL_API_KEY`        | —                           | Mistral LLM, and Voxtral TTS for Listen mode             |
+| `ANTHROPIC_API_KEY`      | —                           | Claude provider                                          |
+| `OPENROUTER_API_KEY`     | —                           | OpenRouter provider                                      |
+| `OPENROUTER_MODEL`       | `qwen/qwen3-235b-a22b-2507` | OpenRouter model slug                                    |
+| `MISTRAL_TTS_MODEL`      | `voxtral-mini-tts-latest`   | Voxtral TTS model                                        |
+| `MISTRAL_TTS_VOICE`      | `en_paul_neutral`           | Narrator voice: a Voxtral preset slug or custom voice ID |
+| `PORT`                   | `3000`                      | API port                                                 |
+| `FRONTEND_URL`           | `http://localhost:4200`     | Allowed CORS origin                                      |
+| `LOG_LEVEL`              | `info`                      | Pino log level                                           |
+| `SENTRY_DSN`             | —                           | Error reporting (optional)                               |
+| `LANGSMITH_API_KEY`      | —                           | Tracing and eval dashboards (optional)                   |
+| `EVAL_JUDGE_PROVIDER`    | `mistral`                   | Provider for the LLM-as-judge evaluator                  |
 
 ## API
 
 All routes are served under `/api`.
 
-| Method | Route                                                 | Description                                                                                  |
-| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `GET`  | `/rag/stream`                                         | SSE stream of pipeline, step, and answer events (`query`, `provider`, `useMultiAgent`)       |
-| `POST` | `/rag/query`                                          | Blocking query that returns the full answer, sources, trust, and metadata                    |
-| `GET`  | `/rag/query/:id/result`                               | Stored result for a query ID (`202` while still running)                                     |
-| `POST` | `/tts/narrate`                                        | Narrate text as MP3 (`{ text, rewrite?, voiceId? }`)                                         |
-| `GET`  | `/tts/voices`                                         | Active narrator voice and model                                                              |
-| `GET`  | `/hn/search`, `/hn/item/:id`, `/hn/comments/:storyId` | Cached HN data access                                                                        |
-| `GET`  | `/health`                                             | Status, uptime, cache stats, and memory                                                      |
-| `GET`  | `/health/llm`                                         | Live 1-token check of the active LLM provider (cached 60s; 503 + `error: auth` on a bad key) |
+| Method | Route                                                 | Description                                                                                                                                                                                                                 |
+| ------ | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/rag/stream`                                         | SSE stream of pipeline, step, draft `token`, and answer events (`query`, `provider`, `useMultiAgent=true` for the pipeline, otherwise the single agent; `followUpOf=<queryId>` to answer from an earlier answer's evidence) |
+| `POST` | `/rag/query`                                          | Blocking query that returns the full answer, sources, trust, and metadata (cached 10 min)                                                                                                                                   |
+| `GET`  | `/rag/query/:id/result`                               | Stored result for a query ID (`202` while still running)                                                                                                                                                                    |
+| `POST` | `/tts/narrate`                                        | Narrate text as MP3 (`{ text, rewrite?, voiceId? }`)                                                                                                                                                                        |
+| `GET`  | `/tts/voices`                                         | Active narrator voice and model                                                                                                                                                                                             |
+| `GET`  | `/hn/search`, `/hn/item/:id`, `/hn/comments/:storyId` | Cached HN data access                                                                                                                                                                                                       |
+| `GET`  | `/health`                                             | Status, uptime, cache stats, and memory                                                                                                                                                                                     |
+| `GET`  | `/health/llm`                                         | Live tiny check of the active LLM provider (cached 60s; 503 with `error: auth` on a rejected key, `unavailable` otherwise)                                                                                                  |
 
 Queries are limited to 500 characters and rate-limited to 60 requests per minute. Security headers are set with Helmet.
 
@@ -201,16 +207,19 @@ pnpm exec prettier --check .               # format check
 
 | Area        | Details                                                                            |
 | ----------- | ---------------------------------------------------------------------------------- |
-| Unit tests  | 556 (314 API, 242 web); external APIs and LLM providers are always mocked          |
+| Unit tests  | 655 (404 API, 251 web); external APIs and LLM providers are always mocked          |
 | CI          | GitHub Actions on affected projects: lint, test with coverage, format check, build |
 | Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses             |
 | Git hooks   | lint-staged on commit; lint, test, and format checks on push                       |
 
-**Evaluation harness.** 27 benchmark queries (20 general, 7 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API:
+**Evaluation harness.** 27 benchmark queries (20 general, 7 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%, tool calls), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API and, by default, exercises what users run: the multi-agent pipeline over SSE. Reports include mean/p50/p95 latency, per-stage timings, and fallback counts.
 
 ```bash
-pnpm eval                                  # all queries, default provider
+pnpm eval                                  # all queries, default provider, pipeline over SSE
 pnpm exec tsx evals/run-eval.ts -p openrouter -n 5 --no-judge   # one provider, 5 concurrent, no judge
+pnpm exec tsx evals/run-eval.ts -n 1 --baseline evals/results/<old>.json   # latency A/B vs a saved report
+pnpm exec tsx evals/run-eval.ts --legacy   # single-agent path (users only reach it on fallback)
+pnpm exec tsx evals/run-eval.ts --no-stream   # POST /rag/query instead of SSE (no stage timings)
 pnpm eval:compare                          # compare openrouter, mistral, claude
 ```
 
@@ -241,14 +250,14 @@ VoxPopuli ships as a [Render Blueprint](render.yaml):
 
 ## Documentation
 
-| Document                                             | Contents                                                                                                      |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [docs/product.md](docs/product.md)                   | Product specification: features, API contracts, roadmap                                                       |
-| [docs/architecture.md](docs/architecture.md)         | Technical blueprint, module specs, milestones                                                                 |
-| [docs/codebase-summary.md](docs/codebase-summary.md) | Module inventory and environment reference                                                                    |
-| [docs/design-system.md](docs/design-system.md)       | "Data Noir Editorial" design system                                                                           |
-| [docs/adr/](docs/adr/)                               | Architecture Decision Records: chunking, providers, ReAct, SSE, query decomposition, query-ID resilience, TTS |
-| [CHANGELOG.md](CHANGELOG.md)                         | Release notes                                                                                                 |
+| Document                                             | Contents                                                                                                                                       |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/product.md](docs/product.md)                   | Product specification: features, API contracts, roadmap                                                                                        |
+| [docs/architecture.md](docs/architecture.md)         | Technical blueprint, module specs, milestones                                                                                                  |
+| [docs/codebase-summary.md](docs/codebase-summary.md) | Module inventory and environment reference                                                                                                     |
+| [docs/design-system.md](docs/design-system.md)       | "Data Noir Editorial" design system                                                                                                            |
+| [docs/adr/](docs/adr/)                               | Architecture Decision Records: chunking, providers, ReAct, SSE, query decomposition, query-ID resilience, TTS, pipeline latency, merged writer |
+| [CHANGELOG.md](CHANGELOG.md)                         | Release notes                                                                                                                                  |
 
 ## Contributing
 

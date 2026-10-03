@@ -125,7 +125,7 @@ All components are defined as CSS classes in `apps/web/src/styles.css` via `@lay
 ### Provider Chips
 
 ```html
-<span class="vp-chip vp-chip--active">groq</span> <span class="vp-chip">claude</span>
+<span class="vp-chip vp-chip--active">Mistral</span> <span class="vp-chip">Claude</span>
 ```
 
 ### Trust Indicators
@@ -202,7 +202,10 @@ The landing page is structured in four vertical sections:
 
 ### Results Page
 
-The results view features a sticky header with `backdrop-blur` for content readability during scroll. Below the header, a tab bar switches between Answer, Sources, and Agent Steps views. The active tab uses a `bg-surface-overlay/40` fill rather than an underline indicator.
+The results view features a sticky header with `backdrop-blur` for content readability during scroll. Below the header, a tab bar switches between Answer, Sources, and Steps views. The active tab uses amber text, a `bg-surface-overlay` fill, and a 2px amber bottom border.
+
+- **Drafting answer card**: while the Writer streams, the Answer tab shows a `vp-card` labelled "Drafting answer…" (mono, uppercase, muted) wrapping a `vp-prose` block (`data-testid="answer-draft"`, `aria-live="polite"`, `aria-busy="true"`). The final answer replaces it.
+- **Follow-up box**: below a completed pipeline answer, a `vp-card` with the label "Ask a follow-up using these sources", a `vp-input`, and a `vp-btn-primary` "Ask" button (`data-testid="follow-up"`). Hidden while a query is streaming.
 
 ## Light Theme
 

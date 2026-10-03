@@ -1,6 +1,6 @@
 # VoxPopuli Eval Harness
 
-Black-box evaluation harness for the VoxPopuli RAG agent. Calls the API over HTTP, scores responses across five dimensions, and produces JSON reports.
+Black-box evaluation harness for the VoxPopuli RAG agent. Calls the API over HTTP, scores responses across five dimensions, and produces JSON reports. By default it runs what users run: the multi-agent pipeline over SSE (`GET /api/rag/stream?useMultiAgent=true`).
 
 ## Quick Start
 
@@ -57,6 +57,7 @@ npx tsx evals/run-eval.ts --legacy
 | `--legacy`              | Evaluate the legacy single agent instead of the pipeline | pipeline (what users run)         |
 | `--no-stream`           | Use `POST /rag/query` (cached 10 min, no stage timings)  | SSE stream (what users run)       |
 | `--multi-agent`         | Deprecated no-op; the pipeline is the default            | —                                 |
+| `--stream`              | No-op; SSE is the default (kept for older commands)      | —                                 |
 | `--baseline <file>`     | Print latency change vs a previous results JSON          | —                                 |
 
 ## Scoring System
@@ -67,15 +68,16 @@ Each query is scored across five dimensions with fixed weights:
 | --------------------- | ------ | ----------------------------------------------------------- |
 | **Source Accuracy**   | 30%    | Verifies each cited `storyId` exists via HN Firebase API    |
 | **Quality Checklist** | 30%    | LLM-as-judge checks `expectedQualities` from `queries.json` |
-| **Efficiency**        | 15%    | Agent steps vs `maxAcceptableSteps` threshold               |
+| **Efficiency**        | 15%    | Tool calls vs `maxAcceptableSteps` threshold                |
 | **Latency**           | 15%    | Response time vs provider-specific thresholds               |
 | **Cost**              | 10%    | Token usage (input + output) vs provider pricing            |
 
 **Efficiency** counts tool calls (`action` steps), which is what `maxAcceptableSteps` budgets — the
 agent's step limit is also counted in actions. **Cost** is `max(0, 1 − cost / $0.05)`, the $0.05
 ceiling being product.md's maximum acceptable cost per query; rates in `evaluators/cost.ts` are list
-prices for the configured models (Mistral Small 4 $0.15/$0.60, Claude Haiku 4.5 $1/$5 per million
-tokens — before 2026-09-28 they were 10–13× too high for both). A run that **fell back to the legacy
+prices for the configured models (Mistral Small 4 $0.15/$0.60, Claude Haiku 4.5 $1/$5, OpenRouter
+`qwen/qwen3-235b-a22b-2507` $0.087/$0.35 per million input/output tokens; unknown providers use the
+OpenRouter rate — before 2026-09-28 they were 10–13× too high for both). A run that **fell back to the legacy
 agent** scores 0 on both: only the fallback's tokens and steps are reported, so it would otherwise
 look cheap and lean.
 
@@ -163,7 +165,8 @@ Each report contains per-query scores and an aggregate summary:
   "summary": {
     "avgWeighted": 0.52,
     "avgSourceAccuracy": 0.56,
-    "passRate": 44.0
+    "passRate": 44.0,
+    "latency": { "samples": ..., "meanMs": ..., "p50Ms": ..., "p95Ms": ..., "fallbacks": ..., "stageMeanMs": { ... } }
   }
 }
 ```
@@ -173,6 +176,8 @@ Each report contains per-query scores and an aggregate summary:
 ```
 queries.json          Source of truth for test queries
 run-eval.ts           CLI entry point (Commander)
+stream-client.ts      SSE client: parses events, records per-stage timings and fallbacks
+latency-stats.ts      summary.latency (mean/p50/p95, stage means) and --baseline comparison
 dataset.ts            LangSmith dataset sync helper
 score.ts              Score aggregation and report building
 feedback.ts           Post scores to LangSmith as run feedback
@@ -180,7 +185,7 @@ types.ts              EvalQuery, EvalRunResult, EvalScore, EvalReport
 evaluators/
   source-accuracy.ts  Verify storyIds against HN Firebase API
   quality-judge.ts    LLM-as-judge for expectedQualities
-  efficiency.ts       Steps vs maxAcceptableSteps
+  efficiency.ts       Tool calls vs maxAcceptableSteps
   latency.ts          Duration vs provider-specific thresholds
   cost.ts             Token usage vs provider pricing
 ```

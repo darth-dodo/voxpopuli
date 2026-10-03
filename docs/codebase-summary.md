@@ -646,7 +646,7 @@ The `shared-types` project has no `test` target, so these specs are not part of 
 | RagService                | `services/rag.service.spec.ts`                                     | 40    | `query()`, `fetchResult()`, `stream()`                  |
 | TtsService                | `services/tts.service.spec.ts`                                     | 3     | Narrate request                                         |
 
-**Totals:** 46 spec/test files in these four groups (plus one placeholder spec each in `api-e2e` and `web-e2e`). Static counts: API 392 (runner: 404), Shared Types 13, Eval 45, Web 251 (runner: 247). API test runner: Jest via Nx. Eval test runner: Vitest. Web test runner: Vitest via Nx. All external HTTP calls and LLM providers are mocked in tests.
+**Totals:** 46 spec/test files in these four groups (plus one placeholder spec each in `api-e2e` and `web-e2e`). Static counts: API 392 (runner: 404), Shared Types 13, Eval 45, Web 251 (runner: 251). API test runner: Jest via Nx. Eval test runner: Vitest. Web test runner: Vitest via Nx. All external HTTP calls and LLM providers are mocked in tests.
 
 **Jest ESM note:** Test files that import `AgentService` or `LlmService` must mock the LLM provider modules to avoid `@langchain/*` ESM resolution failures. See `agent.service.spec.ts` for the pattern.
 
