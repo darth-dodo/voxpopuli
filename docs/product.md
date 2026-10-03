@@ -1,8 +1,8 @@
 # VoxPopuli — Product Specification
 
-**Version:** 3.2.0
+**Version:** 3.3.0
 **Status:** Final Draft
-**Last Updated:** April 15, 2026
+**Last Updated:** October 3, 2026
 **Author:** Abhishek Juneja
 
 > _"Vox Populi, Vox Dei."_ -- The voice of the people is the voice of God.
@@ -27,6 +27,10 @@
   - [3.6 Response Caching](#36-response-caching)
   - [3.7 Rate Limiting](#37-rate-limiting)
   - [3.8 Voice Output (Podcast Mode)](#38-voice-output-podcast-mode)
+  - [3.9 Live Answer Draft](#39-live-answer-draft)
+  - [3.10 Follow-up Questions](#310-follow-up-questions)
+  - [3.11 Honest Confidence on Thin Evidence](#311-honest-confidence-on-thin-evidence)
+  - [3.12 Clear Errors for Rejected API Keys](#312-clear-errors-for-rejected-api-keys)
 - [4. Architecture](#4-architecture)
   - [4.1 High-Level Overview](#41-high-level-overview)
   - [4.2 Tech Stack](#42-tech-stack)
@@ -47,6 +51,7 @@
   - [7.2 GET /api/rag/stream](#72-get-apiragstream)
   - [7.3 POST /api/tts/narrate](#73-post-apittsnarrate)
   - [7.4 GET /api/health](#74-get-apihealth)
+  - [7.5 GET /api/health/llm](#75-get-apihealthllm)
 - [8. Agent Tool Specifications](#8-agent-tool-specifications)
   - [8.1 search_hn](#81-search_hn)
   - [8.2 get_story](#82-get_story)
@@ -109,15 +114,16 @@
 
 ## Revision Log
 
-| Version | Date       | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.2.0   | 2026-04-15 | SSE background tab recovery (kill stale subscription, fetch stored result by queryId, reconnect if still running); backend query deduplication; 3-state SSE connection machine (streaming/done/error) replaces 8-state machine; stall timeout raised to 300s; pipeline fallback tracks completed stages and only marks incomplete stages as error; query result endpoint 202 response returns full QueryResult shape with compile-time enforcement; frontend event handling shared between submit() and reconnectStream() via handleStreamEvent() |
-| 3.1.0   | 2026-04-13 | Pipeline promoted to default mode (frontend always sends useMultiAgent: true); LangGraph StateGraph replaces hand-rolled orchestrator; shared invokeWithRetry utility; default provider changed to mistral; frontend UX hardening (sticky header, cancel, stall detection, background-resilient timer); Data Noir Editorial design system documented                                                                                                                                                                                              |
-| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout                                                                                                                                                                                                                                                                                               |
-| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                                                                                                                                                                                                                                                                                                                |
-| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Version | Date       | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.3.0   | 2026-10-03 | Live answer draft streamed while the Writer runs (`token` SSE events); follow-up questions reuse the previous answer's evidence (`followUpOf`); identical questions replayed for 15 min with a "cached" badge; every source dated from the HN API; thin-evidence handling (search filter relaxation, confidence cap, gap note); fail-fast on rejected LLM API keys plus `GET /api/health/llm`; opt-in merged writer (`PIPELINE_MERGED_WRITER`); pipeline latency work (ADR-009); narration fixes for mobile; eval harness scores the pipeline over SSE with current prices; stale limits, cache and API details corrected |
+| 3.2.0   | 2026-04-15 | SSE background tab recovery (kill stale subscription, fetch stored result by queryId, reconnect if still running); backend query deduplication; 3-state SSE connection machine (streaming/done/error) replaces 8-state machine; stall timeout raised to 300s; pipeline fallback tracks completed stages and only marks incomplete stages as error; query result endpoint 202 response returns full QueryResult shape with compile-time enforcement; frontend event handling shared between submit() and reconnectStream() via handleStreamEvent()                                                                         |
+| 3.1.0   | 2026-04-13 | Pipeline promoted to default mode (frontend always sends useMultiAgent: true); LangGraph StateGraph replaces hand-rolled orchestrator; shared invokeWithRetry utility; default provider changed to mistral; frontend UX hardening (sticky header, cancel, stall detection, background-resilient timer); Data Noir Editorial design system documented                                                                                                                                                                                                                                                                      |
+| 3.0.0   | 2026-04-08 | Multi-agent pipeline architecture (Retriever/Synthesizer/Writer); new shared types (EvidenceBundle, AnalysisResult, AgentResponse v2); PipelineConfig with provider-per-agent mapping; SSE PipelineEvent protocol; feature flag for gradual rollout                                                                                                                                                                                                                                                                                                                                                                       |
+| 2.0.0   | 2026-04-03 | Version bump; final unified spec                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 1.2.0   | 2026-03-31 | Merged voice addendum; 20 use cases; 3-layer trustworthiness framework; fact vs opinion taxonomy; single unified document                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 1.1.0   | 2026-03-31 | Native tool_result protocol; caching + rate limiting promoted to v1.0; comment cap reduced to 30; eval harness added; latency targets revised; triple-stack LLM provider (Claude + Mistral + Groq)                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 1.0.0   | 2026-03-31 | Initial draft                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
 
@@ -125,7 +131,7 @@
 
 VoxPopuli is an **agentic RAG (Retrieval-Augmented Generation) system** that turns Hacker News into a queryable knowledge base. Ask a question in natural language. The agent searches HN stories, crawls comment threads, reasons about what it finds, and delivers a sourced, synthesized answer -- with full transparency into its reasoning process.
 
-It is not a chatbot wrapper. It is a **multi-agent research pipeline** where specialized agents handle retrieval, synthesis, and composition independently -- each optimized for its cognitive task, with different LLM providers assigned per stage.
+It is not a chatbot wrapper. It is a **multi-agent research pipeline** where specialized agents handle retrieval, synthesis, and composition independently -- each optimized for its cognitive task, with the option of a different LLM provider per stage.
 
 **One-liner:** _"Ask anything. Get the internet's smartest crowd-sourced answer, with receipts."_
 
@@ -215,15 +221,17 @@ Agent internally:
   Step 4: Synthesize answer from 3 sources + 28 comments
 ```
 
+**Filter relaxation:** Models often pick `min_points` thresholds (50-100) that leave zero or one result on niche topics. If a points-filtered search returns fewer than 3 stories (`MIN_FILTERED_HITS`), `search_hn` retries once without the filter and tells the agent it did so. If dropping the filter finds nothing more, the agent is told not to repeat the search.
+
 ### 3.2 Deep Comment Thread Analysis
 
 Comments are where the real knowledge lives. The agent:
 
-- Fetches comment trees up to 3 levels deep (max 5 on explicit request).
+- Fetches comment trees up to 3 levels deep. (The `get_comments` tool accepts `max_depth` up to 5, but the fetcher stops at 3 levels.)
+- Fetches one depth level at a time, with every parent's replies requested in parallel, so a tree costs one round-trip per level instead of one per comment.
 - Strips HTML, preserves code blocks.
 - Prioritizes shallow (high-visibility) comments first.
 - **Hard cap: 30 comments per story** to control latency and token budget.
-- Fits everything into a token budget without losing critical context.
 
 **Why 30, not 50 or 100?** Each Firebase comment fetch is an individual HTTP call. A 400-comment thread means 400 requests. At 30 comments (top-level + high-signal nested), we get the best signal-to-noise ratio while keeping comment fetch time under 3 seconds. The agent can always fetch comments from multiple stories if it needs broader coverage.
 
@@ -256,6 +264,10 @@ Comments are where the real knowledge lives. The agent:
 
 The Retriever collects raw HN data and **compacts** it into themed evidence groups (~600 tokens from 30+ comments). The Synthesizer extracts 3-5 insights ranked by evidence strength. The Writer turns structured analysis into readable prose with citations. No raw HN data crosses the Retriever boundary.
 
+**Sources come from code, not the model.** The tools record every story they surface (title, author, points, comment count, URL and posted date, straight from the HN API) in a per-request source registry. The compactor writes only themes and the Writer writes only prose; the source table on every answer is attached from the registry. This is faster (the model no longer transcribes metadata) and removes invented or missing source fields. See ADR-009.
+
+**Latency guards (ADR-009):** The Retriever's ReAct turns are capped at 768 output tokens. If the Retriever exhausts its tool budget, it compacts what it has already collected instead of failing the run.
+
 **Provider allocation:**
 
 By default, all three agents use the **globally selected provider** (the `LLM_PROVIDER` env var or the UI provider selector). This keeps behavior consistent with the single-agent path and avoids requiring multiple API keys.
@@ -266,21 +278,26 @@ By default, all three agents use the **globally selected provider** (the `LLM_PR
 | Synthesizer | Global (`LLM_PROVIDER`) | **Claude** (claude-haiku-4-5-20251001) | Reasoning depth. Pattern extraction needs the strongest model.   |
 | Writer      | Global (`LLM_PROVIDER`) | **Mistral** (mistral-small-latest)     | Cost-optimized. Structured prose from structured input.          |
 
-Configurable per request via `PipelineConfig.providerMap`. When `providerMap` is omitted, it defaults to the global `LLM_PROVIDER` for all stages. Four preset profiles available: `default` (all global provider), `optimized` (OpenRouter/Claude/Mistral split), `speed` (all OpenRouter), `cost` (all Mistral).
+`PipelineConfig.providerMap` can name a provider per stage. When it is omitted, every stage uses the global `LLM_PROVIDER`. The API endpoints take a single `provider` and apply it to all three stages, so per-stage splits are not reachable over HTTP today.
+
+_The preset profiles (`optimized`, `speed`, `cost`) in the table above are a design proposal and are not implemented (October 2026)._
 
 **Default mode:** The pipeline is the default execution path. The frontend always passes `useMultiAgent: true`. The `PipelineConfig.useMultiAgent` flag remains available for per-request toggling, but normal usage always runs the pipeline.
 
 **Orchestration:** The pipeline is coordinated by a LangGraph `StateGraph` (not a hand-rolled orchestrator). The graph declares a typed `PipelineAnnotation` that tracks query, evidence bundle, analysis result, response, steps, and cumulative token usage across nodes. Stage transitions emit SSE `PipelineEvent`s to the frontend.
 
-**Retry logic:** All three pipeline nodes share an `invokeWithRetry` utility that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. On JSON parse failure, the Synthesizer and Writer retry with a "respond with valid JSON only" instruction before falling back.
+**Retry logic:** All three pipeline nodes share an `invokeWithRetry` utility that handles transient LLM failures (including TPM rate limit errors) with exponential backoff. On JSON parse failure, the Synthesizer and Writer retry with an instruction to respond with the complete JSON object only. A failed Synthesizer is retried once; a failed Writer is retried once and then falls back to an answer built from the analysis. Compaction output is parsed leniently: unknown claim types become `opinion`, relevance is clamped, at most 6 themes are kept, and themes written before a JSON syntax error are salvaged. The legacy fallback runs only when nothing usable comes back.
 
-**Legacy compatibility:** The original ReAct agent remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path. When a fallback occurs, the method tracks which pipeline stages completed successfully and only marks the remaining incomplete stages with an error status, avoiding contradictory done-then-error sequences in the SSE event stream.
+**Legacy compatibility:** The original ReAct agent remains available as a fallback. The Orchestrator's `runWithFallback()` method catches multi-agent pipeline errors and automatically degrades to the single-agent path, on the same provider the user chose. When a fallback occurs, the method tracks which pipeline stages completed successfully and only marks the remaining incomplete stages with an error status, avoiding contradictory done-then-error sequences in the SSE event stream. A rejected API key skips the fallback (see 3.12).
+
+**Merged writer mode (opt-in, ADR-010):** With `PIPELINE_MERGED_WRITER=true`, the Synthesizer makes no LLM call and the Writer analyzes the evidence directly. The UI still shows three stages; the Synthesizer completes instantly as "Merged into writer". On one 25-query Mistral eval run it cut mean latency by 27% with no lower quality score. It is off by default until a second run confirms the result.
 
 ### 3.4 Sourced Answers
 
 Every claim in the agent's response traces back to a specific HN story or comment. The response includes:
 
 - Story title, author, and point count
+- The date the story was posted, taken from the HN API and shown on the source card
 - Direct links to HN threads
 - Commenter usernames for attributed opinions
 
@@ -292,7 +309,8 @@ The frontend streams the agent's thinking process in real time via Server-Sent E
 
 - Each reasoning step as it happens (pipeline stages with per-stage elapsed counters)
 - Which tools are being called and why
-- Expandable raw results
+- Expandable raw results, with a count of the comments each fetch actually returned
+- A live draft of the answer while the Writer composes it (see 3.9)
 - The final answer with source cards
 - A cancel button to abort the active stream (preserving already-collected steps and events)
 
@@ -304,9 +322,9 @@ This isn't just a UX feature. It's a trust mechanism.
 
 **Promoted from v1.1 to v1.0 scope.**
 
-Every query hits both external APIs and the LLM. Without caching, identical queries burn tokens and latency for no reason. v1.0 ships with a two-layer cache:
+Every query hits both external APIs and the LLM. Without caching, identical queries burn tokens and latency for no reason. v1.0 ships with a two-layer cache. Both layers live in `CacheService`, an in-memory `lru-cache` wrapper (5,000 entries max, per-key TTL).
 
-**Layer 1: HN Data Cache (node-cache, in-memory)**
+**Layer 1: HN Data Cache (in-memory)**
 
 | Data                      | TTL        | Reason                                         |
 | ------------------------- | ---------- | ---------------------------------------------- |
@@ -316,13 +334,16 @@ Every query hits both external APIs and the LLM. Without caching, identical quer
 
 **Layer 2: Query Result Cache**
 
-| Data                             | TTL        | Reason                                                      |
-| -------------------------------- | ---------- | ----------------------------------------------------------- |
-| Full AgentResponse by query hash | 10 minutes | Identical queries within a short window get instant results |
+| Data                                                       | TTL                                               | Reason                                                                          |
+| ---------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Completed answer replayed to identical streaming questions | 15 minutes                                        | Popular questions (e.g. the homepage examples) cost one pipeline run per window |
+| Full AgentResponse for `POST /api/rag/query`               | 10 minutes                                        | Identical blocking requests get instant results                                 |
+| Stored query result (`/api/rag/query/:id/result`)          | 5 minutes while running, 15 minutes once complete | Background-tab recovery and reconnects                                          |
+| Evidence from a finished pipeline run (for follow-ups)     | 30 minutes                                        | Follow-up questions reuse it instead of searching HN again                      |
 
-Cache keys are deterministic hashes of the query + options. Cache is invalidated on TTL expiry only (no manual invalidation in v1).
+**Instant replay of repeated questions:** On the streaming endpoint, a question that matches one still running attaches to that run instead of starting a duplicate. A question that matches one completed in the last 15 minutes is replayed immediately, and its answer carries `meta.cached: true`, which the meta bar shows as a "cached" badge. Matching ignores case and extra whitespace, and is keyed by provider and mode (pipeline, legacy, or a follow-up to a specific answer), so a follow-up never replays an unrelated answer. Failed runs are never replayed.
 
-Source: [node-cache docs](https://www.npmjs.com/package/node-cache)
+Cache is invalidated on TTL expiry (or LRU eviction) only; there is no manual invalidation.
 
 ### 3.7 Rate Limiting
 
@@ -330,13 +351,13 @@ Source: [node-cache docs](https://www.npmjs.com/package/node-cache)
 
 The API is rate-limited from day one to prevent accidental cost blowouts and abuse.
 
-| Scope                     | Limit              | Implementation                |
-| ------------------------- | ------------------ | ----------------------------- |
-| Per-IP query rate         | 10 requests/minute | express-rate-limit middleware |
-| Global query rate         | 60 requests/minute | In-memory counter             |
-| Max concurrent agent runs | 5                  | Semaphore in AgentService     |
+| Scope                     | Limit              | Implementation                                       |
+| ------------------------- | ------------------ | ---------------------------------------------------- |
+| Global query rate         | 60 requests/minute | In-memory sliding window in `RagController`          |
+| Global narration rate     | 60 requests/minute | Separate in-memory sliding window in `TtsController` |
+| Max concurrent agent runs | 5                  | Semaphore in AgentService                            |
 
-Source: [express-rate-limit docs](https://www.npmjs.com/package/express-rate-limit)
+_The per-IP limit (10 requests/minute via `express-rate-limit`) in the original spec is not in the current code; only the global limits above exist._
 
 ### 3.8 Voice Output (Podcast Mode)
 
@@ -408,6 +429,32 @@ The default voice, `en_paul_neutral` ("Paul - Neutral"), is a relaxed, balanced,
 
 **Cost per voiced answer:** One small LLM rewrite call plus Voxtral usage for the script characters, billed per [Mistral pricing](https://mistral.ai/pricing).
 
+**Mobile playback:** Voxtral returns variable-bitrate MP3 without a Xing header, so browsers misjudged the duration and iOS Safari cut narration off early. The backend now adds a Xing header (`addXingHeader()` in `apps/api/src/tts/mp3-xing.ts`) before returning the MP3, and the audio player unlocks its audio element inside the Listen tap so iOS allows playback once the file arrives.
+
+### 3.9 Live Answer Draft
+
+**New in v3.3.** Users no longer stare at a spinner while the Writer works. The Writer streams its first attempt, and the backend renders the partial output as markdown and sends it as `token` SSE events (append-only deltas). The UI shows it in a "Drafting answer…" card. When the final `answer` event arrives, it replaces the draft. The draft and the final answer are rendered by the same function, so they cannot drift apart. A Writer retry does not stream a second draft.
+
+### 3.10 Follow-up Questions
+
+**New in v3.3.** Under a finished pipeline answer, an "Ask a follow-up using these sources" box lets the user ask a related question. The follow-up skips the HN search: the Retriever stage returns the previous answer's evidence (kept for 30 minutes), and the Synthesizer and Writer answer the new question from it. The timeline shows "Reusing N sources from ..." for the Retriever stage. If the earlier evidence has expired, the follow-up runs as a fresh query. Over the API this is `GET /api/rag/stream?followUpOf=<queryId>`.
+
+Follow-ups are single-step: each one reuses the evidence of the answer it was asked under. There is no multi-turn conversation memory.
+
+### 3.11 Honest Confidence on Thin Evidence
+
+**New in v3.3.** When HN has little to say on a topic, the answer says so instead of sounding sure:
+
+- **Search filter relaxation:** points-filtered searches that return fewer than 3 stories are retried without the filter (see 3.1).
+- **Confidence cap:** with fewer than 3 sources, the answer's confidence is capped (0-1 sources: low; 2 sources: medium).
+- **Gap note:** the answer gains a gap such as "Only 2 Hacker News stories were found on this topic, so these views may not be representative," or, with no sources, a note that the answer is not grounded in HN discussion.
+
+### 3.12 Clear Errors for Rejected API Keys
+
+**New in v3.3.** If an LLM provider rejects its API key, the query fails at once with a message that names the environment variable to fix (for example, "The mistral API key was rejected. Check MISTRAL_API_KEY in the server environment."). Before this change, the Mistral client retried for about two minutes and then the pipeline fell back to the legacy agent, which failed the same way. Now the Mistral client no longer retries client errors (other than 408 and 429), and an auth error from any provider skips the legacy fallback.
+
+Operators can check the active provider's key before users hit it with `GET /api/health/llm` (see 7.5).
+
 ---
 
 ## 4. Architecture
@@ -464,18 +511,18 @@ The default voice, `en_paul_neutral` ("Paul - Neutral"), is a relaxed, balanced,
 
 ### 4.2 Tech Stack
 
-| Layer                    | Technology                                  | Why                                                             |
-| ------------------------ | ------------------------------------------- | --------------------------------------------------------------- |
-| **Monorepo**             | Nx                                          | Shared types, unified builds, dependency graph                  |
-| **Backend**              | NestJS (Node.js)                            | Modular DI, first-class TypeScript, SSE support                 |
-| **Frontend**             | Angular 21                                  | Standalone components, signals, SSE via EventSource             |
-| **LLM (production)**     | Claude (Anthropic API)                      | Best synthesis quality, 200k context                            |
-| **LLM (cost-optimized)** | Mistral Small 4 (`mistral-small-latest`)    | 262k context; default provider; see mistral.ai/pricing          |
-| **LLM (speed/dev)**      | OpenRouter (Qwen3 235B A22B)                | Lowest per-token price, 128k context, throughput-sorted routing |
-| **Voice (TTS)**          | Mistral Voxtral (`voxtral-mini-tts-latest`) | Reuses the Mistral key, no extra SDK, MP3 narration             |
-| **Caching**              | node-cache (in-memory)                      | Zero-infrastructure, sufficient for single-node v1              |
-| **Shared Types**         | TypeScript library                          | Single source of truth for API contracts                        |
-| **Data Sources**         | HN Algolia + Firebase APIs                  | Full-text search + structured item/comment data                 |
+| Layer                    | Technology                                     | Why                                                             |
+| ------------------------ | ---------------------------------------------- | --------------------------------------------------------------- |
+| **Monorepo**             | Nx                                             | Shared types, unified builds, dependency graph                  |
+| **Backend**              | NestJS (Node.js)                               | Modular DI, first-class TypeScript, SSE support                 |
+| **Frontend**             | Angular 21                                     | Standalone components, signals, SSE via EventSource             |
+| **LLM (production)**     | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) | Best synthesis quality, 200k context                            |
+| **LLM (cost-optimized)** | Mistral Small 4 (`mistral-small-latest`)       | 262k context; default provider; see mistral.ai/pricing          |
+| **LLM (speed/dev)**      | OpenRouter (Qwen3 235B A22B)                   | Lowest per-token price, 128k context, throughput-sorted routing |
+| **Voice (TTS)**          | Mistral Voxtral (`voxtral-mini-tts-latest`)    | Reuses the Mistral key, no extra SDK, MP3 narration             |
+| **Caching**              | lru-cache (in-memory)                          | Zero-infrastructure, sufficient for single-node v1              |
+| **Shared Types**         | TypeScript library                             | Single source of truth for API contracts                        |
+| **Data Sources**         | HN Algolia + Firebase APIs                     | Full-text search + structured item/comment data                 |
 
 ### 4.3 Design System: "Data Noir Editorial"
 
@@ -493,7 +540,8 @@ The frontend uses a custom design system built on Tailwind CSS v4 with CSS-first
 AppModule
 +-- ConfigModule (global)
 +-- CacheModule
-|   +-- CacheService (node-cache wrapper, TTL management)
+|   +-- CacheService (lru-cache wrapper, TTL management)
+|   +-- QueryStore (query results, replay/dedup index, follow-up evidence)
 +-- HnModule
 |   +-- HnService
 |       +-- Algolia HTTP client (search, search_by_date)
@@ -510,7 +558,8 @@ AppModule
 |   +-- ClaudeProvider (implements LlmProviderInterface)
 |   +-- MistralProvider (implements LlmProviderInterface)
 |   +-- OpenRouterProvider (implements LlmProviderInterface)
-|   +-- LlmService (facade, delegates to active provider)
+|   +-- LlmService (facade, delegates to active provider; getModel(provider, { maxTokens }))
+|   +-- llm-errors (isAuthError, LlmAuthError, failFastOnClientError)
 +-- AgentModule
 |   +-- AgentService
 |       +-- run()          -> AgentResponse
@@ -524,7 +573,12 @@ AppModule
 |   +-- RagController
 |       +-- POST /api/rag/query
 |       +-- GET  /api/rag/stream (SSE)
+|       +-- GET  /api/rag/query/:id/result
 |       +-- imports: AgentModule
++-- HealthModule
+|   +-- HealthController
+|       +-- GET /api/health
+|       +-- GET /api/health/llm (live provider probe, cached 60 s)
 +-- TtsModule
     +-- TtsService (Mistral Voxtral via native fetch + podcast rewrite via LlmService)
     +-- TtsController
@@ -552,18 +606,21 @@ No single LLM wins on every axis. Different stages of the project need different
 
 ### 5.2 Provider Comparison
 
-| Factor                | Claude (Haiku 4.5)       | Mistral Small 4             | OpenRouter (Qwen3 235B A22B 2507)                      |
-| --------------------- | ------------------------ | --------------------------- | ------------------------------------------------------ |
-| **Context window**    | 200k                     | 262k                        | 128k (model supports 262k; some hosts cap at 128k)     |
-| **Output speed**      | ~50 t/s                  | ~80 t/s                     | Varies by upstream; routed with `sort: throughput`     |
-| **Input pricing**     | ~$3.00/M                 | See mistral.ai/pricing      | ~$0.087/M                                              |
-| **Output pricing**    | ~$15.00/M                | See mistral.ai/pricing      | ~$0.35/M                                               |
-| **Est. cost/query**   | $0.02-0.08               | $0.003-0.015                | Not yet measured                                       |
-| **Tool calling**      | Native (tool_use blocks) | Native (OpenAI-compatible)  | Native (OpenAI-compatible)                             |
-| **Free tier**         | No                       | Limited                     | No (pay-as-you-go)                                     |
-| **Synthesis quality** | Excellent                | Strong                      | Not yet evaluated                                      |
-| **Agent reasoning**   | Excellent                | Strong                      | Not yet evaluated                                      |
-| **API format**        | Anthropic SDK            | Mistral SDK / OpenAI-compat | OpenAI-compatible (`ChatOpenAI` + OpenRouter base URL) |
+| Factor                | Claude (Haiku 4.5)          | Mistral Small 4             | OpenRouter (Qwen3 235B A22B 2507)                          |
+| --------------------- | --------------------------- | --------------------------- | ---------------------------------------------------------- |
+| **Context window**    | 200k                        | 262k                        | 128k (model supports 262k; some hosts cap at 128k)         |
+| **Output speed**      | ~50 t/s                     | ~80 t/s                     | Varies by upstream; routed with `sort: throughput`         |
+| **Input pricing**     | $1.00/M                     | $0.15/M                     | ~$0.087/M                                                  |
+| **Output pricing**    | $5.00/M                     | $0.60/M                     | ~$0.35/M                                                   |
+| **Est. cost/query**   | $0.02-0.08                  | $0.003-0.015                | Not yet measured                                           |
+| **Model ID**          | `claude-haiku-4-5-20251001` | `mistral-small-latest`      | `qwen/qwen3-235b-a22b-2507` (override: `OPENROUTER_MODEL`) |
+| **Tool calling**      | Native (tool_use blocks)    | Native (OpenAI-compatible)  | Native (OpenAI-compatible)                                 |
+| **Free tier**         | No                          | Limited                     | No (pay-as-you-go)                                         |
+| **Synthesis quality** | Excellent                   | Strong                      | Not yet evaluated                                          |
+| **Agent reasoning**   | Excellent                   | Strong                      | Not yet evaluated                                          |
+| **API format**        | Anthropic SDK               | Mistral SDK / OpenAI-compat | OpenAI-compatible (`ChatOpenAI` + OpenRouter base URL)     |
+
+_Prices are the per-million-token rates the eval harness uses (checked 2026-09-28). The cost-per-query estimates predate those prices and have not been re-measured._
 
 ### 5.3 Provider Interface (LangChain)
 
@@ -580,22 +637,25 @@ VoxPopuli uses **LangChain.js** as the LLM abstraction layer. Each provider is a
 **Provider interface:**
 
 ```typescript
+/** Per-call-site model tuning. */
+export interface ModelOptions {
+  /** Hard cap on generated tokens (output tokens dominate latency). */
+  maxTokens?: number;
+}
+
 export interface LlmProviderInterface {
-  /** Human-readable provider name (e.g., "openrouter", "claude", "mistral") */
+  /** Provider identifier, e.g. "openrouter", "claude", "mistral" */
   readonly name: string;
 
-  /** Maximum context window tokens for this provider */
+  /** Total context window size in tokens for this provider's model */
   readonly maxContextTokens: number;
 
-  /**
-   * Return the LangChain ChatModel instance for this provider.
-   * The AgentService uses this to build the LangChain agent executor.
-   * LangChain handles tool_result protocols, message formatting,
-   * and streaming internally.
-   */
-  getModel(): BaseChatModel;
+  /** Return the LangChain ChatModel instance for this provider (cached per options). */
+  getModel(options?: ModelOptions): BaseChatModel;
 }
 ```
+
+Call sites that need only short output pass a cap through `LlmService.getModel(provider, { maxTokens })`. The pipeline Retriever's ReAct turns use 768; the `/api/health/llm` probe uses 5.
 
 **What LangChain handles (we don't touch):**
 
@@ -611,17 +671,20 @@ export interface LlmProviderInterface {
 - Token budget management (ChunkerService)
 - Caching layer (CacheService)
 - SSE streaming to the frontend (RagController)
-- Tool definitions (DynamicTool with Zod schemas)
+- Tool definitions (LangChain `tool()` helper with Zod schemas)
+- Failing fast on rejected API keys (`apps/api/src/llm/llm-errors.ts`)
 
 **Provider implementations:**
 
-| Provider       | LangChain Class                                       | Package                | Config                                               |
-| -------------- | ----------------------------------------------------- | ---------------------- | ---------------------------------------------------- |
-| **Claude**     | `ChatAnthropic`                                       | `@langchain/anthropic` | `ANTHROPIC_API_KEY`                                  |
-| **Mistral**    | `ChatMistralAI`                                       | `@langchain/mistralai` | `MISTRAL_API_KEY`                                    |
-| **OpenRouter** | `ChatOpenAI` (baseURL `https://openrouter.ai/api/v1`) | `@langchain/openai`    | `OPENROUTER_API_KEY` (+ optional `OPENROUTER_MODEL`) |
+| Provider       | LangChain Class                                         | Package                | Config                                               |
+| -------------- | ------------------------------------------------------- | ---------------------- | ---------------------------------------------------- |
+| **Claude**     | `ChatAnthropic`                                         | `@langchain/anthropic` | `ANTHROPIC_API_KEY`                                  |
+| **Mistral**    | `ChatMistralAI` (subclassed as `FailFastChatMistralAI`) | `@langchain/mistralai` | `MISTRAL_API_KEY`                                    |
+| **OpenRouter** | `ChatOpenAI` (baseURL `https://openrouter.ai/api/v1`)   | `@langchain/openai`    | `OPENROUTER_API_KEY` (+ optional `OPENROUTER_MODEL`) |
 
-The OpenRouter provider defaults to `qwen/qwen3-235b-a22b-2507`, sends `max_tokens: 8192`, and passes OpenRouter provider routing `{ sort: 'throughput' }`. The frontend provider selector labels it "Qwen3".
+The OpenRouter provider defaults to `qwen/qwen3-235b-a22b-2507`, sends `max_tokens: 8192` unless a call site sets a lower cap, and passes OpenRouter provider routing `{ sort: 'throughput' }`. The frontend provider selector labels it "Qwen3".
+
+The Mistral provider subclasses `ChatMistralAI` because the Mistral SDK reports HTTP status as `statusCode`, which LangChain's retry logic ignores; without the subclass a rejected key was retried for about two minutes. `FailFastChatMistralAI` stops retrying on client errors other than 408 and 429.
 
 Source: [LangChain.js ChatModels](https://js.langchain.com/docs/integrations/chat/), [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/)
 
@@ -638,6 +701,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 MISTRAL_API_KEY=...          # Also used for Voxtral TTS
 OPENROUTER_API_KEY=sk-or-...
 OPENROUTER_MODEL=qwen/qwen3-235b-a22b-2507   # Optional override
+
+# Pipeline
+PIPELINE_MERGED_WRITER=false   # true = skip the Synthesizer's LLM call (ADR-010)
 ```
 
 The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct provider. Switching providers requires zero code changes. Users can also override per-request via the `provider` query parameter.
@@ -656,7 +722,7 @@ The `LlmModule` reads `LLM_PROVIDER` at startup and instantiates the correct pro
                     GET /api/rag/stream?query=...  (SSE)
                     |
 3. RagController receives request
-   +-- Rate limiter checks (10 req/min per IP)
+   +-- Rate limiter checks (60 req/min, global)
    +-- Query cache check (hit? return cached AgentResponse)
                     |
 4. AgentService.run() starts the ReAct loop:
@@ -703,29 +769,42 @@ When `useMultiAgent: true` (default -- frontend always sends this):
 1. User types: "What does HN think about Tailwind v4?"
                     |
 2. Angular sends:   GET /api/rag/stream?query=...&useMultiAgent=true  (SSE)
+                    [&followUpOf=<queryId> for a follow-up question]
                     |
-3. RagController → OrchestratorService.run(query, config)
+3. RagController
+   +-- Rate limiter checks (60 req/min, global)
+   +-- Same question running? attach to it. Completed in the last 15 min? replay it
+   |   at once with meta.cached = true (see 3.6)
+   +-- Otherwise → OrchestratorService.runWithFallback(query, config, priorEvidence?)
+   |   SSE: init { queryId }
    LangGraph StateGraph compiled and streamed through three nodes
                     |
 4. Stage 1: RETRIEVER (ReAct loop, global provider -- mistral by default)
-   |  +-- search_hn("Tailwind v4") → 10 hits
-   |  +-- get_comments(39482731) → 30 comments
+   |  (follow-up: skipped; returns the earlier answer's stored evidence)
+   |  +-- search_hn("Tailwind v4") → 10 hits        (tools record each story's metadata
+   |  +-- get_comments(39482731) → 30 comments        in the per-request source registry)
    |  +-- search_hn("Tailwind CSS criticisms") → 8 hits
-   |  +-- RETRIEVAL_COMPLETE
+   |  +-- RETRIEVAL_COMPLETE (or tool budget exhausted → compact what was collected)
    |  +-- Compaction LLM call via invokeWithRetry: 30+ raw items → 4 ThemeGroups (~600 tokens)
-   |  → SSE: { stage: 'retriever', status: 'done', summary: '4 themes from 47 sources' }
+   |  +-- Source table attached from the registry, not written by the model
+   |  → SSE pipeline: { stage: 'retriever', status: 'done', detail: '4 themes from 12 sources' }
                     |
 5. Stage 2: SYNTHESIZER (single-pass via invokeWithRetry, global provider)
+   |  (merged writer mode: no LLM call, completes instantly)
    |  +-- Receives EvidenceBundle (4 themes, ~600 tokens)
    |  +-- Extracts 3 insights, 1 contradiction, confidence: high
-   |  → SSE: { stage: 'synthesizer', status: 'done', summary: '3 insights, confidence: high' }
+   |  +-- Evidence floor: < 3 sources caps confidence and adds a gap note
+   |  → SSE pipeline: { stage: 'synthesizer', status: 'done', detail: '3 insights, confidence: high' }
                     |
 6. Stage 3: WRITER (single-pass via invokeWithRetry, global provider)
-   |  +-- Receives AnalysisResult + source metadata
+   |  +-- Receives AnalysisResult (merged mode: the evidence itself)
    |  +-- Composes headline, context, 3 sections, bottom line
-   |  → SSE: { stage: 'writer', status: 'done', summary: '3 sections' }
+   |  +-- First attempt streams as a live draft → SSE token { content } (append-only)
+   |  → SSE pipeline: { stage: 'writer', status: 'done', detail: '3 sections, 12 sources' }
                     |
-7. PipelineResult returned with intermediates for eval harness
+7. SSE answer: { answer, sources (each with postedDate), trust, meta }
+   The final answer replaces the draft. Result and evidence are stored for
+   replay (15 min) and follow-ups (30 min).
 ```
 
 ### 6.2 Token Budget Management
@@ -750,6 +829,8 @@ Priority order:
   5. Truncation flag set if anything dropped
 ```
 
+_As of October 2026 the agent tools call `ChunkerService.buildContext()` with an unlimited budget; tool output is bounded by `max_results` (≤ 20 stories) and the 30-comment cap instead. The per-provider budgets above are not applied in code._
+
 ### 6.3 Comment Fetching Strategy
 
 **Changed in v1.1: Hard cap reduced from 50 to 30.**
@@ -759,14 +840,17 @@ Each Firebase comment is an individual HTTP call. Fetching strategy:
 ```
 1. Fetch parent story -> get kids[] (top-level comment IDs)
 2. Sort kids by position (first = highest on page = most visible)
-3. Fetch top 15 top-level comments (parallel, batches of 10)
-4. For each top-level comment with kids[], fetch up to 3 replies
-5. Total cap: 30 comments regardless of tree shape
-6. Skip deleted/dead comments (don't count toward cap)
+3. Fetch top 15 top-level comments (in parallel)
+4. Fetch up to 3 replies for each of them, all parents in parallel (depth 1)
+5. Fetch up to 3 replies for each depth-1 reply, all parents in parallel (depth 2)
+6. Total cap: 30 comments regardless of tree shape (depth-first order, then truncated)
+7. Skip deleted/dead comments (don't count toward cap)
 ```
 
-**Worst-case HTTP calls:** 30 individual + 1 parent = 31 calls
-**Worst-case latency:** ~3 seconds (batched, parallel)
+Each depth level is one round of parallel requests, so a tree costs one round-trip per level rather than one per comment (ADR-009).
+
+**HTTP calls:** up to 15 top-level + their replies + 1 parent; only the first 30 comments are returned
+**Latency:** about three sequential rounds of parallel requests (one per depth level)
 **Best-case (cached):** < 100ms
 
 ---
@@ -775,16 +859,16 @@ Each Firebase comment is an individual HTTP call. Fetching strategy:
 
 ### 7.1 POST `/api/rag/query`
 
-Standard request-response. Blocks until the agent completes all steps.
+Standard request-response. Blocks until the agent completes all steps. Responses are cached for 10 minutes per query string and mode.
 
 **Request:**
 
 ```typescript
 {
-  query: string;              // Required. Natural language question.
-  maxSteps?: number;          // Optional. Default: 5. Max: 7.
-  includeComments?: boolean;  // Optional. Default: true.
+  query: string;              // Required. Natural language question. Max 500 chars.
+  maxSteps?: number;          // Optional. 1-7. Default: 7. (Legacy agent only.)
   provider?: string;          // Optional. Override LLM provider for this query.
+  useMultiAgent?: boolean;    // Optional. Default: false. true runs the pipeline.
 }
 ```
 
@@ -800,18 +884,20 @@ Standard request-response. Blocks until the agent completes all steps.
     totalInputTokens: number;
     totalOutputTokens: number;
     durationMs: number;
-    cached: boolean;          // True if served from query cache
+    cached: boolean;          // True when a streaming request replays a recent answer
   }
 }
 ```
 
+Every source carries `postedDate` (YYYY-MM-DD, from the HN API) when known.
+
 **Error Responses:**
 
-| Status | Condition                                        |
-| ------ | ------------------------------------------------ |
-| 400    | Empty or missing `query`                         |
-| 429    | Rate limit exceeded                              |
-| 500    | Agent execution failure (LLM error, API timeout) |
+| Status | Condition                                                          |
+| ------ | ------------------------------------------------------------------ |
+| 400    | Empty or missing `query`, or `query` over 500 chars                |
+| 429    | Rate limit exceeded (60 req/min, global)                           |
+| 500    | Agent execution failure (LLM error, API timeout, rejected API key) |
 
 ### 7.2 GET `/api/rag/stream`
 
@@ -820,18 +906,33 @@ Server-Sent Events endpoint. Streams reasoning steps in real time.
 **Query Parameters:**
 
 ```
-?query=...&maxSteps=5&includeComments=true&provider=openrouter
+?query=...&provider=mistral&useMultiAgent=true&followUpOf=<queryId>
 ```
+
+| Parameter       | Description                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------- |
+| `query`         | Required. Max 500 chars.                                                                                 |
+| `provider`      | Optional. `mistral` (default), `openrouter`, or `claude`. Applied to every pipeline stage.               |
+| `useMultiAgent` | `true` runs the pipeline (the frontend always sends it); anything else runs the legacy agent.            |
+| `followUpOf`    | Optional, pipeline only. `queryId` of an earlier answer whose evidence to reuse (kept 30 min; see 3.10). |
 
 **Event Types:**
 
-| Event         | Payload                      | When                    |
-| ------------- | ---------------------------- | ----------------------- |
-| `thought`     | `AgentStep`                  | Agent is reasoning      |
-| `action`      | `AgentStep` (with tool call) | Agent is calling a tool |
-| `observation` | `AgentStep` (with result)    | Tool returned data      |
-| `answer`      | `AgentResponse`              | Final answer ready      |
-| `error`       | `string`                     | Something broke         |
+| Event         | Payload                                                  | When                                                     |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------------- |
+| `init`        | `{ queryId }`                                            | First event; use the ID to fetch the result or follow up |
+| `pipeline`    | `PipelineEvent` (`stage`, `status`, `detail`, `elapsed`) | Pipeline stage transitions                               |
+| `thought`     | `AgentStep`                                              | Agent is reasoning                                       |
+| `action`      | `AgentStep` (with tool call)                             | Agent is calling a tool                                  |
+| `observation` | `AgentStep` (with result)                                | Tool returned data                                       |
+| `token`       | `{ content }`                                            | Live answer draft: an append-only markdown delta         |
+| `answer`      | `{ answer, sources, trust, meta }`                       | Final answer ready (replaces the draft)                  |
+| `error`       | `{ message }`                                            | Something broke (a rejected key names the env var)       |
+| `ping`        | empty                                                    | Heartbeat every 10 s                                     |
+
+An identical question already running is attached to rather than re-run; one completed in the last 15 minutes is replayed at once with `meta.cached: true`.
+
+**Related: `GET /api/rag/query/:id/result`** returns the stored `QueryResult` for a `queryId`: 200 when complete or failed, 202 (same shape) while still running, 404 once expired. The frontend uses it to recover after a backgrounded tab.
 
 ### 7.3 POST `/api/tts/narrate`
 
@@ -884,15 +985,33 @@ Health check endpoint. Returns provider status and cache stats.
 ```typescript
 {
   status: 'ok';
-  provider: string;
+  uptime: number; // seconds
   cacheStats: {
     hits: number;
     misses: number;
     keys: number;
   }
-  uptime: number;
+  memoryMB: number; // heap used
 }
 ```
+
+This check makes no LLM call, so it is safe for load balancers and platform health checks.
+
+### 7.5 GET `/api/health/llm`
+
+**New in v3.3.** For operators: makes a tiny real call (5-token cap, 15 s timeout) to the active LLM provider, so a missing or rejected API key shows up here instead of as failed user queries. The result is cached for 60 seconds so the endpoint cannot be used to run up provider costs. It is opt-in and not meant as the platform health check.
+
+```typescript
+{
+  provider: string;
+  ok: boolean;
+  latencyMs: number;
+  error?: 'auth' | 'unavailable';  // auth = the provider rejected the API key
+  detail?: string;                 // first line of the provider error, max 200 chars
+}
+```
+
+Returns 200 when `ok` is true, 503 otherwise.
 
 ---
 
@@ -909,7 +1028,7 @@ The agent has access to three tools. The LLM decides which to call and in what o
 | `min_points`  | number                    | No       | Filter low-quality stories |
 | `max_results` | number                    | No       | 1-20, default 10           |
 
-**Behavior:** Calls HN Algolia `/search` or `/search_by_date`. Results pass through CacheService (TTL: 15 min), then are chunked and token-counted before returning to the agent.
+**Behavior:** Calls HN Algolia `/search` or `/search_by_date`. Results pass through CacheService (TTL: 15 min), then are chunked and token-counted before returning to the agent. Each hit's metadata (including its posted date) is recorded in the per-request source registry. If `min_points` leaves fewer than 3 hits, the search is retried once without it and the output starts with a note saying so.
 
 ### 8.2 `get_story`
 
@@ -917,7 +1036,7 @@ The agent has access to three tools. The LLM decides which to call and in what o
 | ---------- | ------ | -------- | ----------- |
 | `story_id` | number | Yes      | HN item ID  |
 
-**Behavior:** Calls HN Firebase `/item/{id}.json`. Cached for 1 hour. Returns full item data.
+**Behavior:** Calls HN Firebase `/item/{id}.json`. Cached for 1 hour. Returns title, author, points, comment count, URL, text and posted date, and records the story in the source registry.
 
 ### 8.3 `get_comments`
 
@@ -926,7 +1045,7 @@ The agent has access to three tools. The LLM decides which to call and in what o
 | `story_id`  | number | Yes      | Parent story ID |
 | `max_depth` | number | No       | 1-5, default 3  |
 
-**Behavior:** Recursively fetches comment tree via Firebase. Individual items cached for 30 min. Strips HTML, assigns depth levels, **caps at 30 comments**. Fetches in parallel batches of 10.
+**Behavior:** Fetches the comment tree via Firebase one depth level at a time, all parents in parallel (fetching stops at 3 levels even if `max_depth` is higher). Individual items cached for 30 min. Strips HTML, assigns depth levels, **caps at 30 comments**. Output lines are tagged `[Story <id>]`, which the research timeline uses to count comments per story.
 
 ---
 
@@ -936,25 +1055,27 @@ The agent has access to three tools. The LLM decides which to call and in what o
 
 ### 9.1 How Tool Calling Works
 
-LangChain handles all provider-specific tool protocol differences internally. We define tools once using LangChain's `DynamicTool` with Zod schemas, and LangChain translates them to the correct format per provider:
+LangChain handles all provider-specific tool protocol differences internally. We define tools once using LangChain's `tool()` helper with Zod schemas, and LangChain translates them to the correct format per provider:
 
 ```typescript
-import { DynamicTool } from 'langchain/tools';
+import { tool } from 'langchain';
 import { z } from 'zod';
 
-const searchHnTool = new DynamicTool({
-  name: 'search_hn',
-  description: 'Search Hacker News stories via Algolia',
-  schema: z.object({
-    query: z.string().describe('Search keywords'),
-    sort_by: z.enum(['relevance', 'date']).optional(),
-    min_points: z.number().optional(),
-    max_results: z.number().min(1).max(20).optional(),
-  }),
-  func: async (input) => {
-    // Calls HnService.search(), chunks results, returns string
+const searchHnTool = tool(
+  async (input) => {
+    // Calls HnService.search(), records sources, chunks results, returns string
   },
-});
+  {
+    name: 'search_hn',
+    description: 'Search Hacker News stories via Algolia...',
+    schema: z.object({
+      query: z.string().describe('Search keywords'),
+      sort_by: z.enum(['relevance', 'date']).optional(),
+      min_points: z.coerce.number().optional(),
+      max_results: z.coerce.number().min(1).max(20).optional(),
+    }),
+  },
+);
 ```
 
 ### 9.2 What LangChain Handles Per Provider
@@ -965,7 +1086,7 @@ const searchHnTool = new DynamicTool({
 | **Mistral**    | OpenAI-compatible `tool` role messages    | Just provide `ChatMistralAI` instance                    |
 | **OpenRouter** | OpenAI-compatible `tool` role messages    | Just provide `ChatOpenAI` instance (OpenRouter base URL) |
 
-LangChain's `AgentExecutor` or `createToolCallingAgent` manages the ReAct loop internally, including:
+LangChain's `createAgent` (v1.2+) manages the ReAct loop internally, including:
 
 - Parsing tool calls from model responses
 - Executing tools and formatting results
@@ -984,45 +1105,51 @@ Using native protocols (via LangChain) gives the model clear separation between 
 
 LangChain handles the protocol plumbing, but we control:
 
-- **Tool implementations** (`func` callbacks that call HnService + ChunkerService)
+- **Tool implementations** (callbacks that call HnService + ChunkerService)
 - **Token budgeting** (ChunkerService fits content into provider-specific budgets)
 - **Caching** (CacheService wraps all external API calls)
 - **Step streaming** (we intercept agent callbacks to emit SSE events)
-- **Safety constraints** (max 7 steps, 60s timeout, 5 concurrent runs)
+- **Safety constraints** (legacy agent: max 7 steps, 180s timeout, 5 concurrent runs; pipeline Retriever: 8 ReAct iterations, 768 output tokens per turn)
 
 Source: [LangChain.js Tool Calling](https://js.langchain.com/docs/how_to/tool_calling/), [LangChain.js Agents](https://js.langchain.com/docs/how_to/agent_executor/)
 
 ### 9.5 Pipeline Configuration (v3.0)
 
-The multi-agent pipeline is configured via `PipelineConfig`:
+The multi-agent pipeline is configured via `PipelineConfig` (a Zod schema, `PipelineConfigSchema`, in `libs/shared-types/src/lib/pipeline.types.ts`):
 
 ```typescript
 interface PipelineConfig {
-  providerMap?: {
-    // Optional — defaults to global LLM_PROVIDER for all stages
-    retriever: LlmProvider;
-    synthesizer: LlmProvider;
-    writer: LlmProvider;
+  useMultiAgent: boolean; // Schema default: false. The frontend always sends true.
+  providerMap: {
+    // Each stage falls back to the global LLM_PROVIDER when unset
+    retriever?: string;
+    synthesizer?: string;
+    writer?: string;
   };
   tokenBudgets: {
-    retriever: number; // ~2000 output tokens
-    synthesizer: number; // ~1500 output tokens
-    writer: number; // ~1000 output tokens
+    retriever: number; // default 2000
+    synthesizer: number; // default 1500
+    synthesizerInput: number; // default 4000
+    writer: number; // default 1000
   };
-  timeoutMs: number;
-  useMultiAgent: boolean; // Default: true (pipeline is the default mode)
+  timeout: number; // default 30000 ms
 }
 ```
 
-**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`). Token budgets: retriever 2000, synthesizer 1500, writer 1000. Timeout: 30s.
+**Default configuration:** All three agents use the globally selected provider (`LLM_PROVIDER`, default: `mistral`).
 
-Per-stage provider splitting (e.g., OpenRouter for retrieval, Claude for synthesis) is available via `providerMap` but deferred as default until eval data justifies it.
+_`tokenBudgets` and `timeout` are defined with defaults but not enforced by the pipeline (October 2026). Output size is bounded per call site instead (e.g. the Retriever's 768-token ReAct cap)._
+
+Per-stage provider splitting (e.g., OpenRouter for retrieval, Claude for synthesis) is possible via `providerMap` in code but deferred as default until eval data justifies it.
+
+**Environment switch:** `PIPELINE_MERGED_WRITER=true` replaces the Synthesizer with a no-LLM stand-in and has the Writer analyze the evidence directly (default `false`; see 3.3 and ADR-010).
 
 **SSE event protocol:**
 
-| Event           | Payload Fields                                         | When                  |
-| --------------- | ------------------------------------------------------ | --------------------- |
-| `PipelineEvent` | `stage`, `status`, `detail?`, `elapsedMs?`, `summary?` | Each stage transition |
+| Event      | Payload Fields                         | When                              |
+| ---------- | -------------------------------------- | --------------------------------- |
+| `pipeline` | `stage`, `status`, `detail`, `elapsed` | Each stage transition             |
+| `token`    | `content`                              | Live answer draft from the Writer |
 
 Stage values: `retriever` | `synthesizer` | `writer`
 Status values: `started` | `progress` | `done` | `error`
@@ -1043,18 +1170,25 @@ voxpopuli/
 |   |       |   +-- pipeline-graph.ts       # LangGraph StateGraph definition + retry wrappers
 |   |       |   +-- nodes/
 |   |       |   |   +-- retriever.node.ts   # ReAct search + compaction
-|   |       |   |   +-- synthesizer.node.ts # Single-pass analysis
+|   |       |   |   +-- compaction-parse.ts # Lenient parsing of compacted themes
+|   |       |   |   +-- synthesizer.node.ts # Single-pass analysis, evidence floor, merged stand-in
 |   |       |   |   +-- writer.node.ts      # Single-pass prose composition
-|   |       |   +-- tools.ts                # Tool definitions
+|   |       |   |   +-- writer-draft.ts     # Live draft rendering + streaming deltas
+|   |       |   +-- tools.ts                # Tool definitions + source registry
+|   |       |   +-- trust.ts                # Trust metadata
 |   |       |   +-- system-prompt.ts        # Legacy agent instructions
 |   |       |   +-- prompts/
 |   |       |       +-- retriever.prompt.ts
 |   |       |       +-- compactor.prompt.ts
 |   |       |       +-- synthesizer.prompt.ts
 |   |       |       +-- writer.prompt.ts
+|   |       |       +-- merged-writer.prompt.ts # Opt-in merged Synthesizer+Writer
 |   |       +-- cache/
 |   |       |   +-- cache.module.ts
-|   |       |   +-- cache.service.ts      # node-cache wrapper
+|   |       |   +-- cache.service.ts      # lru-cache wrapper
+|   |       |   +-- query-store.ts        # Query results, replay/dedup, follow-up evidence
+|   |       +-- health/
+|   |       |   +-- health.controller.ts  # GET /api/health, GET /api/health/llm
 |   |       +-- chunker/
 |   |       |   +-- chunker.module.ts
 |   |       |   +-- chunker.service.ts    # HTML cleanup, token budgeting
@@ -1065,6 +1199,8 @@ voxpopuli/
 |   |       |   +-- llm.module.ts
 |   |       |   +-- llm.service.ts        # Facade (delegates to provider)
 |   |       |   +-- llm-provider.interface.ts
+|   |       |   +-- llm-errors.ts         # Auth-error detection, LlmAuthError, fail-fast retry policy
+|   |       |   +-- model-ids.ts          # All model identifiers
 |   |       |   +-- invoke-with-retry.ts  # Shared retry utility (exponential backoff, TPM detection)
 |   |       |   +-- providers/
 |   |       |       +-- claude.provider.ts
@@ -1077,6 +1213,7 @@ voxpopuli/
 |   |       |   +-- tts.module.ts
 |   |       |   +-- tts.controller.ts     # Narrate + voices endpoints
 |   |       |   +-- tts.service.ts        # Mistral Voxtral TTS + podcast rewrite
+|   |       |   +-- mp3-xing.ts           # Adds a Xing header so browsers get the right duration
 |   |       |   +-- prompts/
 |   |       |       +-- narrator.prompt.ts # Podcast rewrite prompt, 2500-char cap
 |   |       +-- app/
@@ -1089,7 +1226,9 @@ voxpopuli/
 |               +-- components/
 |               |   +-- chat/
 |               |   +-- agent-steps/
-|               |   +-- source-card/
+|               |   +-- source-card/       # Includes the posted date
+|               |   +-- meta-bar/          # Provider, tokens, time, "cached" badge
+|               |   +-- trust-bar/
 |               |   +-- audio-player/      # Listen button + playback controls
 |               |   +-- provider-selector/ # Switch providers in UI
 |               +-- services/
@@ -1101,15 +1240,20 @@ voxpopuli/
 |   +-- shared-types/                     # Shared TypeScript interfaces
 |       +-- src/
 |           +-- index.ts
-|           +-- evidence.types.ts         # EvidenceBundle, ThemeGroup, EvidenceItem
-|           +-- analysis.types.ts         # AnalysisResult, Insight, Contradiction
-|           +-- response.types.ts         # AgentResponse v2, ResponseSection
-|           +-- pipeline.types.ts         # PipelineConfig, PipelineEvent, PipelineResult
+|           +-- lib/
+|               +-- shared-types.ts       # AgentResponse, AgentSource, health and query-result types
+|               +-- evidence.types.ts     # EvidenceBundle, ThemeGroup, EvidenceItem, SourceMetadata
+|               +-- analysis.types.ts     # AnalysisResult, Insight, Contradiction
+|               +-- response-v2.types.ts  # AgentResponseV2, ResponseSection
+|               +-- pipeline.types.ts     # PipelineConfig, PipelineEvent, PipelineResult, PriorEvidence
 |
 +-- evals/                                # Evaluation harness
 |   +-- queries.json                      # Test queries + expected qualities
-|   +-- run-eval.ts                       # Runner script
+|   +-- run-eval.ts                       # Runner script (pipeline over SSE by default)
+|   +-- stream-client.ts                  # SSE client with per-stage timings
 |   +-- score.ts                          # Scoring logic
+|   +-- latency-stats.ts                  # Mean/p50/p95 latency summary
+|   +-- evaluators/                       # Source accuracy, quality judge, efficiency, latency, cost
 |   +-- results/                          # Timestamped eval results
 |
 +-- nx.json
@@ -1145,6 +1289,8 @@ The agent produces dramatically better answers because it can:
 - Automatic reconnection built into the protocol.
 
 WebSockets needed only if we add bidirectional follow-ups. That's a v2 feature.
+
+_Follow-up questions shipped in v3.3 without WebSockets: each follow-up is a new SSE request that names the earlier answer with `followUpOf` (see 3.10)._
 
 Source: [MDN > EventSource](https://developer.mozilla.org/en-US/docs/Web/API/EventSource), [NestJS > SSE](https://docs.nestjs.com/techniques/server-sent-events)
 
@@ -1234,32 +1380,39 @@ Success metrics (Section 15) are aspirational without tooling to measure them. T
 
 ### 12.3 Scoring
 
-| Metric                | How                                         | Weight |
-| --------------------- | ------------------------------------------- | ------ |
-| **Source accuracy**   | Every `AgentSource.url` resolves (HTTP 200) | 30%    |
-| **Quality checklist** | LLM-as-judge checks each `expectedQuality`  | 30%    |
-| **Efficiency**        | Steps used vs `maxAcceptableSteps`          | 15%    |
-| **Latency**           | Total duration vs target                    | 15%    |
-| **Cost**              | Total tokens vs $0.05 ceiling               | 10%    |
+| Metric                | How                                                                                                       | Weight |
+| --------------------- | --------------------------------------------------------------------------------------------------------- | ------ |
+| **Source accuracy**   | Every source's story ID resolves via the HN Firebase API                                                  | 30%    |
+| **Quality checklist** | LLM-as-judge checks each `expectedQuality`                                                                | 30%    |
+| **Efficiency**        | Tool calls (`action` steps) vs `maxAcceptableSteps`; 0 at 2x                                              | 15%    |
+| **Latency**           | Total duration vs provider-specific bands (Mistral/Claude: full marks up to 30 s; OpenRouter: up to 15 s) | 15%    |
+| **Cost**              | Estimated cost vs $0.05 ceiling, at per-provider rates                                                    | 10%    |
+
+**Cost rates (per million input/output tokens):** Mistral Small 4 $0.15 / $0.60, Claude Haiku 4.5 $1 / $5, OpenRouter Qwen3 235B $0.087 / $0.35.
+
+A run that fell back to the legacy agent scores 0 on cost and efficiency, because only the fallback's tokens and steps are reported and the failed pipeline run would otherwise look cheap.
 
 **LLM-as-judge:** A direct Mistral API call evaluates the answer against expected qualities. Configurable via `EVAL_JUDGE_PROVIDER` env var. The judge strips markdown fences from LLM responses and is fully decoupled from the NestJS app -- it makes its own HTTP call to the provider's OpenAI-compatible endpoint. When LangSmith is enabled, individual evaluator scores are posted as feedback to each trace.
 
 ### 12.4 Running Evals
 
-**Prerequisites:** Running VoxPopuli API (`npx nx serve api`), at least one LLM provider key configured. Optionally, `LANGSMITH_API_KEY` for dashboard integration.
+**Prerequisites:** Running VoxPopuli API (`pnpm exec nx serve api`), at least one LLM provider key configured. Optionally, `LANGSMITH_API_KEY` for dashboard integration.
+
+By default the harness runs what users run: the pipeline over SSE. `--legacy` evaluates the single-agent path instead, and `--no-stream` uses `POST /api/rag/query` (cached 10 minutes, no per-stage timings).
 
 **CLI** (commander-based):
 
 ```bash
-npx tsx evals/run-eval.ts --help              # Show all options
-npx tsx evals/run-eval.ts --list              # Browse queries by category
-npx tsx evals/run-eval.ts -p mistral          # Single provider
-npx tsx evals/run-eval.ts -p mistral -n 5     # Max parallelism
-npx tsx evals/run-eval.ts --no-judge -n 5     # Fast mode (skip LLM-as-judge)
-npx tsx evals/run-eval.ts -C trust            # Trust queries only
-npx tsx evals/run-eval.ts -q q01              # Single query debug
-npx tsx evals/run-eval.ts --dry-run           # Preview without running
-npx tsx evals/run-eval.ts -c openrouter,mistral # Compare providers
+pnpm exec tsx evals/run-eval.ts --help              # Show all options
+pnpm exec tsx evals/run-eval.ts --list              # Browse queries by category
+pnpm exec tsx evals/run-eval.ts -p mistral          # Single provider
+pnpm exec tsx evals/run-eval.ts -p mistral -n 5     # Max parallelism
+pnpm exec tsx evals/run-eval.ts --no-judge -n 5     # Fast mode (skip LLM-as-judge)
+pnpm exec tsx evals/run-eval.ts -C trust            # Trust queries only
+pnpm exec tsx evals/run-eval.ts -q q01              # Single query debug
+pnpm exec tsx evals/run-eval.ts --dry-run           # Preview without running
+pnpm exec tsx evals/run-eval.ts -c openrouter,mistral # Compare providers
+pnpm exec tsx evals/run-eval.ts -n 1 --baseline evals/results/<old>.json # Latency A/B
 ```
 
 | Flag                | Default            | Description                               |
@@ -1271,11 +1424,16 @@ npx tsx evals/run-eval.ts -c openrouter,mistral # Compare providers
 | `--list`            | —                  | List all queries grouped by category      |
 | `--dry-run`         | —                  | Preview matched queries without executing |
 | `-n, --concurrency` | 3                  | Parallel query execution (max 5)          |
-| `--timeout`         | 300s               | Per-query timeout                         |
+| `-t, --timeout`     | 300s               | Per-query timeout                         |
 | `--no-judge`        | —                  | Skip LLM-as-judge quality evaluator       |
 | `--no-langsmith`    | —                  | Disable LangSmith integration             |
+| `--legacy`          | —                  | Evaluate the legacy single-agent path     |
+| `--no-stream`       | —                  | Use `POST /api/rag/query` instead of SSE  |
+| `--baseline`        | —                  | Print latency change vs an earlier report |
 
-**Pass threshold:** 0.6 weighted score. Results saved to `evals/results/` with timestamps. If `LANGSMITH_API_KEY` is set, results also appear in the LangSmith dashboard with full agent traces and per-evaluator feedback scores. Run after every agent-related change.
+`--multi-agent` and `--stream` are still accepted but do nothing (both are now the default).
+
+**Pass threshold:** 0.6 weighted score. Results saved to `evals/results/` with timestamps; each report includes `summary.latency` (mean, p50, p95, per-stage means and the fallback count). If `LANGSMITH_API_KEY` is set, results also appear in the LangSmith dashboard with full agent traces and per-evaluator feedback scores. Run after every agent-related change.
 
 **Token tracking:** The agent reports real token counts from LangChain `usage_metadata`, enabling accurate cost scoring.
 
@@ -1292,6 +1450,8 @@ npx tsx evals/run-eval.ts -c openrouter,mistral # Compare providers
 | Trust (M5)         | 7     | Source verification, consensus honesty, recency awareness (t06/t07 skipped pending M5 implementation) |
 
 **First real run (Mistral):** 52% pass rate (13/25 passed). Baseline for regression tracking.
+
+_Later runs: after the latency work (ADR-009) the pipeline passed 92% of the suite, and the merged writer run passed 100% (ADR-010). See those ADRs for the reports._
 
 ---
 
@@ -1320,6 +1480,8 @@ The agent can hallucinate sources, fabricate consensus, cherry-pick stories, pre
 - "If the most relevant story is older than 2 years, explicitly note this."
 - "High upvotes indicate popularity, not necessarily correctness. Note whether commenters provide evidence or just opinion."
 - "If all top comments agree, search for a contrarian thread using terms like 'defense of X' or 'why X is actually good.'"
+
+**Enforced in code, not just the prompt (v3.3):** the pipeline caps confidence when fewer than 3 sources were found and adds a gap note saying how thin the evidence is (see 3.11). Every source's posted date now comes from the HN API, and source cards show it. (The trust bar's recency metrics are still computed from `get_story` output in the steps.)
 
 ### 13.2 Layer 2: HN Crowd Trustworthiness
 
@@ -1466,6 +1628,8 @@ export interface AgentResponse {
 ```
 
 ### 13.9 Pipeline Types (v3.0)
+
+_This is the v3.0 design. The shipped Zod schemas in `libs/shared-types/src/lib/` differ in places (for example, `EvidenceItem` has `text`, `type` and `relevance`; `PipelineEvent` has `detail` and `elapsed`; `SourceMetadata` gained `postedDate`; `PriorEvidence` was added for follow-ups). The code is the source of truth._
 
 ```typescript
 // Evidence types (Retriever output)
@@ -1632,20 +1796,30 @@ _Measured with Groq before the switch to OpenRouter (2026-09)._
 | P50    | ~6s  | ~10s    | ~13s   |
 | P95    | ~12s | ~20s    | ~28s   |
 
+**Measured: multi-agent pipeline on Mistral (full eval suite, sequential, 2026-09/10):**
+
+| Mode                                     | Mean   | P50    | P95    | Source  |
+| ---------------------------------------- | ------ | ------ | ------ | ------- |
+| Three-stage pipeline (after ADR-009)     | 23.9 s | 23.6 s | 30.4 s | ADR-009 |
+| Merged writer (`PIPELINE_MERGED_WRITER`) | 18.8 s | 18.2 s | 30.6 s | ADR-010 |
+
+A repeated question within 15 minutes is replayed immediately, and the live draft (3.9) shows the answer forming while the Writer runs.
+
 ### 14.2 Reliability
 
-| Concern             | Mitigation                                  |
-| ------------------- | ------------------------------------------- |
-| HN API downtime     | Retry with exponential backoff (3 attempts) |
-| LLM API errors      | Return partial results with error flag      |
-| LLM provider outage | Optional auto-fallback to next provider     |
-| Runaway agent loop  | Hard cap at 7 steps + 180s global timeout   |
-| Token overflow      | Per-provider budget in Chunker              |
-| Cost blowout        | Rate limiting + max 5 concurrent agent runs |
+| Concern             | Mitigation                                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| HN API downtime     | Retry with exponential backoff (3 attempts)                                                                      |
+| LLM API errors      | Return partial results with error flag; pipeline falls back to the legacy agent on the same provider             |
+| Rejected API key    | Fail fast with a message naming the env var; no fallback run; `GET /api/health/llm` for operators                |
+| LLM provider outage | Optional auto-fallback to next provider (not implemented)                                                        |
+| Runaway agent loop  | Hard cap at 7 steps + 180s global timeout (legacy); Retriever compacts what it has when its tool budget runs out |
+| Token overflow      | Per-provider budget in Chunker                                                                                   |
+| Cost blowout        | Rate limiting + max 5 concurrent agent runs                                                                      |
 
 ### 14.3 Cost
 
-_Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenRouter (Qwen3) per-query cost has not been measured yet; list price is ~$0.087 in / $0.35 out per M tokens._
+_Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenRouter (Qwen3) per-query cost has not been measured yet; list price is ~$0.087 in / $0.35 out per M tokens. The Claude and Mistral estimates predate current prices (Haiku 4.5 $1 / $5, Mistral Small 4 $0.15 / $0.60 per M tokens)._
 
 | Provider         | Est. Cost/Query | Monthly (100 queries/day)        |
 | ---------------- | --------------- | -------------------------------- |
@@ -1659,7 +1833,8 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 ### 14.4 Security
 
 - API keys in `.env`, never committed. `.env.example` with placeholders.
-- Rate limiting on all endpoints from day one.
+- Rate limiting on the query and narration endpoints from day one (60 req/min each, global).
+- The live LLM health probe (`/api/health/llm`) is cached for 60 s so it cannot be used to run up provider costs.
 - No auth in v1 (single-user local tool).
 - Input sanitization + max query length (500 chars).
 - All HN data is public. No PII concerns.
@@ -1668,37 +1843,37 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 
 ## 15. Roadmap
 
-### v1.0 -- Foundation (Current Scope)
+### v1.0 -- Foundation (Shipped)
 
-- [ ] Nx monorepo scaffold
-- [ ] HN API service (Algolia + Firebase)
-- [ ] In-memory caching layer (node-cache)
-- [ ] Content chunker with per-provider token budgeting
-- [ ] LLM provider interface + triple-stack (Claude, Mistral, Groq)
-- [ ] Native tool_result protocol per provider (via LangChain)
-- [ ] ReAct agent loop (plan, act, observe, respond)
-- [ ] RAG endpoints (POST + SSE) with rate limiting
-- [ ] Evaluation harness (20 test queries)
-- [ ] Angular chat UI with live agent step visualization
-- [ ] Source cards with HN links
-- [ ] Provider selector in UI
-- [ ] Meta bar (provider, tokens, latency, cached)
-- [ ] TtsModule (ElevenLabs streaming TTS)
-- [ ] Podcast rewrite prompt + LLM call
-- [ ] Audio player component with Listen button
-- [ ] Playback speed controls + MP3 download
-- [ ] Trust metadata on AgentResponse (source verification, recency, diversity)
-- [ ] Trust bar UI component
-- [ ] Trust-specific eval queries (7 queries)
-- [ ] ElevenLabs TTS integration (TtsService + streaming endpoint)
-- [ ] Podcast script rewriter (LLM-powered text-to-speech preprocessing)
-- [ ] Listen button + audio player component
-- [ ] Signature narrator voice configuration
+- [x] Nx monorepo scaffold
+- [x] HN API service (Algolia + Firebase)
+- [x] In-memory caching layer (node-cache; now lru-cache)
+- [x] Content chunker with per-provider token budgeting (budgets not currently applied by the tools; see 6.2)
+- [x] LLM provider interface + triple-stack (Claude, Mistral, Groq; Groq later replaced by OpenRouter)
+- [x] Native tool_result protocol per provider (via LangChain)
+- [x] ReAct agent loop (plan, act, observe, respond)
+- [x] RAG endpoints (POST + SSE) with rate limiting
+- [x] Evaluation harness (20 test queries)
+- [x] Angular chat UI with live agent step visualization
+- [x] Source cards with HN links
+- [x] Provider selector in UI
+- [x] Meta bar (provider, tokens, latency, cached)
+- [x] TtsModule (ElevenLabs streaming TTS; later replaced by Mistral Voxtral, ADR-008)
+- [x] Podcast rewrite prompt + LLM call
+- [x] Audio player component with Listen button
+- [x] Playback speed controls + MP3 download
+- [x] Trust metadata on AgentResponse (source verification, recency, diversity)
+- [x] Trust bar UI component
+- [x] Trust-specific eval queries (7 queries)
+- [x] ElevenLabs TTS integration (TtsService + streaming endpoint; later replaced by Mistral Voxtral)
+- [x] Podcast script rewriter (LLM-powered text-to-speech preprocessing)
+- [x] Listen button + audio player component
+- [x] Signature narrator voice configuration
 
 ### v1.1 -- Polish
 
 - [ ] Loading skeleton UI
-- [ ] Dark mode
+- [x] Dark mode (light/dark toggle; dark is the default)
 - [ ] Mobile responsive layout
 - [ ] Error boundary components
 - [ ] Provider auto-fallback
@@ -1707,8 +1882,8 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 - [ ] Audio caching (same narration if answer unchanged)
 - [ ] Voice selector (2-3 preset voices)
 - [ ] "Podcast mode" toggle (auto-narrate every answer)
-- [ ] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
-- [ ] Voice: downloadable MP3 of narrated answer
+- [x] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
+- [x] Voice: downloadable MP3 of narrated answer
 
 ### v2.0 -- Multi-Agent Pipeline (Complete)
 
@@ -1731,6 +1906,24 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 - [x] Pipeline fallback tracks completed stages, only marks incomplete stages as error
 - [x] Integration tests: 60+ new tests
 - [ ] Eval harness: multi-agent vs single-agent comparison
+
+### Shipped since v3.2 (October 2026)
+
+Not part of the original roadmap; listed here so the spec matches the product.
+
+- [x] Pipeline latency cut roughly in half: sources recorded by the tools instead of transcribed by the model, Retriever output cap, level-by-level comment fetching (ADR-009)
+- [x] Live answer draft streamed while the Writer runs (3.9)
+- [x] Follow-up questions that reuse the previous answer's evidence (3.10)
+- [x] Instant replay of repeated questions for 15 minutes, with a "cached" badge (3.6)
+- [x] Every source dated from the HN API (3.4)
+- [x] Honest confidence on thin evidence: search filter relaxation, confidence cap, gap note (3.11)
+- [x] Lenient compaction parsing so one malformed theme no longer discards a whole query
+- [x] Clear error when an LLM API key is rejected, no wasted fallback run (3.12)
+- [x] `GET /api/health/llm` live provider check for operators (7.5)
+- [x] Narration fixes for mobile: Xing header for correct duration, iOS audio unlock (3.8)
+- [x] Opt-in merged writer mode, `PIPELINE_MERGED_WRITER=true` (ADR-010)
+- [x] Eval harness scores the pipeline over SSE by default, with current prices, latency summaries and `--baseline` comparisons
+- [ ] Merged writer on by default (pending a second full eval run)
 
 ### v2.1 -- Intelligence Upgrade
 
@@ -1779,8 +1972,8 @@ _Groq latency targets were set before the switch to OpenRouter (2026-09)._
 
 ### Prerequisites
 
-- Node.js >= 18
-- npm >= 9
+- Node.js 22
+- pnpm 10 (`corepack enable`)
 - At least one LLM API key:
   - OpenRouter: [openrouter.ai/keys](https://openrouter.ai/keys)
   - Mistral: [console.mistral.ai](https://console.mistral.ai)
@@ -1791,13 +1984,16 @@ _Groq latency targets were set before the switch to OpenRouter (2026-09)._
 ```bash
 git clone https://github.com/your-username/voxpopuli.git
 cd voxpopuli
-npm install
+pnpm install
 
 cp .env.example .env
-# Add at least one API key, set LLM_PROVIDER
+# Add at least one API key, set LLM_PROVIDER (default: mistral)
 
-npx nx serve api     # Terminal 1: backend on :3000
-npx nx serve web     # Terminal 2: frontend on :4200
+pnpm exec nx serve api     # Terminal 1: backend on :3000
+pnpm exec nx serve web     # Terminal 2: frontend on :4200
+
+# Check the provider key works
+curl http://localhost:3000/api/health/llm
 
 # Test
 curl -X POST http://localhost:3000/api/rag/query \
@@ -1805,7 +2001,7 @@ curl -X POST http://localhost:3000/api/rag/query \
   -d '{"query": "What does HN think about the best programming fonts?"}'
 
 # Run evals
-npx tsx evals/run-eval.ts
+pnpm exec tsx evals/run-eval.ts
 ```
 
 ---
@@ -1816,8 +2012,6 @@ npx tsx evals/run-eval.ts
 
 | Area                            | Difficulty | Impact    |
 | ------------------------------- | ---------- | --------- |
-| Unit tests for ChunkerService   | Easy       | High      |
-| Retry logic in HnService        | Easy       | Medium    |
 | More eval test queries          | Easy       | High      |
 | Fourth LLM provider (OpenAI)    | Medium     | Medium    |
 | "Saved answers" feature         | Medium     | High      |
