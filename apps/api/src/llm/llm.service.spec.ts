@@ -123,6 +123,23 @@ describe('OpenRouterProvider', () => {
     expect(first).toBe(second);
   });
 
+  it('getModel({ json: true }) requests json_object via modelKwargs, cached separately', () => {
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const provider = new OpenRouterProvider(config);
+
+    const json = provider.getModel({ json: true });
+    expect(ChatOpenAI).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        modelKwargs: {
+          provider: { sort: 'throughput' },
+          response_format: { type: 'json_object' },
+        },
+      }),
+    );
+    expect(provider.getModel({ json: true })).toBe(json);
+    expect(provider.getModel()).not.toBe(json);
+  });
+
   it('throws when OPENROUTER_API_KEY is missing', () => {
     const config = mockConfigService({});
 
@@ -148,6 +165,13 @@ describe('ClaudeProvider', () => {
 
     expect(model).toBeDefined();
     expect((model as Record<string, unknown>)['_llmType']).toBeDefined();
+  });
+
+  it('ignores json (no schema-free JSON mode) and reuses the free-form model', () => {
+    const config = mockConfigService({ ANTHROPIC_API_KEY: 'test-key' });
+    const provider = new ClaudeProvider(config);
+
+    expect(provider.getModel({ json: true })).toBe(provider.getModel());
   });
 
   it('throws when ANTHROPIC_API_KEY is missing', () => {

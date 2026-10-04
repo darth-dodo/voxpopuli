@@ -7,6 +7,18 @@ export interface ModelOptions {
    * so call sites whose useful output is small should bound it.
    */
   maxTokens?: number;
+  /**
+   * Ask the provider for its JSON mode, so the reply is a syntactically valid JSON
+   * object (Mistral and OpenAI-compatible `response_format: { type: 'json_object' }`).
+   * The prompt must still describe the shape; callers keep their lenient parsing as a
+   * fallback. Providers without a schema-free JSON mode (Claude) ignore the flag.
+   */
+  json?: boolean;
+}
+
+/** Cache key for a provider's per-options model instances. */
+export function modelCacheKey(options: ModelOptions = {}): string {
+  return `${options.maxTokens ?? ''}|${options.json ? 'json' : ''}`;
 }
 
 /**
