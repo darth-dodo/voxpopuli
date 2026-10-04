@@ -531,7 +531,7 @@ All pipeline types except `PriorEvidence` use Zod schemas with runtime validatio
 | `LANGSMITH_PROJECT`      | No                       | `voxpopuli-evals`           | LangSmith project for eval feedback                                                                                                                                                |
 | `EVAL_API_URL`           | No                       | `http://localhost:3000`     | API base URL used by the eval harness                                                                                                                                              |
 
-`.env.example` also lists `EVAL_JUDGE_PROVIDER` and `USE_MULTI_AGENT`, but no code currently reads either: the LLM judge calls Mistral directly with `MISTRAL_API_KEY`, and pipeline mode is selected per request by the `useMultiAgent` query param.
+The LLM judge always calls Mistral directly with `MISTRAL_API_KEY`, and pipeline mode is selected per request by the `useMultiAgent` query param (there is no env var for either).
 
 ### Validation
 

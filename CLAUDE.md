@@ -162,7 +162,7 @@ pnpm exec tsx evals/run-eval.ts --no-stream    # POST /rag/query instead of SSE 
 | Eval query count           | 27: 20 general (tool_comparison, opinion, specific_project, recent_events, deep_dive, edge_case) + 7 trust                   |
 | Eval default path          | Multi-agent pipeline over SSE (`--legacy`, `--no-stream` opt out)                                                            |
 | Eval pass threshold        | 0.6 weighted score                                                                                                           |
-| Eval judge provider        | Mistral (configurable via EVAL_JUDGE_PROVIDER)                                                                               |
+| Eval judge provider        | Mistral (`mistral-large-latest`, direct API call with `MISTRAL_API_KEY`)                                                     |
 | Eval score weights         | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10%                                                               |
 | Eval concurrency           | 3 default, 5 max                                                                                                             |
 | Eval timeout               | 300s default per query                                                                                                       |

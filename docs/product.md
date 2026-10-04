@@ -1392,7 +1392,7 @@ Success metrics (Section 15) are aspirational without tooling to measure them. T
 
 A run that fell back to the legacy agent scores 0 on cost and efficiency, because only the fallback's tokens and steps are reported and the failed pipeline run would otherwise look cheap.
 
-**LLM-as-judge:** A direct Mistral API call evaluates the answer against expected qualities. Configurable via `EVAL_JUDGE_PROVIDER` env var. The judge strips markdown fences from LLM responses and is fully decoupled from the NestJS app -- it makes its own HTTP call to the provider's OpenAI-compatible endpoint. When LangSmith is enabled, individual evaluator scores are posted as feedback to each trace.
+**LLM-as-judge:** A direct Mistral API call evaluates the answer against expected qualities. The judge strips markdown fences from LLM responses and is fully decoupled from the NestJS app -- it makes its own HTTP call to the provider's OpenAI-compatible endpoint. When LangSmith is enabled, individual evaluator scores are posted as feedback to each trace.
 
 ### 12.4 Running Evals
 

@@ -111,7 +111,7 @@ Each source's `storyId` is verified against the HN Firebase API (`hacker-news.fi
 
 ### Quality Checklist (LLM-as-Judge)
 
-Uses the judge provider (default: Mistral, configurable via `EVAL_JUDGE_PROVIDER`) to check the response against `expectedQualities` from `queries.json`. Each quality is scored as met/not-met. Skipped with `--no-judge` (score defaults to 0).
+Calls the Mistral API directly (`mistral-large-latest`, requires `MISTRAL_API_KEY`) to check the response against `expectedQualities` from `queries.json`. Each quality is scored as met/not-met. Skipped with `--no-judge` (score defaults to 0).
 
 ## Query Categories
 
@@ -194,10 +194,9 @@ The harness is fully black-box — it calls the API over HTTP, never imports Nes
 
 ## Environment Variables
 
-| Variable              | Required | Description                                     |
-| --------------------- | -------- | ----------------------------------------------- |
-| `EVAL_API_URL`        | No       | API base URL (default: `http://localhost:3000`) |
-| `LLM_PROVIDER`        | No       | Default provider (default: `mistral`)           |
-| `EVAL_JUDGE_PROVIDER` | No       | LLM-as-judge provider (default: `mistral`)      |
-| `LANGSMITH_API_KEY`   | No       | LangSmith API key for dataset sync              |
-| `LANGSMITH_TRACING`   | No       | Enable LangSmith tracing (`true`/`false`)       |
+| Variable            | Required | Description                                     |
+| ------------------- | -------- | ----------------------------------------------- |
+| `EVAL_API_URL`      | No       | API base URL (default: `http://localhost:3000`) |
+| `LLM_PROVIDER`      | No       | Default provider (default: `mistral`)           |
+| `LANGSMITH_API_KEY` | No       | LangSmith API key for dataset sync              |
+| `LANGSMITH_TRACING` | No       | Enable LangSmith tracing (`true`/`false`)       |
