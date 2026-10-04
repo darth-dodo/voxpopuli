@@ -93,7 +93,7 @@ QueryStore was chosen because:
 
 ### Negative
 
-- **In-memory only.** `CacheService` uses `lru-cache` (per-process). Server restart or multi-node deployment loses stored results. Acceptable for MVP; Redis would fix without API changes.
+- **In-memory only.** `CacheService` uses `lru-cache` (per-process). Server restart or multi-node deployment loses stored results. Acceptable for MVP; Redis would fix without API changes. _Addressed by ADR-011: setting `REDIS_URL` persists completed results, follow-up evidence and the result lookup; attaching to a running query stays in-process._
 - **5-minute window.** Results expire after 5 minutes. Sufficient for background-return, insufficient for "come back tomorrow." Extending TTL or adding persistence is a future concern.
 - **New SSE event type.** The `init` event with `queryId` is a breaking change for any client that doesn't handle it. Since VoxPopuli controls both client and server, this is low risk.
 

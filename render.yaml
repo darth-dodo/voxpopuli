@@ -59,5 +59,9 @@ envVarGroups:
         value: en_paul_neutral
       - key: SENTRY_DSN
         sync: false
+      # Optional: Render Key Value internal URL (redis://red-...:6379) so query results
+      # survive deploys. Not provisioned here; see docs/adr/011-persistent-query-store.md.
+      - key: REDIS_URL
+        sync: false
       - key: FRONTEND_URL
         value: https://voxpopuli-web-embx.onrender.com,https://voxpopuli-web-1o3v.onrender.com

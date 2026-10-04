@@ -16,9 +16,10 @@ import {
   ValidationPipe,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { Observable } from 'rxjs';
+import { Observable, defer, switchMap } from 'rxjs';
 import type {
   AgentResponse,
+  PriorEvidence,
   QueryResult,
   StoredPipelineEvent,
   AgentStep,
@@ -123,12 +124,14 @@ export class RagController {
    *
    * Returns 200 with full {@link QueryResult} when complete or errored,
    * 202 with partial data when still running, or 404 if not found/expired.
+   * With `REDIS_URL` set, results completed before a restart (or on another
+   * instance) are found too; a query running elsewhere returns 202 with no events.
    *
    * @param queryId - The UUID returned by the SSE `init` event
    */
   @Get('query/:id/result')
-  getResult(@Param('id') queryId: string, @Res() res: Response): void {
-    const result = this.queryStore.get(queryId);
+  async getResult(@Param('id') queryId: string, @Res() res: Response): Promise<void> {
+    const result = await this.queryStore.findResult(queryId);
     if (!result) {
       throw new HttpException('Query not found or expired', HttpStatus.NOT_FOUND);
     }
@@ -196,11 +199,21 @@ export class RagController {
   private streamLegacy(query: string, provider?: string): Observable<MessageEvent> {
     // Attach to an identical in-flight query, or replay a recently completed one
     const storeKey = `${provider ?? 'default'}:legacy`;
-    const existing = this.queryStore.findReusable(query, storeKey);
-    if (existing) {
-      return this.pollExistingQuery(existing.queryId, existing.complete);
-    }
+    return defer(async () => {
+      const existing = await this.queryStore.findReusable(query, storeKey);
+      if (existing) {
+        return this.pollExistingQuery(existing.queryId, existing.complete);
+      }
+      return this.runLegacyStream(query, storeKey, provider);
+    }).pipe(switchMap((stream) => stream));
+  }
 
+  /** Start a fresh legacy agent run and stream it (no reusable result was found). */
+  private runLegacyStream(
+    query: string,
+    storeKey: string,
+    provider?: string,
+  ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;
@@ -314,18 +327,29 @@ export class RagController {
     provider?: string,
     followUpOf?: string,
   ): Observable<MessageEvent> {
-    // A follow-up reuses the earlier run's evidence. If it has expired, the question
-    // simply runs as a fresh query.
-    const prior = followUpOf ? this.queryStore.getEvidence(followUpOf) : undefined;
+    return defer(async () => {
+      // A follow-up reuses the earlier run's evidence. If it has expired, the question
+      // simply runs as a fresh query.
+      const prior = followUpOf ? await this.queryStore.getEvidence(followUpOf) : undefined;
 
-    // Attach to an identical in-flight query, or replay a recently completed one.
-    // Follow-ups are keyed by their parent so they never replay an unrelated answer.
-    const storeKey = `${provider ?? 'default'}:pipeline${prior ? `:followup:${followUpOf}` : ''}`;
-    const existing = this.queryStore.findReusable(query, storeKey);
-    if (existing) {
-      return this.pollExistingQuery(existing.queryId, existing.complete);
-    }
+      // Attach to an identical in-flight query, or replay a recently completed one.
+      // Follow-ups are keyed by their parent so they never replay an unrelated answer.
+      const storeKey = `${provider ?? 'default'}:pipeline${prior ? `:followup:${followUpOf}` : ''}`;
+      const existing = await this.queryStore.findReusable(query, storeKey);
+      if (existing) {
+        return this.pollExistingQuery(existing.queryId, existing.complete);
+      }
+      return this.runMultiAgentStream(query, storeKey, provider, prior);
+    }).pipe(switchMap((stream) => stream));
+  }
 
+  /** Start a fresh pipeline run and stream it (no reusable result was found). */
+  private runMultiAgentStream(
+    query: string,
+    storeKey: string,
+    provider?: string,
+    prior?: PriorEvidence,
+  ): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
       let eventId = 0;
       let cancelled = false;

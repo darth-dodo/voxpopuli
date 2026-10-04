@@ -31,6 +31,11 @@ export class EnvironmentVariables {
   @IsOptional()
   MISTRAL_TTS_VOICE?: string;
 
+  /** Optional Redis / Render Key Value URL; persists query results across restarts (ADR-011). */
+  @IsString()
+  @IsOptional()
+  REDIS_URL?: string;
+
   @Type(() => Number)
   @IsNumber()
   @IsOptional()

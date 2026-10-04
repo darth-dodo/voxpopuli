@@ -281,6 +281,8 @@ Single source of truth for all API contracts. Both apps import from `@voxpopuli/
 | QueryStore: evidence             | 30 min | `PriorEvidence` for follow-up questions             |
 | LLM health probe                 | 60 s   | Result of `GET /api/health/llm` (limits probe cost) |
 
+With `REDIS_URL` set, the three QueryStore rows are also written through to Redis (native TTLs) so they survive restarts; everything else stays in-process. See ADR-011.
+
 ### 2.3 HnModule
 
 Two HTTP clients behind one service, all calls wrapped with CacheService.
@@ -563,7 +565,7 @@ Thin controller layer over `OrchestratorService`, `AgentService` and `QueryStore
 | `error`                              | `{ message }`                                                   | Run failed (e.g. `LlmAuthError`, or the legacy fallback also failed)        |
 | `ping`                               | empty                                                           | Heartbeat every 10 s (keeps mobile connections open, feeds stall detection) |
 
-**QueryStore:** An in-memory `QueryStore` (`apps/api/src/cache/query-store.ts`, on top of `CacheService`) manages the query lifecycle. `create()` returns a UUID queryId; pipeline events and steps are buffered with `appendEvent()` / `appendStep()`; `complete()` / `fail()` set the final state.
+**QueryStore:** `QueryStore` (`apps/api/src/cache/query-store.ts`, on top of `CacheService`, plus an optional Redis write-through layer when `REDIS_URL` is set, ADR-011) manages the query lifecycle. `create()` returns a UUID queryId; pipeline events and steps are buffered with `appendEvent()` / `appendStep()`; `complete()` / `fail()` set the final state.
 
 - **Dedup and replay:** Before starting a run, the controller calls `findReusable(query, storeKey)`. The key hashes the query with case and whitespace normalized, plus a mode-specific store key: `<provider>:pipeline`, `<provider>:legacy`, or `<provider>:pipeline:followup:<parentId>` (`provider` is `default` when the client didn't send one). If an identical query is **still running**, the new SSE connection attaches to it via `pollExistingQuery()` (polls the store every 2 s and re-emits buffered events) instead of spawning a second agent run. If one **completed within the last 15 minutes** (`COMPLETED_TTL = 900`), the stored answer is replayed immediately, with `meta.cached: true`. Failed queries are never reused. A running entry lives 5 minutes (`QUERY_TTL`).
 - **Follow-up evidence:** When a pipeline run completes with evidence, the controller calls `setEvidence(queryId, PriorEvidence)` (kept 30 minutes, `EVIDENCE_TTL = 1800`). `GET /api/rag/stream?followUpOf=<queryId>` looks it up with `getEvidence()` and passes it to the orchestrator, which skips the Retriever. Follow-ups are keyed by their parent, so they never replay an unrelated answer; an expired parent makes the question run as a fresh query.
@@ -1229,6 +1231,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 # Experimental: skip the Synthesizer's LLM call (see ADR-010)
 PIPELINE_MERGED_WRITER=false
+
+# Optional: persist query results across restarts (ADR-011)
+REDIS_URL=                                  # e.g. Render Key Value internal URL
 
 # TTS via Mistral Voxtral (uses MISTRAL_API_KEY)
 MISTRAL_TTS_MODEL=voxtral-mini-tts-latest    # optional override

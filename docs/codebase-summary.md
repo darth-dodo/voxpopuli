@@ -185,7 +185,7 @@ voxpopuli/
 | ------------ | ---------------------------------------------------------------------------------------------------- |
 | Purpose      | In-memory LRU cache wrapping `lru-cache`, plus the per-query result store                            |
 | Scope        | `@Global()` -- `CacheService` and `QueryStore` available to all modules without explicit import      |
-| Key classes  | `CacheService`, `QueryStore`                                                                         |
+| Key classes  | `CacheService`, `QueryStore`, `KeyValueStore` (memory or Redis via `REDIS_URL`, ADR-011)             |
 | Key methods  | `getOrSet<T>(key, fetcher, ttl)`, `get<T>(key)`, `set<T>(key, value, ttl)`, `del(key)`, `getStats()` |
 | Test files   | `cache.service.spec.ts`, `query-store.spec.ts`                                                       |
 | Dependencies | `lru-cache`, `@voxpopuli/shared-types` (CacheStats, QueryResult, PriorEvidence)                      |
@@ -521,6 +521,7 @@ All pipeline types except `PriorEvidence` use Zod schemas with runtime validatio
 | `PIPELINE_MERGED_WRITER` | No                       | `false`                     | `true` skips the Synthesizer's LLM call and lets the Writer analyze the evidence directly (ADR-010)                                                                                |
 | `MISTRAL_TTS_MODEL`      | No                       | `voxtral-mini-tts-latest`   | Voxtral TTS model for narration (uses `MISTRAL_API_KEY`)                                                                                                                           |
 | `MISTRAL_TTS_VOICE`      | No                       | `en_paul_neutral`           | Narrator voice: Voxtral preset slug or custom voice UUID                                                                                                                           |
+| `REDIS_URL`              | No                       | --                          | Redis / Render Key Value URL; persists completed results, follow-up evidence and result lookups across restarts (ADR-011). Unset = in-memory                                       |
 | `PORT`                   | No                       | `3000`                      | HTTP server port                                                                                                                                                                   |
 | `LOG_LEVEL`              | No                       | `info`                      | Pino log level                                                                                                                                                                     |
 | `NODE_ENV`               | No                       | `development`               | Enables pretty-printed logs and disables Sentry event sending in non-production                                                                                                    |

@@ -98,6 +98,7 @@ describe('RagController', () => {
     fail: jest.Mock;
     findRunning: jest.Mock;
     findReusable: jest.Mock;
+    findResult: jest.Mock;
     getEvidence: jest.Mock;
     setEvidence: jest.Mock;
   };
@@ -115,6 +116,7 @@ describe('RagController', () => {
       fail: jest.fn(),
       findRunning: jest.fn(),
       findReusable: jest.fn(),
+      findResult: jest.fn(),
       getEvidence: jest.fn(),
       setEvidence: jest.fn(),
     };
@@ -587,7 +589,7 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 18. GET /query/:id/result returns 200 for completed query
   // -------------------------------------------------------------------------
-  it('GET /query/:id/result should return completed QueryResult', () => {
+  it('GET /query/:id/result should return completed QueryResult', async () => {
     const result = {
       queryId: 'abc-123',
       status: 'complete' as const,
@@ -598,14 +600,14 @@ describe('RagController', () => {
       createdAt: Date.now(),
       completedAt: Date.now(),
     };
-    queryStore.get.mockReturnValue(result);
+    queryStore.findResult.mockResolvedValue(result);
 
     const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     } as unknown as import('express').Response;
-    controller.getResult('abc-123', res);
-    expect(queryStore.get).toHaveBeenCalledWith('abc-123');
+    await controller.getResult('abc-123', res);
+    expect(queryStore.findResult).toHaveBeenCalledWith('abc-123');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(result);
   });
@@ -613,15 +615,15 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 19. GET /query/:id/result returns 404 for missing query
   // -------------------------------------------------------------------------
-  it('GET /query/:id/result should throw 404 for unknown queryId', () => {
-    queryStore.get.mockReturnValue(undefined);
+  it('GET /query/:id/result should throw 404 for unknown queryId', async () => {
+    queryStore.findResult.mockResolvedValue(undefined);
     const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     } as unknown as import('express').Response;
 
     try {
-      controller.getResult('nonexistent', res);
+      await controller.getResult('nonexistent', res);
       fail('Expected HttpException');
     } catch (err) {
       expect(err).toBeInstanceOf(HttpException);
@@ -632,7 +634,7 @@ describe('RagController', () => {
   // -------------------------------------------------------------------------
   // 20. GET /query/:id/result returns 202 for running query
   // -------------------------------------------------------------------------
-  it('GET /query/:id/result should return 202 for running query with partial data', () => {
+  it('GET /query/:id/result should return 202 for running query with partial data', async () => {
     const result = {
       queryId: 'running-123',
       status: 'running' as const,
@@ -643,13 +645,13 @@ describe('RagController', () => {
       createdAt: Date.now(),
       completedAt: null,
     };
-    queryStore.get.mockReturnValue(result);
+    queryStore.findResult.mockResolvedValue(result);
 
     const res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
     } as unknown as import('express').Response;
-    controller.getResult('running-123', res);
+    await controller.getResult('running-123', res);
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({

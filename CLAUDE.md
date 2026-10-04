@@ -46,6 +46,7 @@ apps/api/src/          # NestJS backend (agent, cache, chunker, health, hn, llm,
     model-ids.ts       #     Model IDs per provider
   cache/               #   CacheService — in-memory caching layer
     query-store.ts     #     QueryStore — stored results, dedup, 15-min replay, follow-up evidence
+    key-value-store.ts #     KeyValueStore — in-memory or Redis (REDIS_URL) durable layer (ADR-011)
   health/              #   GET /health, GET /health/llm (cached 60s live provider probe)
   hn/                  #   HN API client (stories, comments, search, retry with backoff)
   tts/                 #   TtsService (Mistral Voxtral), narration rewrite prompt
@@ -183,6 +184,8 @@ pnpm exec tsx evals/run-eval.ts --no-stream    # POST /rag/query instead of SSE 
 
 The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), defaulting to `mistral`. Only that provider's API key is required. The frontend also defaults to Mistral via the `selectedProvider` model signal. See `.env.example` for all keys.
 
+**Persistence:** `REDIS_URL` (optional, e.g. a Render Key Value internal URL) makes `QueryStore` write completed results, follow-up evidence, dedup entries and a "running" marker through to Redis, so replay, follow-ups and `GET /rag/query/:id/result` survive restarts. Attaching to a running query stays in-process. Unset = in-memory only (dev/tests need no Redis). Redis errors degrade to misses. See ADR-011.
+
 **Merged writer:** `PIPELINE_MERGED_WRITER=true` (default `false`) swaps the Synthesizer for `createMergedSynthesizerNode()` (no LLM call; `analysisFromThemes()`) and runs the Writer in `fromEvidence` mode with `MERGED_WRITER_SYSTEM_PROMPT`. See ADR-010.
 
 **OpenRouter:** `OpenRouterProvider` uses LangChain `ChatOpenAI` pointed at `https://openrouter.ai/api/v1` (requires `OPENROUTER_API_KEY`). The model is an OpenRouter slug in `model-ids.ts` (`OPENROUTER_MODEL_ID`, currently `qwen/qwen3-235b-a22b-2507`; override with the `OPENROUTER_MODEL` env var). The class accepts `{ name, model, maxContextTokens }` so more OpenRouter-backed providers can be registered in `PROVIDER_FACTORIES` without new classes — the long-term plan is to route every provider through OpenRouter. `@langchain/openai` is pinned to `1.4.1` because newer versions require `@langchain/core` >= 1.1.48.
@@ -234,6 +237,7 @@ ADRs live in `docs/adr/` (plus `docs/adrs/001-ci-cd-and-quality-gates.md`) and d
 - `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
 - `009-pipeline-latency.md` — Latency investigation; LLM writes only judgement, code supplies source metadata; eval SSE timings and `--baseline`
 - `010-merged-writer-and-model-speed.md` — Opt-in `PIPELINE_MERGED_WRITER` (−27% mean latency in eval) and OpenRouter model throughput benchmark
+- `011-persistent-query-store.md` — Optional Redis (`REDIS_URL`) write-through for QueryStore; what is and isn't shared across restarts
 
 ## Linear Project
 

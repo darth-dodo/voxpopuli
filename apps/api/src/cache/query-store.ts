@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import type {
@@ -9,6 +9,12 @@ import type {
   QueryResult,
 } from '@voxpopuli/shared-types';
 import { CacheService } from './cache.service';
+import {
+  KEY_VALUE_STORE,
+  MemoryKeyValueStore,
+  RedisKeyValueStore,
+  type KeyValueStore,
+} from './key-value-store';
 
 /** TTL for query results: 5 minutes. */
 const QUERY_TTL = 300;
@@ -27,10 +33,32 @@ const EVIDENCE_TTL = 1800;
  * Manages the lifecycle of query results, wrapping {@link CacheService}
  * to store agent results by queryId with create/get/complete/fail
  * lifecycle methods, event/step buffering, and query deduplication.
+ *
+ * Two layers (ADR-011):
+ * - **Process-local** ({@link CacheService}, synchronous): the source of truth
+ *   for this process — running entries with their buffered events/steps, which
+ *   the SSE attach path polls. Running queries never leave this process.
+ * - **Durable** ({@link KeyValueStore}, async, Redis when `REDIS_URL` is set):
+ *   write-through copies of completed/failed results, a lightweight "running"
+ *   marker, the dedup index and follow-up evidence, so replay, result lookup and
+ *   follow-ups survive a restart. Reads fall back to it only on a local miss.
+ *   Without `REDIS_URL` the durable layer is skipped and behavior is in-memory only.
  */
 @Injectable()
-export class QueryStore {
-  constructor(private readonly cache: CacheService) {}
+export class QueryStore implements OnModuleDestroy {
+  private readonly kv: KeyValueStore;
+
+  constructor(
+    private readonly cache: CacheService,
+    @Optional() @Inject(KEY_VALUE_STORE) kv?: KeyValueStore,
+  ) {
+    this.kv = kv ?? new MemoryKeyValueStore(cache);
+  }
+
+  /** Close the Redis connection on shutdown. */
+  async onModuleDestroy(): Promise<void> {
+    if (this.kv instanceof RedisKeyValueStore) await this.kv.close();
+  }
 
   /**
    * Create a new query entry. Returns the queryId (UUID v4).
@@ -53,7 +81,12 @@ export class QueryStore {
     };
     this.cache.set(`query:${queryId}`, entry, QUERY_TTL);
     // Dedup index: map query+provider hash to queryId (lives as long as a completed answer)
-    this.cache.set(`dedup:${this.dedupKey(query, provider)}`, queryId, COMPLETED_TTL);
+    const dedupKey = `dedup:${this.dedupKey(query, provider)}`;
+    this.cache.set(dedupKey, queryId, COMPLETED_TTL);
+    // Lightweight "running" marker (no events/steps) so another process — or this
+    // one after a restart — can answer GET /query/:id/result with 202.
+    this.persist(`query:${queryId}`, { ...entry, pipelineEvents: [], steps: [] }, QUERY_TTL);
+    this.persist(dedupKey, queryId, COMPLETED_TTL);
     return queryId;
   }
 
@@ -96,6 +129,7 @@ export class QueryStore {
     entry.response = response;
     entry.completedAt = Date.now();
     this.cache.set(`query:${queryId}`, entry, COMPLETED_TTL);
+    this.persist(`query:${queryId}`, entry, COMPLETED_TTL);
   }
 
   /**
@@ -111,6 +145,7 @@ export class QueryStore {
     entry.error = error;
     entry.completedAt = Date.now();
     this.cache.set(`query:${queryId}`, entry, QUERY_TTL);
+    this.persist(`query:${queryId}`, entry, QUERY_TTL);
   }
 
   /**
@@ -121,6 +156,20 @@ export class QueryStore {
    */
   get(queryId: string): QueryResult | undefined {
     return this.cache.get<QueryResult>(`query:${queryId}`);
+  }
+
+  /**
+   * Look up a query result in this process, then in the durable store (e.g. a
+   * result completed before a restart). A durable-only running entry is a marker
+   * without events or steps.
+   *
+   * @param queryId - The query identifier
+   * @returns The stored query result, or `undefined` if not found or expired
+   */
+  async findResult(queryId: string): Promise<QueryResult | undefined> {
+    const local = this.get(queryId);
+    if (local || !this.kv.durable) return local;
+    return this.kv.get<QueryResult>(`query:${queryId}`);
   }
 
   /**
@@ -148,6 +197,7 @@ export class QueryStore {
    */
   setEvidence(queryId: string, evidence: PriorEvidence): void {
     this.cache.set(`evidence:${queryId}`, evidence, EVIDENCE_TTL);
+    this.persist(`evidence:${queryId}`, evidence, EVIDENCE_TTL);
   }
 
   /**
@@ -156,8 +206,10 @@ export class QueryStore {
    * @param queryId - The earlier query's identifier
    * @returns The stored evidence, or `undefined`
    */
-  getEvidence(queryId: string): PriorEvidence | undefined {
-    return this.cache.get<PriorEvidence>(`evidence:${queryId}`);
+  async getEvidence(queryId: string): Promise<PriorEvidence | undefined> {
+    const local = this.cache.get<PriorEvidence>(`evidence:${queryId}`);
+    if (local || !this.kv.durable) return local;
+    return this.kv.get<PriorEvidence>(`evidence:${queryId}`);
   }
 
   /**
@@ -165,19 +217,45 @@ export class QueryStore {
    * one that completed within {@link COMPLETED_TTL} (replay it). Failed queries are
    * never reused.
    *
+   * On a local miss the durable store is consulted: a completed answer found there
+   * (e.g. from before a restart) is copied into this process so the SSE replay path
+   * can read it. A query running in another process cannot be attached to — its
+   * events live in that process — so it is not reused.
+   *
    * @param query    - The user's query text
    * @param provider - The LLM provider name (callers include the pipeline mode)
    * @returns The queryId and whether it has already completed, or null
    */
-  findReusable(query: string, provider: string): { queryId: string; complete: boolean } | null {
-    const existingId = this.cache.get<string>(`dedup:${this.dedupKey(query, provider)}`);
-    if (!existingId) return null;
-    const entry = this.get(existingId);
-    if (entry?.status === 'running') return { queryId: existingId, complete: false };
-    if (entry?.status === 'complete' && entry.response) {
-      return { queryId: existingId, complete: true };
+  async findReusable(
+    query: string,
+    provider: string,
+  ): Promise<{ queryId: string; complete: boolean } | null> {
+    const dedupKey = `dedup:${this.dedupKey(query, provider)}`;
+    const existingId = this.cache.get<string>(dedupKey);
+    if (existingId) {
+      const entry = this.get(existingId);
+      if (entry?.status === 'running') return { queryId: existingId, complete: false };
+      if (entry?.status === 'complete' && entry.response) {
+        return { queryId: existingId, complete: true };
+      }
+      return null;
     }
-    return null;
+    if (!this.kv.durable) return null;
+
+    const durableId = await this.kv.get<string>(dedupKey);
+    if (!durableId) return null;
+    const entry = await this.kv.get<QueryResult>(`query:${durableId}`);
+    if (entry?.status !== 'complete' || !entry.response) return null;
+    // Hydrate locally just long enough for the replay to read it.
+    this.cache.set(`query:${durableId}`, entry, QUERY_TTL);
+    return { queryId: durableId, complete: true };
+  }
+
+  /** Write-through to the durable store; a no-op when it is in-memory. */
+  private persist<T>(key: string, value: T, ttlSeconds: number): void {
+    if (!this.kv.durable) return;
+    // KeyValueStore implementations swallow and log their own errors.
+    void this.kv.set(key, value, ttlSeconds);
   }
 
   /**
