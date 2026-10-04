@@ -4,7 +4,7 @@ import type { AgentResponse, AgentStep, AgentSource } from '@voxpopuli/shared-ty
 import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
-import { createAgentTools } from './tools';
+import { createAgentTools, type SourceRegistry } from './tools';
 import { AGENT_SYSTEM_PROMPT } from './system-prompt';
 import { computeTrustMetadata } from './trust';
 import { buildPartialResponse } from './partial-response';
@@ -126,7 +126,9 @@ export class AgentService {
               },
             })
           : baseModel;
-      const tools = createAgentTools(this.hn, this.chunker);
+      // Structured story metadata (url, postedDate, ...) recorded by the tools.
+      const registry: SourceRegistry = new Map();
+      const tools = createAgentTools(this.hn, this.chunker, registry);
 
       const currentDate = new Date().toISOString().split('T')[0];
       const systemPrompt = AGENT_SYSTEM_PROMPT.replace(
@@ -262,7 +264,7 @@ export class AgentService {
           throw new LlmAuthError(options?.provider ?? this.llm.getProviderName());
         }
 
-        const sources = Array.from(sourcesMap.values());
+        const sources = this.collectSources(sourcesMap, registry);
         const partial = buildPartialResponse(
           steps,
           sources,
@@ -281,7 +283,7 @@ export class AgentService {
       }
 
       const durationMs = Date.now() - startTime;
-      const sources = Array.from(sourcesMap.values());
+      const sources = this.collectSources(sourcesMap, registry);
 
       // If we hit the step limit without a final answer, build a partial response
       if (!finalAnswer && actionCount >= maxSteps) {
@@ -324,6 +326,21 @@ export class AgentService {
     } finally {
       this.activeConcurrent--;
     }
+  }
+
+  /**
+   * Final source list: the stories referenced in tool output, enriched with the
+   * structured metadata (url, comment count, postedDate) the tools recorded in
+   * the registry. Trust recency relies on `postedDate`.
+   */
+  private collectSources(
+    sourcesMap: Map<number, AgentSource>,
+    registry: SourceRegistry,
+  ): AgentSource[] {
+    return Array.from(sourcesMap.values(), (source) => {
+      const recorded = registry.get(source.storyId);
+      return recorded ? { ...source, ...recorded } : source;
+    });
   }
 
   /**

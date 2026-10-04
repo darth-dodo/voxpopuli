@@ -124,4 +124,17 @@ describe('buildFallbackResponse', () => {
     expect(result.trust).toBeDefined();
     expect(result.trust.sourcesTotal).toBe(2);
   });
+
+  it('should compute trust recency from the bundle sources postedDate', () => {
+    const postedDate = new Date(Date.now() - 900 * 86_400_000).toISOString().slice(0, 10);
+    const bundle: EvidenceBundle = {
+      ...mockBundle,
+      allSources: mockBundle.allSources.map((s) => ({ ...s, postedDate })),
+    };
+    const result = buildFallbackResponse(mockAnalysis, bundle, mockMeta);
+    expect(result.trust.avgSourceAge).toBeGreaterThanOrEqual(899);
+    expect(result.trust.avgSourceAge).toBeLessThanOrEqual(901);
+    expect(result.trust.recentSourceRatio).toBe(0);
+    expect(result.trust.honestyFlags).toContain('old_sources_noted');
+  });
 });

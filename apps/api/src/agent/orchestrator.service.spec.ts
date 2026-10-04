@@ -79,7 +79,17 @@ const mockResponseV2: AgentResponseV2 = {
     { heading: 'S2', body: 'Body 2', citedSources: [1] },
   ],
   bottomLine: 'Test bottom line',
-  sources: [{ storyId: 1, title: 'S1', url: '', author: 'a', points: 10, commentCount: 5 }],
+  sources: [
+    {
+      storyId: 1,
+      title: 'S1',
+      url: '',
+      author: 'a',
+      points: 10,
+      commentCount: 5,
+      postedDate: '2020-01-15',
+    },
+  ],
 };
 
 const defaultConfig: PipelineConfig = {
@@ -285,6 +295,9 @@ describe('OrchestratorService', () => {
       expect(complete.response.meta.provider).toBe('openrouter');
       expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
       expect(complete.response.trust).toBeDefined();
+      // Recency comes from the sources' structured postedDate, not tool text.
+      expect(complete.response.trust['avgSourceAge']).toBeGreaterThan(730);
+      expect(complete.response.trust['honestyFlags']).toContain('old_sources_noted');
     });
 
     it('emits step events from retriever custom events in real-time', async () => {
