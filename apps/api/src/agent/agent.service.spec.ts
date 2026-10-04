@@ -7,6 +7,7 @@ import { ChunkerService } from '../chunker/chunker.service';
 import { createAgent } from 'langchain';
 import { AGENT_SYSTEM_PROMPT } from './system-prompt';
 import type { AgentResponse } from '@voxpopuli/shared-types';
+import { createAgentTools, type SourceRegistry } from './tools';
 
 // ---------------------------------------------------------------------------
 // Mock the langchain module
@@ -282,6 +283,55 @@ describe('AgentService', () => {
     expect(actionSteps.length).toBeGreaterThanOrEqual(1);
     expect(observationSteps.length).toBeGreaterThanOrEqual(1);
     expect(actionSteps[0].toolName).toBe('search_hn');
+  });
+
+  // -------------------------------------------------------------------------
+  // 6b. should enrich sources from the tools' SourceRegistry (search-only recency)
+  // -------------------------------------------------------------------------
+  it('should enrich sources with registry metadata so search-only runs get recency', async () => {
+    const postedDate = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    // The real search_hn tool records each hit in the registry passed to createAgentTools.
+    (createAgentTools as jest.Mock).mockImplementationOnce(
+      (_hn: unknown, _chunker: unknown, registry: SourceRegistry) => {
+        registry.set(12345, {
+          storyId: 12345,
+          title: 'Rust 2.0',
+          url: 'https://example.com/rust',
+          author: 'rustdev',
+          points: 150,
+          commentCount: 42,
+          postedDate,
+        });
+        return [];
+      },
+    );
+
+    const mockStream = createMockStream([
+      { messages: [fakeToolCallMessage('search_hn', { query: 'rust' })] },
+      {
+        messages: [
+          fakeToolMessage('[12345] "Rust 2.0" by rustdev (150 points, 42 comments)', 'search_hn'),
+        ],
+      },
+      { messages: [fakeAIMessage('Rust is popular.')] },
+    ]);
+    (createAgent as jest.Mock).mockReturnValue({
+      stream: jest.fn().mockResolvedValue(mockStream),
+    });
+
+    const result = await service.run('What does HN think about Rust?');
+
+    expect(result.sources).toEqual([
+      expect.objectContaining({
+        storyId: 12345,
+        url: 'https://example.com/rust',
+        commentCount: 42,
+        postedDate,
+      }),
+    ]);
+    expect(result.trust.avgSourceAge).toBeGreaterThanOrEqual(29);
+    expect(result.trust.avgSourceAge).toBeLessThanOrEqual(31);
+    expect(result.trust.recentSourceRatio).toBe(1);
   });
 
   // =========================================================================

@@ -25,10 +25,15 @@ function makeSource(overrides: Partial<AgentSource> = {}): AgentSource {
   };
 }
 
-/** Create a "Posted: YYYY-MM-DD" date string for N days ago. */
+/** Create a YYYY-MM-DD date string for N days ago. */
 function daysAgoDateStr(days: number): string {
   const d = new Date(Date.now() - days * 86_400_000);
   return d.toISOString().split('T')[0];
+}
+
+/** Sources (distinct story IDs) posted the given numbers of days ago. */
+function sourcesPostedDaysAgo(...days: number[]): AgentSource[] {
+  return days.map((d, i) => makeSource({ storyId: i + 1, postedDate: daysAgoDateStr(d) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -103,43 +108,34 @@ describe('computeTrustMetadata', () => {
   // -------------------------------------------------------------------------
 
   describe('date extraction and recency', () => {
-    it('should extract dates from "Posted: YYYY-MM-DD" in observation toolOutput', () => {
-      const recentDate = daysAgoDateStr(30);
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolName: 'get_story',
-          toolOutput: `[1] "Story" by user\nPosted: ${recentDate}`,
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
+    it('should compute avgSourceAge from source postedDate', () => {
+      const result = computeTrustMetadata([], sourcesPostedDaysAgo(30), 'Answer');
 
       // avgSourceAge should be approximately 30 days
       expect(result.avgSourceAge).toBeGreaterThanOrEqual(29);
       expect(result.avgSourceAge).toBeLessThanOrEqual(31);
     });
 
-    it('should compute avgSourceAge as average of all dates', () => {
-      const date1 = daysAgoDateStr(100);
-      const date2 = daysAgoDateStr(200);
+    it('should report recency for search-only runs (no get_story calls)', () => {
       const steps: AgentStep[] = [
+        makeStep({ type: 'action', content: '', toolName: 'search_hn' }),
         makeStep({
           type: 'observation',
           content: '',
-          toolName: 'get_story',
-          toolOutput: `Posted: ${date1}`,
-        }),
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolName: 'get_story',
-          toolOutput: `Posted: ${date2}`,
+          toolName: 'search_hn',
+          toolOutput: '[1] "Story A" by user1 (10 points)',
         }),
       ];
 
-      const result = computeTrustMetadata(steps, [], 'Answer');
+      const result = computeTrustMetadata(steps, sourcesPostedDaysAgo(40), 'Answer');
+
+      expect(result.avgSourceAge).toBeGreaterThanOrEqual(39);
+      expect(result.avgSourceAge).toBeLessThanOrEqual(41);
+      expect(result.recentSourceRatio).toBe(1);
+    });
+
+    it('should compute avgSourceAge as average of all source dates', () => {
+      const result = computeTrustMetadata([], sourcesPostedDaysAgo(100, 200), 'Answer');
 
       // Average should be ~150 days
       expect(result.avgSourceAge).toBeGreaterThanOrEqual(149);
@@ -147,34 +143,48 @@ describe('computeTrustMetadata', () => {
     });
 
     it('should compute recentSourceRatio for sources within 365 days', () => {
-      const recentDate = daysAgoDateStr(100);
-      const oldDate = daysAgoDateStr(500);
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolOutput: `Posted: ${recentDate}`,
-        }),
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolOutput: `Posted: ${oldDate}`,
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
+      const result = computeTrustMetadata([], sourcesPostedDaysAgo(100, 500), 'Answer');
 
       // 1 out of 2 is recent
       expect(result.recentSourceRatio).toBe(0.5);
     });
 
+    it('should skip sources without a postedDate or with an unparseable one', () => {
+      const sources = [
+        makeSource({ storyId: 1, postedDate: daysAgoDateStr(60) }),
+        makeSource({ storyId: 2 }),
+        makeSource({ storyId: 3, postedDate: 'not-a-date' }),
+      ];
+
+      const result = computeTrustMetadata([], sources, 'Answer');
+
+      expect(result.avgSourceAge).toBeGreaterThanOrEqual(59);
+      expect(result.avgSourceAge).toBeLessThanOrEqual(61);
+      expect(result.recentSourceRatio).toBe(1);
+    });
+
     it('should return 0 for avgSourceAge and recentSourceRatio when no dates found', () => {
       const steps: AgentStep[] = [makeStep({ type: 'thought', content: 'thinking' })];
+
+      const result = computeTrustMetadata(steps, [makeSource()], 'Answer');
+
+      expect(result.avgSourceAge).toBe(0);
+      expect(result.recentSourceRatio).toBe(0);
+    });
+
+    it('should ignore "Posted:" lines in tool output (dates come from sources)', () => {
+      const steps: AgentStep[] = [
+        makeStep({
+          type: 'observation',
+          content: '',
+          toolName: 'get_story',
+          toolOutput: `[1] "Story" by user\nPosted: ${daysAgoDateStr(30)}`,
+        }),
+      ];
 
       const result = computeTrustMetadata(steps, [], 'Answer');
 
       expect(result.avgSourceAge).toBe(0);
-      expect(result.recentSourceRatio).toBe(0);
     });
   });
 
@@ -308,37 +318,13 @@ describe('computeTrustMetadata', () => {
     });
 
     it('should add "old_sources_noted" when all dates are > 2 years old', () => {
-      const oldDate = daysAgoDateStr(800);
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolOutput: `Posted: ${oldDate}`,
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
+      const result = computeTrustMetadata([], sourcesPostedDaysAgo(800), 'Answer');
 
       expect(result.honestyFlags).toContain('old_sources_noted');
     });
 
     it('should not add "old_sources_noted" when at least one date is recent', () => {
-      const oldDate = daysAgoDateStr(800);
-      const recentDate = daysAgoDateStr(100);
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolOutput: `Posted: ${oldDate}`,
-        }),
-        makeStep({
-          type: 'observation',
-          content: '',
-          toolOutput: `Posted: ${recentDate}`,
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
+      const result = computeTrustMetadata([], sourcesPostedDaysAgo(800, 100), 'Answer');
 
       expect(result.honestyFlags).not.toContain('old_sources_noted');
     });
@@ -365,39 +351,6 @@ describe('computeTrustMetadata', () => {
       expect(result.viewpointDiversity).toBe('one-sided');
       expect(result.showHnCount).toBe(0);
       expect(result.honestyFlags).toEqual([]);
-    });
-
-    it('should ignore non-observation steps for date extraction', () => {
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'thought',
-          content: 'Posted: 2024-01-01',
-        }),
-        makeStep({
-          type: 'action',
-          content: 'Posted: 2024-01-01',
-          toolName: 'get_story',
-          toolInput: { story_id: 1 },
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
-
-      expect(result.avgSourceAge).toBe(0);
-    });
-
-    it('should ignore observation steps without toolOutput for date extraction', () => {
-      const steps: AgentStep[] = [
-        makeStep({
-          type: 'observation',
-          content: 'Posted: 2024-01-01',
-          // no toolOutput
-        }),
-      ];
-
-      const result = computeTrustMetadata(steps, [], 'Answer');
-
-      expect(result.avgSourceAge).toBe(0);
     });
   });
 });
