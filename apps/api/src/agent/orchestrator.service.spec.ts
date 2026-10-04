@@ -569,6 +569,21 @@ describe('OrchestratorService', () => {
       expect(typeof args.writer).toBe('function');
     });
 
+    it('requests JSON mode for the JSON stages but not for the ReAct tool-calling model', async () => {
+      setupHappyPathGraph();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      const calls = mockLlm.getModel.mock.calls as unknown as Array<
+        [string | undefined, { json?: boolean; maxTokens?: number } | undefined]
+      >;
+      const jsonCalls = calls.filter(([, opts]) => opts?.json === true);
+      // compaction (retriever), synthesizer, writer
+      expect(jsonCalls).toHaveLength(3);
+      const reactCall = calls.find(([, opts]) => opts?.maxTokens !== undefined);
+      expect(reactCall?.[1]).toEqual({ maxTokens: expect.any(Number) });
+    });
+
     it('streams with updates and custom modes', async () => {
       const graph = setupHappyPathGraph();
 

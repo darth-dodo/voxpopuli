@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface, ModelOptions } from '../llm-provider.interface';
+import {
+  modelCacheKey,
+  type LlmProviderInterface,
+  type ModelOptions,
+} from '../llm-provider.interface';
 import { OPENROUTER_BASE_URL, OPENROUTER_MODEL_ID } from '../model-ids';
 
 export { OPENROUTER_BASE_URL };
@@ -28,6 +32,13 @@ export const OPENROUTER_MAX_OUTPUT_TOKENS = 8_192;
 export const OPENROUTER_ROUTING = { sort: 'throughput' } as const;
 
 /**
+ * OpenAI-compatible JSON mode. OpenRouter forwards it to the upstream host; a host
+ * that doesn't support it ignores it (we don't set `require_parameters`, which would
+ * exclude the fastest hosts), so callers keep their lenient JSON parsing.
+ */
+export const JSON_OBJECT_FORMAT = { type: 'json_object' } as const;
+
+/**
  * LLM provider backed by OpenRouter's OpenAI-compatible gateway.
  *
  * OpenRouter fronts many upstream vendors behind one API key, so the
@@ -45,7 +56,7 @@ export class OpenRouterProvider implements LlmProviderInterface {
 
   private readonly apiKey: string;
   private readonly modelId: string;
-  private readonly models = new Map<number | undefined, BaseChatModel>();
+  private readonly models = new Map<string, BaseChatModel>();
 
   constructor(
     private readonly config: ConfigService,
@@ -64,21 +75,26 @@ export class OpenRouterProvider implements LlmProviderInterface {
 
   /** Return (or lazily create) the ChatOpenAI instance pointed at OpenRouter. */
   getModel(options: ModelOptions = {}): BaseChatModel {
-    let model = this.models.get(options.maxTokens);
+    const key = modelCacheKey(options);
+    let model = this.models.get(key);
     if (!model) {
       model = new ChatOpenAI({
         apiKey: this.apiKey,
         model: this.modelId,
         // A call-site cap (e.g. the Retriever's ReAct turns) replaces the default ceiling.
         maxTokens: options.maxTokens ?? OPENROUTER_MAX_OUTPUT_TOKENS,
-        modelKwargs: { provider: OPENROUTER_ROUTING },
+        // ChatOpenAI spreads modelKwargs into the Chat Completions request body.
+        modelKwargs: {
+          provider: OPENROUTER_ROUTING,
+          ...(options.json ? { response_format: JSON_OBJECT_FORMAT } : {}),
+        },
         configuration: {
           baseURL: OPENROUTER_BASE_URL,
           // Optional OpenRouter app attribution header (shows up in their dashboard).
           defaultHeaders: { 'X-Title': 'VoxPopuli' },
         },
       });
-      this.models.set(options.maxTokens, model);
+      this.models.set(key, model);
     }
     return model;
   }

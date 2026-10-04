@@ -159,8 +159,11 @@ export class OrchestratorService {
       config.providerMap.writer ??
       this.llm.getProviderName();
 
+    // Compaction, Synthesizer and Writer all reply in JSON: request the provider's
+    // JSON mode so the output parses first time (the Retriever's ReAct turns use
+    // `reactModel` below, which must stay free-form for tool calls).
     const getModel = (stage: 'retriever' | 'synthesizer' | 'writer') =>
-      this.llm.getModel(config.providerMap[stage]);
+      this.llm.getModel(config.providerMap[stage], { json: true });
 
     // Tools record every story they surface; the retriever builds the source table from it.
     const sources: SourceRegistry = new Map();
