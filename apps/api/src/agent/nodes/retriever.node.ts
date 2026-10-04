@@ -175,6 +175,7 @@ export function createRetrieverNode(
         tags: ['multi-agent', 'retriever', 'react'],
         streamMode: 'values',
         recursionLimit: RECURSION_LIMIT,
+        signal: config?.signal,
       },
     );
 
@@ -270,7 +271,7 @@ export function createRetrieverNode(
       themes,
       inputTokens: compactIn,
       outputTokens: compactOut,
-    } = await compactWithRetry(model, state.query, rawData);
+    } = await compactWithRetry(model, state.query, rawData, config?.signal);
 
     const bundle: EvidenceBundle = {
       query: state.query,
@@ -305,6 +306,7 @@ async function compactWithRetry(
   model: BaseChatModel,
   query: string,
   rawData: string,
+  signal?: AbortSignal,
 ): Promise<CompactResult> {
   let inputTokens = 0;
   let outputTokens = 0;
@@ -317,6 +319,7 @@ async function compactWithRetry(
   const callOptions = {
     metadata: { pipeline_stage: 'retriever', phase: 'compaction', query },
     tags: ['multi-agent', 'retriever', 'compaction'],
+    signal,
   };
 
   const firstAttempt = await invokeWithRetry(model, messages, callOptions);

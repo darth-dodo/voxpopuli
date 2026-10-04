@@ -1,9 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrchestratorService, type PipelineStreamEvent } from './orchestrator.service';
+import {
+  OrchestratorService,
+  PipelineTimeoutError,
+  type PipelineStreamEvent,
+} from './orchestrator.service';
 import { AgentService } from './agent.service';
 import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
 import { ChunkerService } from '../chunker/chunker.service';
+import type { ConfigService } from '@nestjs/config';
 import type {
   PipelineConfig,
   EvidenceBundle,
@@ -85,8 +90,7 @@ const mockResponseV2: AgentResponseV2 = {
 const defaultConfig: PipelineConfig = {
   useMultiAgent: true,
   providerMap: {},
-  tokenBudgets: { retriever: 2000, synthesizer: 1500, synthesizerInput: 4000, writer: 1000 },
-  timeout: 30000,
+  timeout: 150_000,
 };
 
 function makeLegacyEvents() {
@@ -553,14 +557,14 @@ describe('OrchestratorService', () => {
       expect(typeof args.writer).toBe('function');
     });
 
-    it('streams with updates and custom modes', async () => {
+    it('streams with updates and custom modes and the run abort signal', async () => {
       const graph = setupHappyPathGraph();
 
       await collectEvents(service.runStream('test query', defaultConfig));
 
       expect(graph.stream).toHaveBeenCalledWith(
         { query: 'test query' },
-        { streamMode: ['updates', 'custom'] },
+        { streamMode: ['updates', 'custom'], signal: expect.any(AbortSignal) },
       );
     });
   });
@@ -584,6 +588,155 @@ describe('OrchestratorService', () => {
       // Graph was only built and streamed once
       expect(buildPipelineGraph).toHaveBeenCalledTimes(1);
       expect(graph.stream).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('pipeline timeout', () => {
+    /**
+     * A graph that emits the given updates, then hangs (like a stalled LLM call) until
+     * the run's abort signal fires.
+     */
+    function hangingGraph(updates: Array<Record<string, unknown>>) {
+      return {
+        stream: jest.fn(async (_input: unknown, opts: { signal: AbortSignal }) =>
+          (async function* () {
+            for (const update of updates) yield ['updates', update];
+            await new Promise((_, reject) =>
+              opts.signal.addEventListener('abort', () => reject(new Error('AbortError'))),
+            );
+          })(),
+        ),
+      };
+    }
+
+    /** Drain a generator into `events`, returning the error it ended with (if any). */
+    async function drain(gen: AsyncGenerator<unknown>, events: PipelineStreamEvent[]) {
+      try {
+        for await (const e of gen) events.push(e as PipelineStreamEvent);
+        return undefined;
+      } catch (err) {
+        return err;
+      }
+    }
+
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    it('aborts a stalled run with a timeout error instead of re-running the legacy agent', async () => {
+      const graph = hangingGraph([]);
+      (buildPipelineGraph as jest.Mock).mockReturnValue(graph);
+
+      const events: PipelineStreamEvent[] = [];
+      const done = drain(service.runWithFallback('test query', defaultConfig), events);
+      await jest.advanceTimersByTimeAsync(149_999);
+      expect(graph.stream.mock.calls[0][1].signal.aborted).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      const error = await done;
+
+      expect(error).toBeInstanceOf(PipelineTimeoutError);
+      expect((error as PipelineTimeoutError).getStatus()).toBe(504);
+      expect((error as Error).message).toContain('longer than 150s');
+      expect(agentService.runStream).not.toHaveBeenCalled();
+      expect(graph.stream.mock.calls[0][1].signal.aborted).toBe(true);
+      const errors = events
+        .filter((e) => e.kind === 'pipeline' && e.event.status === 'error')
+        .map((e) => (e as { event: PipelineEvent }).event);
+      expect(errors.map((e) => e.stage)).toEqual(['retriever', 'synthesizer', 'writer']);
+      expect(errors.every((e) => e.detail === 'Timed out after 150s')).toBe(true);
+    });
+
+    it('only marks unfinished stages as timed out', async () => {
+      (buildPipelineGraph as jest.Mock).mockReturnValue(
+        hangingGraph([{ retriever: { bundle: mockBundle, steps: [] } }]),
+      );
+
+      const events: PipelineStreamEvent[] = [];
+      const done = drain(service.runWithFallback('test query', defaultConfig), events);
+      await jest.advanceTimersByTimeAsync(150_000);
+      expect(await done).toBeInstanceOf(PipelineTimeoutError);
+
+      const errorStages = events
+        .filter((e) => e.kind === 'pipeline' && e.event.status === 'error')
+        .map((e) => (e as { event: PipelineEvent }).event.stage);
+      expect(errorStages).toEqual(['synthesizer', 'writer']);
+    });
+
+    it('answers from the analysis when the writer times out', async () => {
+      (buildPipelineGraph as jest.Mock).mockReturnValue(
+        hangingGraph([
+          { retriever: { bundle: mockBundle, steps: [] } },
+          { synthesizer: { analysis: mockAnalysis } },
+        ]),
+      );
+
+      const events: PipelineStreamEvent[] = [];
+      const done = drain(service.runWithFallback('test query', defaultConfig), events);
+      await jest.advanceTimersByTimeAsync(150_000);
+      expect(await done).toBeUndefined();
+
+      const writerDone = events.find(
+        (e) => e.kind === 'pipeline' && e.event.stage === 'writer' && e.event.status === 'done',
+      ) as { event: PipelineEvent };
+      expect(writerDone.event.detail).toContain('Timed out after 150s');
+      expect(events.some((e) => e.kind === 'complete')).toBe(true);
+      expect(agentService.runStream).not.toHaveBeenCalled();
+    });
+
+    it('times out while the graph has not started streaming', async () => {
+      (buildPipelineGraph as jest.Mock).mockReturnValue({
+        stream: jest.fn(() => new Promise(() => undefined)),
+      });
+
+      const done = drain(service.runStream('test query', defaultConfig), []);
+      await jest.advanceTimersByTimeAsync(150_000);
+      expect(await done).toBeInstanceOf(PipelineTimeoutError);
+    });
+
+    it('honours config.timeout', async () => {
+      (buildPipelineGraph as jest.Mock).mockReturnValue(hangingGraph([]));
+
+      const done = drain(service.runStream('test query', { ...defaultConfig, timeout: 5_000 }), []);
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(await done).toBeInstanceOf(PipelineTimeoutError);
+    });
+
+    it('lets PIPELINE_TIMEOUT_MS override config.timeout', async () => {
+      const configService = {
+        get: jest.fn((key: string) => (key === 'PIPELINE_TIMEOUT_MS' ? '2000' : undefined)),
+      } as unknown as ConfigService;
+      const svc = new OrchestratorService(
+        agentService,
+        mockLlm as unknown as LlmService,
+        {} as HnService,
+        {} as ChunkerService,
+        configService,
+      );
+      (buildPipelineGraph as jest.Mock).mockReturnValue(hangingGraph([]));
+
+      const done = drain(svc.runStream('test query', defaultConfig), []);
+      await jest.advanceTimersByTimeAsync(2_000);
+      const error = await done;
+      expect(error).toBeInstanceOf(PipelineTimeoutError);
+      expect((error as PipelineTimeoutError).timeoutMs).toBe(2_000);
+    });
+
+    it('clears the timer when the run completes', async () => {
+      setupHappyPathGraph();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('aborts in-flight work when the consumer stops early', async () => {
+      const graph = setupHappyPathGraph();
+
+      const gen = service.runStream('test query', defaultConfig);
+      await gen.next();
+      await gen.next();
+      await gen.return(undefined);
+
+      expect(graph.stream.mock.calls[0][1].signal.aborted).toBe(true);
     });
   });
 

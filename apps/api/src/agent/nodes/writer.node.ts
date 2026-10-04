@@ -127,6 +127,7 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
     const callOptions: RunnableConfig = {
       metadata: { pipeline_stage: 'writer', query: state.query },
       tags: ['multi-agent', 'writer'],
+      signal: config?.signal,
     };
     const emit = config?.writer;
     const firstAttempt = emit
@@ -160,6 +161,7 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
         const retryAttempt = await invokeWithRetry(model, messages, {
           metadata: { pipeline_stage: 'writer', query: state.query },
           tags: ['multi-agent', 'writer'],
+          signal: config?.signal,
         });
         const t2 = extractTokens(retryAttempt);
         inputTokens += t2.input;
@@ -177,6 +179,7 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
       const retryAttempt = await invokeWithRetry(model, messages, {
         metadata: { pipeline_stage: 'writer', query: state.query },
         tags: ['multi-agent', 'writer'],
+        signal: config?.signal,
       });
       const t2 = extractTokens(retryAttempt);
       inputTokens += t2.input;

@@ -174,6 +174,18 @@ describe('withRetry', () => {
   });
 });
 
+describe('withRetry abort', () => {
+  it('does not retry once the run is aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fn = jest.fn().mockRejectedValue(new Error('aborted'));
+    await expect(withRetry(fn)(minimalState, { signal: controller.signal })).rejects.toThrow(
+      'aborted',
+    );
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('withWriterFallback', () => {
   it('passes the graph config to the first attempt only, so a retry cannot re-stream the draft', async () => {
     const fn = jest
@@ -187,6 +199,33 @@ describe('withWriterFallback', () => {
 
     expect(fn).toHaveBeenNthCalledWith(1, minimalState, config);
     expect(fn).toHaveBeenNthCalledWith(2, minimalState);
+  });
+
+  it('keeps only the abort signal on the retry', async () => {
+    const fn = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('bad JSON'))
+      .mockResolvedValueOnce({ response: 'ok' });
+    const signal = new AbortController().signal;
+    const wrapped = withWriterFallback(fn, jest.fn());
+
+    await wrapped(minimalState, { writer: jest.fn(), signal });
+
+    expect(fn).toHaveBeenNthCalledWith(2, minimalState, { signal });
+  });
+
+  it('rethrows without retry or fallback once the run is aborted', async () => {
+    const controller = new AbortController();
+    const fn = jest.fn().mockImplementation(async () => {
+      controller.abort();
+      throw new Error('aborted');
+    });
+    const fallback = jest.fn();
+    const wrapped = withWriterFallback(fn, fallback);
+
+    await expect(wrapped(minimalState, { signal: controller.signal })).rejects.toThrow('aborted');
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it('should return result on success', async () => {
