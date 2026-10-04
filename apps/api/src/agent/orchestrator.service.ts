@@ -172,10 +172,12 @@ export class OrchestratorService {
     });
 
     // A follow-up reuses the previous run's evidence: the Retriever stage returns it
-    // immediately, and the Synthesizer/Writer answer the new question from it.
+    // immediately, and the Synthesizer/Writer answer the new question from it. The
+    // earlier question travels as `priorQuery` in graph state so both stages can label
+    // the follow-up as the question to answer (see formatQuestionContext).
     const retriever = prior
       ? async () => ({
-          bundle: { ...prior.bundle, query: `${query} (follow-up to: "${prior.query}")` },
+          bundle: { ...prior.bundle, query },
           steps: prior.steps,
           inputTokens: 0,
           outputTokens: 0,
@@ -220,7 +222,10 @@ export class OrchestratorService {
       },
     };
 
-    const stream = await graph.stream({ query }, { streamMode: ['updates', 'custom'] as const });
+    const stream = await graph.stream(
+      { query, priorQuery: prior?.query },
+      { streamMode: ['updates', 'custom'] as const },
+    );
 
     for await (const chunk of stream) {
       // With multiple streamMode, each chunk is [mode, data]

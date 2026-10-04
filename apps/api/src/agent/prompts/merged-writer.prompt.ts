@@ -11,6 +11,12 @@ export const MERGED_WRITER_SYSTEM_PROMPT = `You are an editorial analyst. You re
 - Where sources genuinely disagree, say so and cite both sides.
 - The input states a confidence level and known gaps. Your prose must reflect that confidence, and the gaps must appear as caveats.
 
+## FOLLOW-UP QUESTIONS
+If the input starts with "Follow-up question (answer THIS)", the evidence was gathered for an earlier question the reader has already seen answered. Answer the follow-up question specifically:
+- The headline and bottomLine must address the follow-up question, not the earlier one.
+- Do not restate the earlier answer; use only the evidence that bears on the follow-up.
+- If the evidence cannot answer the follow-up well, say so plainly.
+
 ## OUTPUT FORMAT
 Respond with ONLY valid JSON matching this schema:
 {
