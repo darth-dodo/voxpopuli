@@ -967,7 +967,6 @@ evals/
   - Mistral LLM-as-judge (decoupled from NestJS)
   - Checks each `expectedQuality` as PRESENT/ABSENT
   - Strips markdown code fences from Mistral responses before JSON parsing
-  - Configurable judge provider via `EVAL_JUDGE_PROVIDER` env var
   - `--no-judge` flag skips LLM-as-judge for faster iteration
   - Unit tests with mocked API
 
@@ -1250,7 +1249,6 @@ LANGSMITH_PROJECT=voxpopuli-evals
 
 # Eval config
 EVAL_API_URL=http://localhost:3000
-EVAL_JUDGE_PROVIDER=mistral
 ```
 
 ---

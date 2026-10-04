@@ -177,7 +177,6 @@ All configuration is through environment variables (see [`.env.example`](.env.ex
 | `LOG_LEVEL`              | `info`                      | Pino log level                                           |
 | `SENTRY_DSN`             | —                           | Error reporting (optional)                               |
 | `LANGSMITH_API_KEY`      | —                           | Tracing and eval dashboards (optional)                   |
-| `EVAL_JUDGE_PROVIDER`    | `mistral`                   | Provider for the LLM-as-judge evaluator                  |
 
 ## API
 
