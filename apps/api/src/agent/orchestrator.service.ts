@@ -1,5 +1,6 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DEFAULT_PIPELINE_TIMEOUT_MS } from '@voxpopuli/shared-types';
 import type {
   PriorEvidence,
   PipelineConfig,
@@ -26,6 +27,25 @@ import { isAuthError, LlmAuthError } from '../llm/llm-errors';
 /** Output-token cap for the retriever's ReAct turns (see ADR-009). */
 const RETRIEVER_REACT_MAX_TOKENS = 768;
 
+/**
+ * The pipeline run exceeded its hard timeout (`PipelineConfig.timeout` /
+ * `PIPELINE_TIMEOUT_MS`). In-flight LLM calls have been aborted. Not retried on the
+ * legacy agent: that would make the user wait up to another 180s. An HttpException
+ * (504) so `POST /rag/query` maps it without extra handling; the SSE path sends its
+ * message as the `error` event.
+ */
+export class PipelineTimeoutError extends HttpException {
+  constructor(readonly timeoutMs: number) {
+    super(
+      `The answer took longer than ${Math.round(
+        timeoutMs / 1000,
+      )}s and was stopped. Try again, or ask a narrower question.`,
+      HttpStatus.GATEWAY_TIMEOUT,
+    );
+    this.name = 'PipelineTimeoutError';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Stream event types
 // ---------------------------------------------------------------------------
@@ -38,6 +58,31 @@ export type PipelineStreamEvent =
   | { kind: 'complete'; response: AgentResponse; evidence?: PriorEvidence };
 
 /**
+ * Iterate `source` until it ends or `aborted` rejects. On a pipeline timeout, calls
+ * `onTimeout` and ends quietly (any other rejection is rethrown), so the caller does
+ * not wait on an LLM call that ignores the abort signal.
+ */
+async function* untilAborted<T>(
+  source: AsyncIterable<T>,
+  aborted: Promise<never>,
+  onTimeout: () => void,
+): AsyncGenerator<T> {
+  const iterator = source[Symbol.asyncIterator]();
+  for (;;) {
+    let next: IteratorResult<T>;
+    try {
+      next = await Promise.race([iterator.next(), aborted]);
+    } catch (err) {
+      if (!(err instanceof PipelineTimeoutError)) throw err;
+      onTimeout();
+      return;
+    }
+    if (next.done) return;
+    yield next.value;
+  }
+}
+
+/**
  * Orchestrates the multi-agent pipeline via a LangGraph StateGraph.
  *
  * Pipeline: Retriever → Synthesizer → Writer
@@ -46,6 +91,9 @@ export type PipelineStreamEvent =
  * - Retriever fails → bubbles to runWithFallback → legacy AgentService
  * - Synthesizer fails → retry once (via withRetry wrapper), then bubble → legacy
  * - Writer fails → retry once then fallback (via withWriterFallback), does NOT bubble
+ * - Hard timeout (default 150s) → in-flight LLM calls are aborted. If the Synthesizer
+ *   had finished, the answer is built from its analysis (like a Writer failure);
+ *   otherwise a PipelineTimeoutError reaches the client. Never falls back to legacy.
  *
  * Key invariant: the Retriever is never re-run on a downstream failure.
  */
@@ -67,6 +115,16 @@ export class OrchestratorService {
    */
   private get mergedWriter(): boolean {
     return this.config?.get<string>('PIPELINE_MERGED_WRITER') === 'true';
+  }
+
+  /**
+   * Hard timeout for one run: `PIPELINE_TIMEOUT_MS` (operator override) when it is a
+   * positive integer, else `config.timeout`, else the schema default.
+   */
+  private resolveTimeout(config: PipelineConfig): number {
+    const fromEnv = Number(this.config?.get<string>('PIPELINE_TIMEOUT_MS'));
+    if (Number.isInteger(fromEnv) && fromEnv > 0) return fromEnv;
+    return config.timeout > 0 ? config.timeout : DEFAULT_PIPELINE_TIMEOUT_MS;
   }
 
   /**
@@ -104,6 +162,21 @@ export class OrchestratorService {
           }
         }
         throw new LlmAuthError(provider);
+      }
+
+      // Re-running on the legacy agent would add up to another 180s; surface the timeout.
+      if (error instanceof PipelineTimeoutError) {
+        this.logger.warn(`Pipeline timed out after ${error.timeoutMs}ms`);
+        const detail = `Timed out after ${Math.round(error.timeoutMs / 1000)}s`;
+        for (const stage of ['retriever', 'synthesizer', 'writer'] as const) {
+          if (!completedStages.has(stage)) {
+            yield {
+              kind: 'pipeline',
+              event: { stage, status: 'error' as const, detail, elapsed: 0 },
+            } as PipelineStreamEvent;
+          }
+        }
+        throw error;
       }
 
       this.logger.warn(`Pipeline failed, falling back to legacy AgentService: ${rawMessage}`);
@@ -153,6 +226,37 @@ export class OrchestratorService {
   ): AsyncGenerator<PipelineStreamEvent> {
     const startTime = Date.now();
 
+    // Hard timeout: abort in-flight LLM/tool work (the signal reaches LangGraph and the
+    // nodes' model calls) and stop waiting on the graph even if a call ignores it.
+    const timeoutMs = this.resolveTimeout(config);
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(new PipelineTimeoutError(timeoutMs)), timeoutMs);
+    const aborted = new Promise<never>((_, reject) =>
+      abort.signal.addEventListener('abort', () => reject(abort.signal.reason), { once: true }),
+    );
+    aborted.catch(() => undefined);
+
+    try {
+      yield* this.runGraph(query, config, prior, startTime, {
+        signal: abort.signal,
+        aborted,
+        ms: timeoutMs,
+      });
+    } finally {
+      clearTimeout(timer);
+      // Also cancels in-flight work when the consumer stops early (client disconnect).
+      abort.abort();
+    }
+  }
+
+  private async *runGraph(
+    query: string,
+    config: PipelineConfig,
+    prior: PriorEvidence | undefined,
+    startTime: number,
+    timeout: { signal: AbortSignal; aborted: Promise<never>; ms: number },
+  ): AsyncGenerator<PipelineStreamEvent> {
+    const { signal, aborted, ms: timeoutMs } = timeout;
     const activeProvider =
       config.providerMap.retriever ??
       config.providerMap.synthesizer ??
@@ -225,12 +329,22 @@ export class OrchestratorService {
       },
     };
 
-    const stream = await graph.stream(
-      { query, priorQuery: prior?.query },
-      { streamMode: ['updates', 'custom'] as const },
-    );
+    let timedOut = false;
+    const stream = await Promise.race([
+      graph.stream(
+        { query, priorQuery: prior?.query },
+        { streamMode: ['updates', 'custom'] as const, signal },
+      ),
+      aborted,
+    ]).catch((err) => {
+      if (!(err instanceof PipelineTimeoutError)) throw err;
+      timedOut = true;
+      return undefined;
+    });
 
-    for await (const chunk of stream) {
+    for await (const chunk of stream
+      ? untilAborted(stream, aborted, () => (timedOut = true))
+      : []) {
       // With multiple streamMode, each chunk is [mode, data]
       const [mode, data] = chunk as [string, unknown];
 
@@ -313,6 +427,24 @@ export class OrchestratorService {
             event: { stage: nextStage, status: 'started', detail, elapsed: 0 },
           };
         }
+      }
+    }
+
+    if (timedOut && !writerResponse) {
+      // The Synthesizer finished: answer from its analysis, as on a Writer failure.
+      if (!(analysis && bundle)) throw new PipelineTimeoutError(timeoutMs);
+      this.logger.warn(`Writer timed out after ${timeoutMs}ms, using fallback response`);
+      // stageIdx reaches stageOrder.length once the writer has reported 'done'.
+      if (stageIdx < stageOrder.length) {
+        yield {
+          kind: 'pipeline',
+          event: {
+            stage: 'writer',
+            status: 'done',
+            detail: `Timed out after ${Math.round(timeoutMs / 1000)}s — using fallback response`,
+            elapsed: Date.now() - stageStart,
+          },
+        };
       }
     }
 

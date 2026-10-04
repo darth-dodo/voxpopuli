@@ -1,6 +1,7 @@
 import { AIMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { invokeWithRetry } from '../../llm/invoke-with-retry';
 import {
   AnalysisResultSchema,
@@ -137,11 +138,14 @@ export function createMergedSynthesizerNode() {
 }
 
 export function createSynthesizerNode(model: BaseChatModel) {
-  return async (state: {
-    query: string;
-    priorQuery?: string;
-    bundle: EvidenceBundle;
-  }): Promise<{ analysis: AnalysisResult; inputTokens: number; outputTokens: number }> => {
+  return async (
+    state: {
+      query: string;
+      priorQuery?: string;
+      bundle: EvidenceBundle;
+    },
+    config?: RunnableConfig,
+  ): Promise<{ analysis: AnalysisResult; inputTokens: number; outputTokens: number }> => {
     let inputTokens = 0;
     let outputTokens = 0;
 
@@ -159,6 +163,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
     const firstAttempt = await invokeWithRetry(model, messages, {
       metadata: { pipeline_stage: 'synthesizer', query: state.query },
       tags: ['multi-agent', 'synthesizer'],
+      signal: config?.signal,
     });
     const t1 = extractTokens(firstAttempt);
     inputTokens += t1.input;
@@ -187,6 +192,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
         const retryAttempt = await invokeWithRetry(model, messages, {
           metadata: { pipeline_stage: 'synthesizer', query: state.query },
           tags: ['multi-agent', 'synthesizer'],
+          signal: config?.signal,
         });
         const t2 = extractTokens(retryAttempt);
         inputTokens += t2.input;
@@ -205,6 +211,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
       const retryAttempt = await invokeWithRetry(model, messages, {
         metadata: { pipeline_stage: 'synthesizer', query: state.query },
         tags: ['multi-agent', 'synthesizer'],
+        signal: config?.signal,
       });
       const t2 = extractTokens(retryAttempt);
       inputTokens += t2.input;

@@ -168,7 +168,7 @@ pnpm exec tsx evals/run-eval.ts --no-stream    # POST /rag/query instead of SSE 
 | Eval timeout               | 300s default per query                                                                                                       |
 | Pipeline feature flag      | `useMultiAgent=true` query param on SSE endpoint selects the pipeline; omitted → legacy agent (frontend always sends `true`) |
 | Pipeline stages            | Retriever (ReAct+compact) → Synthesizer → Writer                                                                             |
-| Pipeline timeout           | None enforced: `PipelineConfig.timeout` (30s) and `tokenBudgets` exist in the schema but nothing reads them                  |
+| Pipeline timeout           | 150s (`PipelineConfig.timeout`, env `PIPELINE_TIMEOUT_MS`): aborts LLM calls; writer timeout → analysis answer; no legacy    |
 | Retriever ReAct output cap | 768 tokens (`RETRIEVER_REACT_MAX_TOKENS`)                                                                                    |
 | Filtered search retry      | `search_hn` retries without `min_points` below 3 hits (`MIN_FILTERED_HITS`)                                                  |
 | Thin-evidence floor        | < 3 sources caps confidence (≤1 → low, 2 → medium) + adds a gap (`THIN_EVIDENCE_SOURCES`)                                    |

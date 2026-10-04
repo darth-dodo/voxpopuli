@@ -18,7 +18,10 @@ export const PipelineEventSchema = z.object({
 });
 export type PipelineEvent = z.infer<typeof PipelineEventSchema>;
 
-/** Pipeline configuration with per-agent provider mapping and token budgets. */
+/** Default hard timeout for one pipeline run, below the legacy agent's 180s. */
+export const DEFAULT_PIPELINE_TIMEOUT_MS = 150_000;
+
+/** Pipeline configuration with per-agent provider mapping and a hard run timeout. */
 export const PipelineConfigSchema = z.object({
   useMultiAgent: z.boolean().default(false),
   providerMap: z
@@ -28,15 +31,11 @@ export const PipelineConfigSchema = z.object({
       writer: z.string().optional(),
     })
     .default({}),
-  tokenBudgets: z
-    .object({
-      retriever: z.number().default(2000),
-      synthesizer: z.number().default(1500),
-      synthesizerInput: z.number().default(4000),
-      writer: z.number().default(1000),
-    })
-    .default(() => ({ retriever: 2000, synthesizer: 1500, synthesizerInput: 4000, writer: 1000 })),
-  timeout: z.number().default(30000),
+  /**
+   * Hard cap (ms) on a whole pipeline run; in-flight LLM calls are aborted when it
+   * fires. `PIPELINE_TIMEOUT_MS` overrides it server-side.
+   */
+  timeout: z.number().int().positive().default(DEFAULT_PIPELINE_TIMEOUT_MS),
 });
 export type PipelineConfig = z.infer<typeof PipelineConfigSchema>;
 
