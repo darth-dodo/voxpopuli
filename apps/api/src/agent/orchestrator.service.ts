@@ -263,8 +263,11 @@ export class OrchestratorService {
       config.providerMap.writer ??
       this.llm.getProviderName();
 
+    // Compaction, Synthesizer and Writer all reply in JSON: request the provider's
+    // JSON mode so the output parses first time (the Retriever's ReAct turns use
+    // `reactModel` below, which must stay free-form for tool calls).
     const getModel = (stage: 'retriever' | 'synthesizer' | 'writer') =>
-      this.llm.getModel(config.providerMap[stage]);
+      this.llm.getModel(config.providerMap[stage], { json: true });
 
     // Tools record every story they surface; the retriever builds the source table from it.
     const sources: SourceRegistry = new Map();
@@ -276,10 +279,12 @@ export class OrchestratorService {
     });
 
     // A follow-up reuses the previous run's evidence: the Retriever stage returns it
-    // immediately, and the Synthesizer/Writer answer the new question from it.
+    // immediately, and the Synthesizer/Writer answer the new question from it. The
+    // earlier question travels as `priorQuery` in graph state so both stages can label
+    // the follow-up as the question to answer (see formatQuestionContext).
     const retriever = prior
       ? async () => ({
-          bundle: { ...prior.bundle, query: `${query} (follow-up to: "${prior.query}")` },
+          bundle: { ...prior.bundle, query },
           steps: prior.steps,
           inputTokens: 0,
           outputTokens: 0,
@@ -326,7 +331,10 @@ export class OrchestratorService {
 
     let timedOut = false;
     const stream = await Promise.race([
-      graph.stream({ query }, { streamMode: ['updates', 'custom'] as const, signal }),
+      graph.stream(
+        { query, priorQuery: prior?.query },
+        { streamMode: ['updates', 'custom'] as const, signal },
+      ),
       aborted,
     ]).catch((err) => {
       if (!(err instanceof PipelineTimeoutError)) throw err;

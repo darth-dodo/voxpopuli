@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { ChatMistralAI } from '@langchain/mistralai';
 import { AsyncCaller } from '@langchain/core/utils/async_caller';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { LlmProviderInterface, ModelOptions } from '../llm-provider.interface';
+import {
+  modelCacheKey,
+  type LlmProviderInterface,
+  type ModelOptions,
+} from '../llm-provider.interface';
 import { MISTRAL_MODEL_ID } from '../model-ids';
 import { failFastOnClientError } from '../llm-errors';
 
@@ -12,6 +16,21 @@ const MAX_CONTEXT_TOKENS = 262_000;
 
 /** Same retry budget LangChain's AsyncCaller uses by default. */
 const MAX_RETRIES = 6;
+
+/** Mistral JSON mode: the reply is guaranteed to be a valid JSON object. */
+export const JSON_OBJECT_FORMAT = { type: 'json_object' } as const;
+
+type MistralCallOptions = Parameters<ChatMistralAI['invocationParams']>[0];
+
+/**
+ * Call options with JSON mode applied, unless the call already chose a
+ * `response_format`. ChatMistralAI only reads `response_format` from call options
+ * (there is no constructor field), so the provider injects it per call.
+ */
+export function withJsonMode(options: MistralCallOptions): MistralCallOptions {
+  if (options?.response_format) return options;
+  return { ...(options ?? {}), response_format: JSON_OBJECT_FORMAT } as MistralCallOptions;
+}
 
 /**
  * ChatMistralAI whose retries stop on auth/client errors.
@@ -28,8 +47,16 @@ class FailFastChatMistralAI extends ChatMistralAI {
     onFailedAttempt: failFastOnClientError,
   });
 
-  constructor(fields: ConstructorParameters<typeof ChatMistralAI>[0]) {
+  constructor(
+    fields: ConstructorParameters<typeof ChatMistralAI>[0],
+    private readonly jsonMode = false,
+  ) {
     super({ ...fields, maxRetries: 0 });
+  }
+
+  /** Request JSON mode on every call when this instance was created with `json: true`. */
+  override invocationParams(options: MistralCallOptions) {
+    return super.invocationParams(this.jsonMode ? withJsonMode(options) : options);
   }
 
   // Upstream's overloads use Mistral SDK request types this app doesn't depend on
@@ -52,7 +79,7 @@ export class MistralProvider implements LlmProviderInterface {
   readonly maxContextTokens = MAX_CONTEXT_TOKENS;
 
   private readonly apiKey: string;
-  private readonly models = new Map<number | undefined, BaseChatModel>();
+  private readonly models = new Map<string, BaseChatModel>();
 
   constructor(private readonly config: ConfigService) {
     const key = this.config.get<string>('MISTRAL_API_KEY');
@@ -64,14 +91,18 @@ export class MistralProvider implements LlmProviderInterface {
 
   /** Return (or lazily create) the ChatMistralAI instance. */
   getModel(options: ModelOptions = {}): BaseChatModel {
-    let model = this.models.get(options.maxTokens);
+    const key = modelCacheKey(options);
+    let model = this.models.get(key);
     if (!model) {
-      model = new FailFastChatMistralAI({
-        apiKey: this.apiKey,
-        model: MISTRAL_MODEL_ID,
-        ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
-      });
-      this.models.set(options.maxTokens, model);
+      model = new FailFastChatMistralAI(
+        {
+          apiKey: this.apiKey,
+          model: MISTRAL_MODEL_ID,
+          ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
+        },
+        options.json ?? false,
+      );
+      this.models.set(key, model);
     }
     return model;
   }

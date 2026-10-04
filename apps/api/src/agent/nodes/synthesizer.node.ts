@@ -10,17 +10,24 @@ import {
 } from '@voxpopuli/shared-types';
 import { SYNTHESIZER_SYSTEM_PROMPT } from '../prompts/synthesizer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
+import { formatQuestionContext, type QuestionContext } from './question-context';
 
 /**
  * Builds a token-efficient, structured text representation of an EvidenceBundle
  * for the Synthesizer LLM. Strips fields the Synthesizer does not need
  * (url, commentCount, tokenCount) and formats as readable text rather than
  * raw JSON, which LLMs handle more efficiently for analysis tasks.
+ *
+ * @param question - The question to answer; defaults to `bundle.query`. For a
+ *   follow-up, pass `priorQuery` so the header labels the new question clearly.
  */
-export function formatBundleForSynthesizer(bundle: EvidenceBundle): string {
+export function formatBundleForSynthesizer(
+  bundle: EvidenceBundle,
+  question: QuestionContext = { query: bundle.query },
+): string {
   const lines: string[] = [];
 
-  lines.push(`Query: "${bundle.query}"`);
+  lines.push(formatQuestionContext(question));
   lines.push('');
 
   // Sources section — numbered list with author and points only
@@ -134,6 +141,7 @@ export function createSynthesizerNode(model: BaseChatModel) {
   return async (
     state: {
       query: string;
+      priorQuery?: string;
       bundle: EvidenceBundle;
     },
     config?: RunnableConfig,
@@ -143,7 +151,12 @@ export function createSynthesizerNode(model: BaseChatModel) {
 
     const messages: BaseMessage[] = [
       new SystemMessage(SYNTHESIZER_SYSTEM_PROMPT),
-      new HumanMessage(formatBundleForSynthesizer(state.bundle)),
+      new HumanMessage(
+        formatBundleForSynthesizer(state.bundle, {
+          query: state.query,
+          priorQuery: state.priorQuery,
+        }),
+      ),
     ];
 
     // First attempt

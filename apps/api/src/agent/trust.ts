@@ -76,30 +76,24 @@ function getVerifiedStoryIds(steps: AgentStep[]): Set<number> {
 }
 
 /**
- * Parse "Posted: YYYY-MM-DD" dates from tool observation outputs.
+ * Collect the posted dates of the answer's sources.
  *
- * The `get_story` tool emits dates in this format. We collect all
- * parseable dates to compute source age metrics.
+ * Dates come from each source's structured `postedDate` (YYYY-MM-DD), which the
+ * tools record in the per-request SourceRegistry from the HN API — `search_hn`
+ * hits included, so search-only runs still get recency metrics.
  *
- * @param steps - All agent steps from the run
- * @returns Array of parsed Date objects
+ * @param sources - Sources cited in the answer
+ * @returns Array of parsed Date objects (unparseable or missing dates skipped)
  */
-function extractDatesFromSteps(steps: AgentStep[]): Date[] {
+function extractSourceDates(sources: AgentSource[]): Date[] {
   const dates: Date[] = [];
-  const datePattern = /Posted:\s*(\d{4}-\d{2}-\d{2})/g;
-
-  for (const step of steps) {
-    if (step.type !== 'observation' || !step.toolOutput) continue;
-
-    let match;
-    while ((match = datePattern.exec(step.toolOutput)) !== null) {
-      const parsed = new Date(match[1]);
-      if (!isNaN(parsed.getTime())) {
-        dates.push(parsed);
-      }
+  for (const source of sources) {
+    if (!source.postedDate) continue;
+    const parsed = new Date(source.postedDate);
+    if (!isNaN(parsed.getTime())) {
+      dates.push(parsed);
     }
   }
-
   return dates;
 }
 
@@ -176,7 +170,7 @@ function classifyViewpointDiversity(
  * Show HN detection, and honesty flags.
  *
  * @param steps   - All agent steps from the run
- * @param sources - Extracted sources from tool outputs
+ * @param sources - Sources cited in the answer; recency uses their `postedDate`
  * @param answer  - The final agent answer text
  * @returns Computed {@link TrustMetadata}
  */
@@ -191,7 +185,7 @@ export function computeTrustMetadata(
   const sourcesTotal = sources.length;
 
   // 2. Recency scoring
-  const dates = extractDatesFromSteps(steps);
+  const dates = extractSourceDates(sources);
   const now = Date.now();
 
   let avgSourceAge = 0;

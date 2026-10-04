@@ -84,7 +84,17 @@ const mockResponseV2: AgentResponseV2 = {
     { heading: 'S2', body: 'Body 2', citedSources: [1] },
   ],
   bottomLine: 'Test bottom line',
-  sources: [{ storyId: 1, title: 'S1', url: '', author: 'a', points: 10, commentCount: 5 }],
+  sources: [
+    {
+      storyId: 1,
+      title: 'S1',
+      url: '',
+      author: 'a',
+      points: 10,
+      commentCount: 5,
+      postedDate: '2020-01-15',
+    },
+  ],
 };
 
 const defaultConfig: PipelineConfig = {
@@ -289,6 +299,9 @@ describe('OrchestratorService', () => {
       expect(complete.response.meta.provider).toBe('openrouter');
       expect(complete.response.meta.durationMs).toBeGreaterThanOrEqual(0);
       expect(complete.response.trust).toBeDefined();
+      // Recency comes from the sources' structured postedDate, not tool text.
+      expect(complete.response.trust['avgSourceAge']).toBeGreaterThan(730);
+      expect(complete.response.trust['honestyFlags']).toContain('old_sources_noted');
     });
 
     it('emits step events from retriever custom events in real-time', async () => {
@@ -505,7 +518,7 @@ describe('OrchestratorService', () => {
     };
 
     it('reuses the prior evidence instead of running the Retriever', async () => {
-      setupHappyPathGraph();
+      const graph = setupHappyPathGraph();
       const { createRetrieverNode } = jest.requireMock('./nodes/retriever.node');
       (createRetrieverNode as jest.Mock).mockClear();
 
@@ -517,10 +530,13 @@ describe('OrchestratorService', () => {
       const { retriever } = (buildPipelineGraph as jest.Mock).mock.calls[0][0];
       const out = await retriever();
       expect(out.bundle.allSources).toEqual(mockBundle.allSources);
-      expect(out.bundle.query).toBe(
-        'What are the complaints? (follow-up to: "What does HN think about Rust?")',
-      );
+      expect(out.bundle.query).toBe('What are the complaints?');
       expect(out.steps).toEqual(prior.steps);
+      // The earlier question travels in graph state so Synthesizer and Writer can label it.
+      expect(graph.stream).toHaveBeenCalledWith(
+        { query: 'What are the complaints?', priorQuery: 'What does HN think about Rust?' },
+        expect.anything(),
+      );
 
       const started = events.find((e) => e.kind === 'pipeline') as {
         event: { detail: string };
@@ -555,6 +571,21 @@ describe('OrchestratorService', () => {
       expect(typeof args.retriever).toBe('function');
       expect(typeof args.synthesizer).toBe('function');
       expect(typeof args.writer).toBe('function');
+    });
+
+    it('requests JSON mode for the JSON stages but not for the ReAct tool-calling model', async () => {
+      setupHappyPathGraph();
+
+      await collectEvents(service.runStream('test query', defaultConfig));
+
+      const calls = mockLlm.getModel.mock.calls as unknown as Array<
+        [string | undefined, { json?: boolean; maxTokens?: number } | undefined]
+      >;
+      const jsonCalls = calls.filter(([, opts]) => opts?.json === true);
+      // compaction (retriever), synthesizer, writer
+      expect(jsonCalls).toHaveLength(3);
+      const reactCall = calls.find(([, opts]) => opts?.maxTokens !== undefined);
+      expect(reactCall?.[1]).toEqual({ maxTokens: expect.any(Number) });
     });
 
     it('streams with updates and custom modes and the run abort signal', async () => {

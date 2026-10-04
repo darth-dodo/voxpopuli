@@ -162,7 +162,7 @@ pnpm exec tsx evals/run-eval.ts --no-stream    # POST /rag/query instead of SSE 
 | Eval query count           | 27: 20 general (tool_comparison, opinion, specific_project, recent_events, deep_dive, edge_case) + 7 trust                   |
 | Eval default path          | Multi-agent pipeline over SSE (`--legacy`, `--no-stream` opt out)                                                            |
 | Eval pass threshold        | 0.6 weighted score                                                                                                           |
-| Eval judge provider        | Mistral (configurable via EVAL_JUDGE_PROVIDER)                                                                               |
+| Eval judge provider        | Mistral (`mistral-large-latest`, direct API call with `MISTRAL_API_KEY`)                                                     |
 | Eval score weights         | Source 30%, Quality 30%, Efficiency 15%, Latency 15%, Cost 10%                                                               |
 | Eval concurrency           | 3 default, 5 max                                                                                                             |
 | Eval timeout               | 300s default per query                                                                                                       |
@@ -199,7 +199,7 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 8. **Token estimation is approximate.** ChunkerService uses a 4-chars-per-token heuristic, not a real tokenizer. Don't rely on exact token counts.
 9. **Agent tests need LLM provider mocks.** Jest can't resolve `@langchain/*` ESM packages. Always mock the provider modules (`jest.mock('../llm/providers/openrouter.provider', ...)`) in test files that transitively import `AgentService` or `LlmService`.
 10. **SSE streams mid-loop via AsyncGenerator.** `AgentService.runStream()` yields step events during the ReAct loop. `RagController.stream()` converts the generator to an Observable for NestJS `@Sse`. The blocking `run()` method consumes `runStream()` internally.
-11. **Trust metadata depends on tool usage.** Source age and recency metrics require the agent to call `get_story` (which emits "Posted: YYYY-MM-DD"). Search-only runs will have `avgSourceAge: 0`. (Each source's `postedDate` comes from the `SourceRegistry`, but trust recency still parses `Posted:` lines from observations.)
+11. **Trust recency comes from structured source dates.** `computeTrustMetadata()` derives `avgSourceAge`/`recentSourceRatio` from each source's `postedDate`, recorded in the `SourceRegistry` by `search_hn` (Algolia `created_at`) and `get_story`. Search-only runs get recency too. Never parse `Posted:` lines out of tool text; the legacy agent enriches its sources from the registry.
 12. **Angular 21 uses Vite-based dev server.** Proxy patterns need `/api/**` glob, not `/api`.
 13. **Tailwind v4 `@theme` spacing tokens override default utilities.** Don't define `--spacing-sm/md/lg/xl` as they shadow built-in spacing scale.
 14. **`model()` is required for two-way binding.** Use `model()` for `[()]` syntax, not `signal()`. Signals are read-only from the parent's perspective.
@@ -219,6 +219,7 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 28. **Mistral retries go through `FailFastChatMistralAI`.** Upstream `ChatMistralAI` retries every error except 400 because the Mistral SDK reports `statusCode` (not `status`), so a bad key used to hang ~2 minutes. The subclass disables inner retries and wraps calls with `failFastOnClientError`. Keep it if you upgrade `@langchain/mistralai`, unless upstream fixes the status mapping.
 29. **Completed answers are replayed for 15 minutes.** `QueryStore.findReusable()` returns a running query (attach) or one completed within `COMPLETED_TTL` (replay, `meta.cached: true`). Keys normalize case/whitespace and include the mode (`<provider>:pipeline` / `:legacy`, plus `:followup:<parentId>` for follow-ups). When testing a pipeline change locally, vary the question or restart the API, or you'll measure a replay.
 30. **Follow-ups reuse stored evidence.** Completed pipeline runs keep `PriorEvidence` (bundle + retriever steps) for 30 min; `?followUpOf=<queryId>` swaps the Retriever for a node returning it. Source metadata, including `postedDate`, comes from the tools' `SourceRegistry`, never from parsing tool text.
+31. **JSON stages use the provider's JSON mode.** The orchestrator requests compaction, Synthesizer and Writer models with `getModel(provider, { json: true })`: Mistral gets `response_format: { type: 'json_object' }` per call (`FailFastChatMistralAI.invocationParams`), OpenRouter via `modelKwargs`; Claude has no schema-free JSON mode and ignores the flag. Output is still raw JSON text, so Writer draft streaming and the lenient parsing (`cleanLlmOutput`, `parseCompactedThemes`) are unchanged and remain the fallback. Never set `json` on the Retriever's ReAct model (tool calls).
 
 ## Architecture Decision Records
 

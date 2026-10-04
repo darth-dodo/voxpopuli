@@ -29,6 +29,21 @@ const SAMPLE_BUNDLE: EvidenceBundle = {
   tokenCount: 200,
 };
 
+const VALID_ANALYSIS: AnalysisResult = {
+  summary: 'React leads',
+  insights: [
+    {
+      claim: 'React is faster',
+      reasoning: 'Benchmarks',
+      evidenceStrength: 'strong',
+      themeIndices: [0],
+    },
+  ],
+  contradictions: [],
+  confidence: 'medium',
+  gaps: [],
+};
+
 describe('SynthesizerNode', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mockModel = { invoke: jest.fn() } as any;
@@ -58,6 +73,32 @@ describe('SynthesizerNode', () => {
     expect(result.analysis).toBeDefined();
     const parsed = AnalysisResultSchema.safeParse(result.analysis);
     expect(parsed.success).toBe(true);
+  });
+
+  it('puts the question at the top of the prompt', async () => {
+    mockModel.invoke.mockResolvedValue({ content: JSON.stringify(VALID_ANALYSIS) });
+
+    await createSynthesizerNode(mockModel)({ query: 'React vs Vue', bundle: SAMPLE_BUNDLE });
+
+    const human = mockModel.invoke.mock.calls[0][0][1].content as string;
+    expect(human.startsWith('Question: "React vs Vue"')).toBe(true);
+    expect(human).not.toContain('Follow-up');
+  });
+
+  it('labels a follow-up question and the earlier question for the LLM', async () => {
+    mockModel.invoke.mockResolvedValue({ content: JSON.stringify(VALID_ANALYSIS) });
+
+    await createSynthesizerNode(mockModel)({
+      query: 'Which is easier to hire for?',
+      priorQuery: 'React vs Vue',
+      bundle: SAMPLE_BUNDLE,
+    });
+
+    const human = mockModel.invoke.mock.calls[0][0][1].content as string;
+    expect(human).toContain('Follow-up question (answer THIS): "Which is easier to hire for?"');
+    expect(human).toContain('Earlier question (context only, already answered): "React vs Vue"');
+    expect(human).toContain('Do not restate the earlier answer');
+    expect(human).toContain('The headline must address the follow-up question');
   });
 
   it('should strip markdown fences before parsing', async () => {

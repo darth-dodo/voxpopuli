@@ -16,7 +16,19 @@
     }
   },
   "nx": {
-    "name": "shared-types"
+    "name": "shared-types",
+    "targets": {
+      "test": {
+        "executor": "@nx/jest:jest",
+        "outputs": [
+          "{projectRoot}/test-output/jest/coverage"
+        ],
+        "options": {
+          "jestConfig": "libs/shared-types/jest.config.cts",
+          "passWithNoTests": true
+        }
+      }
+    }
   },
   "dependencies": {
     "tslib": "^2.3.0"

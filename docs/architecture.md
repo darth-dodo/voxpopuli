@@ -335,7 +335,7 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 | Component              | Responsibility                                                                                                                           |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(options?: ModelOptions): BaseChatModel }`                                                  |
-| `ModelOptions`         | Per-call-site tuning; currently `{ maxTokens?: number }` (an output-token cap)                                                           |
+| `ModelOptions`         | Per-call-site tuning: `{ maxTokens?: number; json?: boolean }` (output-token cap; provider JSON mode, ignored by Claude)                 |
 | `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                                                                      |
 | `MistralProvider`      | `FailFastChatMistralAI` (a `ChatMistralAI` subclass) wrapping `mistral-small-latest` (262k context)                                      |
 | `OpenRouterProvider`   | `ChatOpenAI` → `https://openrouter.ai/api/v1`, model `qwen/qwen3-235b-a22b-2507` or `OPENROUTER_MODEL` (128k budget, throughput routing) |
@@ -346,9 +346,9 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 
 **Key implementation details:**
 
-- **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. Each provider lazily creates its `ChatModel` on the first `getModel()` call and caches one instance per `maxTokens` value.
+- **Lazy instantiation:** Providers are created on first access via a factory map, not at module boot. Each provider lazily creates its `ChatModel` on the first `getModel()` call and caches one instance per `maxTokens`/`json` combination.
 - **API key validation:** Each provider validates its API key at construction time and throws immediately if missing.
-- **Per-request override:** `LlmService.getModel(providerOverride?, options?: ModelOptions)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call. The Retriever's ReAct model is requested with `{ maxTokens: 768 }`; the LLM health probe uses `{ maxTokens: 5 }`.
+- **Per-request override:** `LlmService.getModel(providerOverride?, options?: ModelOptions)` and `getMaxContextTokens(providerOverride?)` accept an optional provider name to use a different provider for a single call. The Retriever's ReAct model is requested with `{ maxTokens: 768 }`; the LLM health probe uses `{ maxTokens: 5 }`; compaction, Synthesizer and Writer use `{ json: true }`.
 - **Provider registry:** A `PROVIDER_FACTORIES` map provides type-safe construction. Valid values: `openrouter`, `claude`, `mistral`. The deprecated name `groq` is aliased to `openrouter` with a warning.
 - **OpenRouter output cap:** Without a call-site cap, OpenRouter requests send `max_tokens: 8192`, because some hosts otherwise default the completion to the whole context window and reject the request. Provider routing prefers the highest-throughput host (`provider: { sort: 'throughput' }`).
 - **Fail fast on bad keys:** `isAuthError()` recognises 401/403 from `status`, `statusCode` (Mistral SDK) or `response.status`, and auth phrases in the message. LangChain's retry layer does not read Mistral's `statusCode`, so a rejected key used to be retried with backoff for about 2 minutes. `FailFastChatMistralAI` disables the inner retries and wraps `completionWithRetry` in its own `AsyncCaller` (6 retries) whose `failFastOnClientError` policy stops on auth errors, aborts and other 4xx, and retries only 408, 429 and 5xx. `LlmAuthError` names the env var to fix (`MISTRAL_API_KEY`, `ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`).
@@ -967,7 +967,6 @@ evals/
   - Mistral LLM-as-judge (decoupled from NestJS)
   - Checks each `expectedQuality` as PRESENT/ABSENT
   - Strips markdown code fences from Mistral responses before JSON parsing
-  - Configurable judge provider via `EVAL_JUDGE_PROVIDER` env var
   - `--no-judge` flag skips LLM-as-judge for faster iteration
   - Unit tests with mocked API
 
@@ -1250,7 +1249,6 @@ LANGSMITH_PROJECT=voxpopuli-evals
 
 # Eval config
 EVAL_API_URL=http://localhost:3000
-EVAL_JUDGE_PROVIDER=mistral
 ```
 
 ---
