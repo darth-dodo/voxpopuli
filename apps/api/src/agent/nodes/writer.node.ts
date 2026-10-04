@@ -18,6 +18,7 @@ import {
 import { z } from 'zod';
 import { WRITER_SYSTEM_PROMPT } from '../prompts/writer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
+import { formatQuestionContext } from './question-context';
 
 /** Schema for the Writer's input payload — analysis + citation sources only, no evidence. */
 export const WriterInputSchema = z.object({
@@ -94,6 +95,7 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
   return async (
     state: {
       query: string;
+      priorQuery?: string;
       bundle: EvidenceBundle;
       analysis: AnalysisResult;
     },
@@ -102,13 +104,14 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
     let inputTokens = 0;
     let outputTokens = 0;
 
+    const question = { query: state.query, priorQuery: state.priorQuery };
     let messages: BaseMessage[];
     if (options.fromEvidence) {
       const gaps = state.analysis.gaps.length ? state.analysis.gaps.join(' ') : 'none';
       messages = [
         new SystemMessage(MERGED_WRITER_SYSTEM_PROMPT),
         new HumanMessage(
-          `${formatBundleForSynthesizer(state.bundle)}\n\n` +
+          `${formatBundleForSynthesizer(state.bundle, question)}\n\n` +
             `Confidence: ${state.analysis.confidence}\nKnown gaps: ${gaps}`,
         ),
       ];
@@ -119,7 +122,7 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
       };
       messages = [
         new SystemMessage(WRITER_SYSTEM_PROMPT),
-        new HumanMessage(JSON.stringify(writerInput)),
+        new HumanMessage(`${formatQuestionContext(question)}\n\n${JSON.stringify(writerInput)}`),
       ];
     }
 

@@ -501,7 +501,7 @@ describe('OrchestratorService', () => {
     };
 
     it('reuses the prior evidence instead of running the Retriever', async () => {
-      setupHappyPathGraph();
+      const graph = setupHappyPathGraph();
       const { createRetrieverNode } = jest.requireMock('./nodes/retriever.node');
       (createRetrieverNode as jest.Mock).mockClear();
 
@@ -513,10 +513,13 @@ describe('OrchestratorService', () => {
       const { retriever } = (buildPipelineGraph as jest.Mock).mock.calls[0][0];
       const out = await retriever();
       expect(out.bundle.allSources).toEqual(mockBundle.allSources);
-      expect(out.bundle.query).toBe(
-        'What are the complaints? (follow-up to: "What does HN think about Rust?")',
-      );
+      expect(out.bundle.query).toBe('What are the complaints?');
       expect(out.steps).toEqual(prior.steps);
+      // The earlier question travels in graph state so Synthesizer and Writer can label it.
+      expect(graph.stream).toHaveBeenCalledWith(
+        { query: 'What are the complaints?', priorQuery: 'What does HN think about Rust?' },
+        expect.anything(),
+      );
 
       const started = events.find((e) => e.kind === 'pipeline') as {
         event: { detail: string };

@@ -9,6 +9,11 @@ import type {
 
 export const PipelineAnnotation = Annotation.Root({
   query: Annotation<string>,
+  /** Set on follow-ups: the earlier question the reused evidence was gathered for. */
+  priorQuery: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (_prev, next) => next,
+  }),
   bundle: Annotation<EvidenceBundle | undefined>({
     default: () => undefined,
     reducer: (_prev, next) => next,

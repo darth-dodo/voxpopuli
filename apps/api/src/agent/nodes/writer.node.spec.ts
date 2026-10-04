@@ -68,6 +68,61 @@ describe('WriterNode', () => {
     expect(parsed.success).toBe(true);
   });
 
+  describe('question context', () => {
+    const validJson = JSON.stringify({
+      headline: 'h',
+      context: 'c',
+      sections: [
+        { heading: 'S1', body: 'b1', citedSources: [1] },
+        { heading: 'S2', body: 'b2', citedSources: [1] },
+      ],
+      bottomLine: 'bl',
+    });
+    const followUpState = {
+      query: 'Which is easier to hire for?',
+      priorQuery: 'React vs Vue',
+      bundle: SAMPLE_BUNDLE,
+      analysis: SAMPLE_ANALYSIS,
+    };
+    const humanPrompt = () => mockModel.invoke.mock.calls[0][0][1].content as string;
+
+    it('gives the default Writer the question ahead of the analysis', async () => {
+      mockModel.invoke.mockResolvedValue({ content: validJson });
+
+      await createWriterNode(mockModel)({
+        query: 'React vs Vue',
+        bundle: SAMPLE_BUNDLE,
+        analysis: SAMPLE_ANALYSIS,
+      });
+
+      expect(humanPrompt().startsWith('Question: "React vs Vue"\n\n{')).toBe(true);
+    });
+
+    it('labels the follow-up question for the default Writer', async () => {
+      mockModel.invoke.mockResolvedValue({ content: validJson });
+
+      await createWriterNode(mockModel)(followUpState);
+
+      const human = humanPrompt();
+      expect(human).toContain('Follow-up question (answer THIS): "Which is easier to hire for?"');
+      expect(human).toContain('Earlier question (context only, already answered): "React vs Vue"');
+      expect(human).toContain('The headline must address the follow-up question');
+      // The analysis JSON still follows the header.
+      expect(human).toContain('"summary":"React leads in adoption"');
+    });
+
+    it('labels the follow-up question for the merged Writer', async () => {
+      mockModel.invoke.mockResolvedValue({ content: validJson });
+
+      await createWriterNode(mockModel, { fromEvidence: true })(followUpState);
+
+      const human = humanPrompt();
+      expect(human).toContain('Follow-up question (answer THIS): "Which is easier to hire for?"');
+      expect(human).toContain('Earlier question (context only, already answered): "React vs Vue"');
+      expect(human).toContain('### Theme 1: Perf');
+    });
+  });
+
   it('should retry on invalid JSON and succeed', async () => {
     const validJson = JSON.stringify({
       headline: 'h',
