@@ -7,3 +7,5 @@ coverage
 .playwright-mcp
 .superpowers
 evals/results
+.claude/worktrees
+.worktrees

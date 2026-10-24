@@ -65,8 +65,7 @@ apps/web/src/app/      # Angular frontend (Data Noir Editorial design system)
     rag.service.ts      #     HTTP + SSE client for RAG endpoints
     tts.service.ts      #     Narration client
 libs/shared-types/     # @voxpopuli/shared-types (all API contracts + trust framework types)
-docs/adr/              # Architecture Decision Records (002–010)
-docs/adrs/             # ADR-001 (CI/CD and quality gates)
+docs/adr/              # Architecture Decision Records (001–010)
 evals/                 # Evaluation harness (queries, runner, scorer, LangSmith integration)
   queries.json         #   27 test queries (20 general across 6 categories + 7 trust)
   run-eval.ts          #   CLI entry point (commander); pipeline over SSE by default
@@ -223,9 +222,9 @@ The active LLM provider is set via `LLM_PROVIDER` (openrouter/mistral/claude), d
 
 ## Architecture Decision Records
 
-ADRs live in `docs/adr/` (plus `docs/adrs/001-ci-cd-and-quality-gates.md`) and document key design choices. Consult these before proposing changes to the areas they cover:
+ADRs live in `docs/adr/` and document key design choices. Consult these before proposing changes to the areas they cover:
 
-- `docs/adrs/001-ci-cd-and-quality-gates.md` — CI pipeline, pre-commit/pre-push quality gates
+- `001-ci-cd-and-quality-gates.md` — CI pipeline, pre-commit/pre-push quality gates
 - `002-chunker-strategy.md` — Token-aware context building approach
 - `003-llm-provider-architecture.md` — LangChain provider facade pattern (addendum: Groq → OpenRouter)
 - `004-react-agent-design.md` — ReAct agent design, tool selection, LangChain createAgent (v1.2+)

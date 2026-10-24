@@ -72,3 +72,7 @@ testem.log
 .superpowers/
 __screenshots__/
 test-output/
+
+# Ad-hoc screenshots from manual / Playwright MCP testing (curated ones live in docs/screenshots/)
+/*.png
+.playwright-mcp/
