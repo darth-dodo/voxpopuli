@@ -153,8 +153,7 @@ voxpopuli/
 |   +-- evaluators/__tests__/        # Evaluator tests
 |   +-- results/                     # Eval run output JSON files (gitignored)
 +-- docs/
-|   +-- adr/                         # ADR-002 through ADR-010
-|   +-- adrs/                        # ADR-001
+|   +-- adr/                         # ADR-001 through ADR-010
 |   +-- plans/                       # Design documents and implementation plans
 |   +-- screenshots/                 # UI flow screenshots
 |   +-- architecture.md              # Technical architecture and milestone breakdown
@@ -541,7 +540,7 @@ Environment variables are validated at startup using `class-validator` in `apps/
 
 ## 8. Architecture Decision Records
 
-ADR-001 lives in `docs/adrs/001-ci-cd-and-quality-gates.md`; ADR-002 onward live in `docs/adr/`.
+All ADRs live in `docs/adr/`.
 
 | ADR     | Title                                                    | Date       | Summary                                                                                                                   |
 | ------- | -------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------- |
