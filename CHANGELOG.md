@@ -4,6 +4,18 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-24
+
+General availability. All eight milestones are complete (M7 deploy and observability closed out; monitoring dashboards and alert rules move to the v1.1 roadmap), and the app runs in production on Render. Entries below cover everything since 0.5.0.
+
+### Security
+
+- **No critical or high production advisories** — `pnpm audit --prod` goes from 1 critical and 42 high to none. Angular, NestJS, axios, zod, Sentry, ngx-markdown and LangChain are bumped within their existing ranges, and `pnpm.overrides` pin patched `proxy-addr` (IP spoofing through Express `trust proxy`), `body-parser`, `multer`, `path-to-regexp`, `lodash` and `ws`.
+
+### Removed
+
+- **Linear workflow** — The Linear project is retired; the `vp-linear-sync` skill and Linear steps in CLAUDE.md and the milestone skill are removed. Milestone status lives in the README, `architecture.md` and `codebase-summary.md`.
+
 ### Fixed
 
 - **Compaction no longer throws away whole queries** — The Retriever's compaction step used to reject the model's output over a cosmetic evidence label (a `type` outside `evidence|anecdote|opinion|consensus`) or a mid-array JSON syntax error, and after one failed repair the whole query re-ran on the legacy agent. Labels are now normalized (unknown type → `opinion`, relevance clamped) without a repair call, and on a syntax error everything before it is salvaged; the legacy fallback is only used when neither attempt yields a usable theme.

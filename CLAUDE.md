@@ -135,7 +135,7 @@ pnpm exec tsx evals/run-eval.ts --no-stream    # POST /rag/query instead of SSE 
 - **Streaming UX**: Sticky header with backdrop-blur on the results page. Submitted query shown below header during results. Cancel button available on both pipeline and legacy streaming states. Wall-clock based elapsed timer resilient to background throttling. While the Writer streams, `token` events accumulate in `tokenContent` and render as a "Drafting answer…" card (`data-testid="answer-draft"`); the final `answer` replaces it.
 - **Follow-ups**: After a completed pipeline answer, an "Ask a follow-up using these sources" box (`data-testid="follow-up"`) calls `submitFollowUp()`, which streams with `followUpOf=<queryId>` so the backend answers from the stored evidence instead of searching HN again.
 - **Background tab handling**: When the page returns from background during a stream, ChatComponent kills the stale SSE subscription and fetches the stored result via the query result endpoint. If the query is still running (202 response), it reconnects the SSE stream automatically. Backend query deduplication prevents duplicate agent runs on reconnect. Event handling logic is shared between the initial submit path and the reconnect path via a common handler method.
-- **Homepage design**: `vp-noise` texture, radial amber gradient on hero, masthead rule beneath title, editorial timeline layout (replacing "How It Works"), example preview card matching actual answer view with trust indicators, footer with "Try it now" scroll CTA and v0.8 version badge, example cards in 3x2 grid with numbered labels.
+- **Homepage design**: `vp-noise` texture, radial amber gradient on hero, masthead rule beneath title, editorial timeline layout (replacing "How It Works"), example preview card matching actual answer view with trust indicators, footer with "Try it now" scroll CTA and v1.0 version badge, example cards in 3x2 grid with numbered labels.
 - Proxy config at `apps/web/proxy.conf.json` for dev server to API forwarding.
 - Angular 21's Vite-based dev server requires `/api/**` glob pattern for proxy routes.
 
@@ -234,9 +234,3 @@ ADRs live in `docs/adr/` and document key design choices. Consult these before p
 - `008-voxtral-tts.md` — Mistral Voxtral for TTS (why not OpenRouter audio / ElevenLabs)
 - `009-pipeline-latency.md` — Latency investigation; LLM writes only judgement, code supplies source metadata; eval SSE timings and `--baseline`
 - `010-merged-writer-and-model-speed.md` — Opt-in `PIPELINE_MERGED_WRITER` (−27% mean latency in eval) and OpenRouter model throughput benchmark
-
-## Linear Project
-
-Project: [VoxPopuli](https://linear.app/ai-adventures/project/voxpopuli-3e4f9761d135)
-Team: AI Adventures
-Issues: AI-99 through AI-165+

@@ -204,12 +204,12 @@ pnpm exec nx test web                      # web unit tests (Vitest)
 pnpm exec prettier --check .               # format check
 ```
 
-| Area        | Details                                                                            |
-| ----------- | ---------------------------------------------------------------------------------- |
-| Unit tests  | 655 (404 API, 251 web); external APIs and LLM providers are always mocked          |
-| CI          | GitHub Actions on affected projects: lint, test with coverage, format check, build |
-| Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses             |
-| Git hooks   | lint-staged on commit; lint, test, and format checks on push                       |
+| Area        | Details                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Unit tests  | 695 (431 API, 251 web, 13 shared types); external APIs and LLM providers are always mocked |
+| CI          | GitHub Actions on affected projects: lint, test with coverage, format check, build         |
+| Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses                     |
+| Git hooks   | lint-staged on commit; lint, test, and format checks on push                               |
 
 **Evaluation harness.** 27 benchmark queries (20 general, 7 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%, tool calls), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API and, by default, exercises what users run: the multi-agent pipeline over SSE. Reports include mean/p50/p95 latency, per-stage timings, and fallback counts.
 
@@ -244,7 +244,7 @@ VoxPopuli ships as a [Render Blueprint](render.yaml):
 | M4: Frontend                 | Done   | Chat UI, live streaming, design system               |
 | M5: Voice output             | Done   | Podcast-style narration (now Mistral Voxtral)        |
 | M6: Eval harness             | Done   | 27 queries, 5 evaluators, LangSmith                  |
-| M7: Deploy and observability | ~87%   | Docker, Render, structured logging, Sentry           |
+| M7: Deploy and observability | Done   | Docker, Render, structured logging, Sentry           |
 | M8: Multi-agent pipeline     | Done   | LangGraph pipeline, per-stage retry, circuit breaker |
 
 ## Documentation
