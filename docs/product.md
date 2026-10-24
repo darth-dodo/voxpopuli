@@ -1874,7 +1874,7 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 
 - [ ] Loading skeleton UI
 - [x] Dark mode (light/dark toggle; dark is the default)
-- [ ] Mobile responsive layout
+- [x] Mobile responsive layout
 - [ ] Error boundary components
 - [ ] Provider auto-fallback
 - [ ] Query history (local storage)
@@ -1884,6 +1884,8 @@ _Groq rows reflect Groq pricing before the switch to OpenRouter (2026-09). OpenR
 - [ ] "Podcast mode" toggle (auto-narrate every answer)
 - [x] Voice: playback speed controls (0.75x, 1x, 1.25x, 1.5x)
 - [x] Voice: downloadable MP3 of narrated answer
+- [ ] Production monitoring dashboards (Sentry / Render)
+- [ ] Alerting rules on error rate and `/api/health/llm` failures
 
 ### v2.0 -- Multi-Agent Pipeline (Complete)
 

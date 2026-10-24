@@ -1,13 +1,13 @@
 ---
 name: vp-complete-milestone
-description: Use when VoxPopuli feature or milestone code is implemented and you are about to commit, open a PR, or mark Linear issues Done, or when the pre-push hook or CI fails on lint, test, build, or prettier
+description: Use when VoxPopuli feature or milestone code is implemented and you are about to commit or open a PR, or when the pre-push hook or CI fails on lint, test, build, or prettier
 ---
 
 # Complete a Feature / Milestone (VoxPopuli)
 
 ## Overview
 
-"Code works" is not done. Done means: every CI check passes locally, it's verified end-to-end against real services, docs match the code, Linear is updated, and a PR is open.
+"Code works" is not done. Done means: every CI check passes locally, it's verified end-to-end against real services, docs match the code (including milestone status in README, architecture.md and codebase-summary.md), and a PR is open.
 
 ## 1. Verify (mirrors CI and the pre-push hook)
 
@@ -67,10 +67,6 @@ Use conventional commits, matching `git log`: `feat: …`, `fix: …`, `docs: �
 **Stacked PR merge order:** merge the child into its base branch _before_ the base merges to `main`, or retarget the child to `main` first. A child merged into an already-merged base branch never reaches `main`.
 
 The PR body has: Summary, Test plan (checked boxes for what you ran; unchecked for deploy steps like Render secrets), and Notes (known limits, anything skipped and why).
-
-## 5. Linear (milestones)
-
-Follow vp-linear-sync. Filter by milestone rather than keyword, close leaf tasks and then epics, and add an "Implementation Drift Notes" comment wherever the result differs from the spec.
 
 ## Common Mistakes
 

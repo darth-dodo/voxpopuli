@@ -46,7 +46,7 @@ VoxPopuli is an agentic RAG (Retrieval-Augmented Generation) system that turns H
 | M4        | Frontend               | Complete | Chat UI, agent steps, source cards, trust bar, provider selector, landing page                                          |
 | M5        | Voice Output           | Complete | TTS backend + frontend audio player (ElevenLabs originally, now Mistral Voxtral, ADR-008)                               |
 | M6        | Eval Harness           | Complete | 27-query eval suite, 5 evaluators, LangSmith integration, CLI runner                                                    |
-| M7        | Deploy & Observability | ~87%     | Dockerfile, docker-compose, Render deploy, CORS fixes, Pino logging, Sentry                                             |
+| M7        | Deploy & Observability | Complete | Dockerfile, docker-compose, Render deploy, CORS fixes, Pino logging, Sentry                                             |
 | M8        | Multi-Agent Pipeline   | Complete | LangGraph pipeline (Retriever/Synthesizer/Writer), per-stage retry, SSE resilience                                      |
 | --        | Pipeline latency       | Complete | ADR-009: code-attached sources, Retriever output cap, recursion-limit salvage, level-by-level comment fetch, eval stats |
 | --        | Post-M8 improvements   | Complete | Fail-fast on bad keys + `GET /api/health/llm`, narration fix, streaming draft, answer replay, follow-ups, merged writer |
@@ -655,7 +655,7 @@ The `shared-types` project has no `test` target, so these specs are not part of 
 
 **M5: Voice Output** (done; ElevenLabs originally, now Mistral Voxtral) -- TTS backend integration and frontend audio player for podcast-style narration of agent responses.
 
-**M7: Deploy & Observability** (~87% complete) -- Remaining items: production monitoring dashboards, alerting setup.
+**M7: Deploy & Observability** (complete) -- Production monitoring dashboards and alerting rules moved to the v1.1 roadmap in product.md.
 
 **M8: Pipeline Hardening** (complete) -- LangGraph StateGraph refactor, circuit breaker, SSE mobile resilience with retry/heartbeat/visibility detection, per-stage failure recovery, step streaming.
 

@@ -1,17 +1,17 @@
 # VoxPopuli — Architecture & Implementation Plan
 
 **Companion to:** [product.md](product.md) (what & why)
-**This document:** how to build it, in what order, and how to track it in Linear
+**This document:** how to build it and in what order
 
 ---
 
 ## Document Map
 
-| Document                   | Purpose                                                                  |
-| -------------------------- | ------------------------------------------------------------------------ |
-| [product.md](product.md)   | Product vision, capabilities, API contracts, design decisions            |
-| **architecture.md** (this) | Technical architecture, module design, milestones, Linear task breakdown |
-| [README.md](../README.md)  | Public-facing overview for users and contributors                        |
+| Document                   | Purpose                                                              |
+| -------------------------- | -------------------------------------------------------------------- |
+| [product.md](product.md)   | Product vision, capabilities, API contracts, design decisions        |
+| **architecture.md** (this) | Technical architecture, module design, milestones and task breakdown |
+| [README.md](../README.md)  | Public-facing overview for users and contributors                    |
 
 ---
 
@@ -32,7 +32,7 @@
   - [2.7 RagModule](#27-ragmodule)
   - [2.8 TtsModule](#28-ttsmodule)
   - [2.9 Frontend Architecture](#29-frontend-architecture)
-- [3. Milestones & Linear Task Breakdown](#3-milestones--linear-task-breakdown)
+- [3. Milestones & Task Breakdown](#3-milestones--task-breakdown)
   - [Milestone 1: Scaffold & Data Layer](#milestone-1-scaffold--data-layer----complete)
   - [Milestone 2: LLM & Chunker](#milestone-2-llm--chunker----complete)
   - [Milestone 3: Agent Core](#milestone-3-agent-core)
@@ -632,14 +632,14 @@ ChatComponent (page shell — sticky header with query input, live draft, answer
 
 ---
 
-## 3. Milestones & Linear Task Breakdown
+## 3. Milestones & Task Breakdown
 
 ### How to Read This
 
 ```
-Epic (Linear Project or Cycle)
-  Story (Linear Issue, type: Story)
-    Task (Linear Sub-issue or checklist item)
+Epic (milestone)
+  Story (one shippable change)
+    Task (checklist item)
 ```
 
 **Milestone = a shippable, testable vertical slice.** Each milestone ends with something you can demo.
@@ -1189,7 +1189,7 @@ graph LR
 
 **M8 (Multi-Agent Pipeline)** depends on M6 (eval harness, for A/B testing) and M4 (frontend, for pipeline timeline UI).
 
-**Current status:** M1-M6 and M8 complete (M5 TTS now on Mistral Voxtral). M7 (deploy) is the remaining milestone. Post-M8 work (pipeline latency, fail-fast auth errors, streamed drafts, answer replay and follow-ups, merged writer) is recorded in ADR-009, ADR-010 and the CHANGELOG.
+**Current status:** All eight milestones are complete, released as v1.0.0 (M5 TTS now on Mistral Voxtral). Post-M8 work (pipeline latency, fail-fast auth errors, streamed drafts, answer replay and follow-ups, merged writer) is recorded in ADR-009, ADR-010 and the CHANGELOG.
 
 ---
 
@@ -1203,12 +1203,12 @@ As a solo developer, this is the recommended build order. Each milestone builds 
 | 2     | M2: LLM & Chunker          | 8       | M1         | COMPLETE |
 | 3     | M3: Agent Core             | 14      | M2         | COMPLETE |
 | 4     | M4: Frontend               | 22      | M3         | COMPLETE |
-| 5     | M7: Deploy & Observability | 13      | M3         | ~87%     |
+| 5     | M7: Deploy & Observability | 13      | M3         | COMPLETE |
 | 6     | M6: Eval Harness           | 12      | M3         | COMPLETE |
 | 7     | M5: Voice Output           | 5       | M3, M4     | COMPLETE |
 | 8     | M8: Multi-Agent Pipeline   | ~20     | M3, M4, M6 | COMPLETE |
 
-> **M8 is now complete.** The multi-agent pipeline (Retriever → Synthesizer → Writer) is implemented with per-stage failure recovery. M7 (deploy) is the remaining milestone.
+> **All milestones are complete (v1.0.0).** The multi-agent pipeline (Retriever → Synthesizer → Writer) runs in production on Render with per-stage failure recovery.
 
 **Total: 8 milestones, ~100 stories.**
 
