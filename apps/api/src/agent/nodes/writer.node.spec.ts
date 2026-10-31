@@ -95,7 +95,7 @@ describe('WriterNode', () => {
         analysis: SAMPLE_ANALYSIS,
       });
 
-      expect(humanPrompt().startsWith('Question: "React vs Vue"\n\n{')).toBe(true);
+      expect(humanPrompt().startsWith('Question: "React vs Vue"\n\n<hn_content>\n{')).toBe(true);
     });
 
     it('labels the follow-up question for the default Writer', async () => {

@@ -3,6 +3,7 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import type { BaseMessage } from '@langchain/core/messages';
 import type { AIMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { truncateHnContent } from '../agent/hn-content';
 
 const logger = new Logger('invokeWithRetry');
 
@@ -68,7 +69,8 @@ function truncateMessages(messages: BaseMessage[], factor: number): BaseMessage[
     // Construct a new message of the same type with truncated content.
     // LangChain message classes accept (content) or ({content, ...fields}).
     const Ctor = msg.constructor as new (fields: { content: string }) => BaseMessage;
-    return new Ctor({ ...msg, content: content.slice(0, truncatedLength) });
+    // Prompt content may hold wrapped HN text; never cut a block's closing tag off.
+    return new Ctor({ ...msg, content: truncateHnContent(content, truncatedLength) });
   });
 }
 
