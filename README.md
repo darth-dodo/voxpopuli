@@ -124,7 +124,7 @@ apps/
   web/src/app/    Angular app: chat, agent-steps timeline, trust bar, source cards, audio player
 libs/
   shared-types/   API contracts and trust framework types
-evals/            Evaluation harness: 27 queries, evaluators, LangSmith sync
+evals/            Evaluation harness: 28 queries, evaluators, LangSmith sync
 docs/             Product spec, architecture, ADRs, screenshots
 ```
 
@@ -211,7 +211,7 @@ pnpm exec prettier --check .               # format check
 | Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses                     |
 | Git hooks   | lint-staged on commit; lint, test, and format checks on push                               |
 
-**Evaluation harness.** 27 benchmark queries (20 general, 7 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%, tool calls), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API and, by default, exercises what users run: the multi-agent pipeline over SSE. Reports include mean/p50/p95 latency, per-stage timings, and fallback counts.
+**Evaluation harness.** 28 benchmark queries (20 general, 8 trust-specific) scored on source accuracy (30%), LLM-judged quality (30%), efficiency (15%, tool calls), latency (15%), and cost (10%), with an optional LangSmith dataset and experiment sync. It runs against a live API and, by default, exercises what users run: the multi-agent pipeline over SSE. Reports include mean/p50/p95 latency, per-stage timings, and fallback counts.
 
 ```bash
 pnpm eval                                  # all queries, default provider, pipeline over SSE
@@ -243,7 +243,7 @@ VoxPopuli ships as a [Render Blueprint](render.yaml):
 | M3: Agent core               | Done   | ReAct agent, RAG endpoints, trust framework          |
 | M4: Frontend                 | Done   | Chat UI, live streaming, design system               |
 | M5: Voice output             | Done   | Podcast-style narration (now Mistral Voxtral)        |
-| M6: Eval harness             | Done   | 27 queries, 5 evaluators, LangSmith                  |
+| M6: Eval harness             | Done   | 28 queries, 5 evaluators, LangSmith                  |
 | M7: Deploy and observability | Done   | Docker, Render, structured logging, Sentry           |
 | M8: Multi-agent pipeline     | Done   | LangGraph pipeline, per-stage retry, circuit breaker |
 

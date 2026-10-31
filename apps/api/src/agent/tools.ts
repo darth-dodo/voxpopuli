@@ -4,6 +4,7 @@ import type { HnService } from '../hn/hn.service';
 import type { ChunkerService } from '../chunker/chunker.service';
 import type { HnStory, SourceMetadata } from '@voxpopuli/shared-types';
 import type { StructuredToolInterface } from '@langchain/core/tools';
+import { wrapHnContent } from './hn-content';
 
 /**
  * Per-request registry of every story the tools surfaced, keyed by storyId.
@@ -83,7 +84,7 @@ export function createSearchHnTool(
 
       const chunks = chunker.chunkStories(result.hits, provider);
       const context = chunker.buildContext(chunks, [], Infinity, provider);
-      return note + chunker.formatForPrompt(context);
+      return note + wrapHnContent(chunker.formatForPrompt(context));
     },
     {
       name: 'search_hn',
@@ -146,7 +147,7 @@ export function createGetStoryTool(
       if (text) lines.push(`Text: ${text}`);
       lines.push(`Posted: ${new Date(story.time * 1000).toISOString().split('T')[0]}`);
 
-      return lines.join('\n');
+      return wrapHnContent(lines.join('\n'));
     },
     {
       name: 'get_story',
@@ -182,7 +183,7 @@ export function createGetCommentsTool(
 
       const chunks = chunker.chunkComments(comments, provider);
       const context = chunker.buildContext([], chunks, Infinity, provider);
-      return chunker.formatForPrompt(context);
+      return wrapHnContent(chunker.formatForPrompt(context));
     },
     {
       name: 'get_comments',

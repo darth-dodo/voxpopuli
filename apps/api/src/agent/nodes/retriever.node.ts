@@ -45,8 +45,8 @@ export function summarizeToolOutput(toolName: string | undefined, raw: string): 
         : 'No stories matched';
     }
     case 'get_story': {
-      // Output starts with [ID] "Title" by Author (score points, N comments)
-      const titleMatch = raw.match(/^\[\d+\]\s+"([^"]+)"/);
+      // A line (after the <hn_content> tag) starts with [ID] "Title" by Author (score points, N comments)
+      const titleMatch = raw.match(/^\[\d+\]\s+"([^"]+)"/m);
       const pointsMatch = raw.match(/\((\d+)\s+points/);
       if (titleMatch) {
         const title =

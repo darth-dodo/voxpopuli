@@ -11,6 +11,7 @@ import {
 import { SYNTHESIZER_SYSTEM_PROMPT } from '../prompts/synthesizer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 import { formatQuestionContext, type QuestionContext } from './question-context';
+import { wrapHnContent } from '../hn-content';
 
 /**
  * Builds a token-efficient, structured text representation of an EvidenceBundle
@@ -26,9 +27,6 @@ export function formatBundleForSynthesizer(
   question: QuestionContext = { query: bundle.query },
 ): string {
   const lines: string[] = [];
-
-  lines.push(formatQuestionContext(question));
-  lines.push('');
 
   // Sources section — numbered list with author and points only
   lines.push(`## Sources (${bundle.totalSourcesScanned} stories scanned)`);
@@ -50,7 +48,9 @@ export function formatBundleForSynthesizer(
     }
   }
 
-  return lines.join('\n');
+  // Titles and theme text are HN-derived, so they go in the untrusted block;
+  // the question header stays outside it.
+  return `${formatQuestionContext(question)}\n\n${wrapHnContent(lines.join('\n'))}`;
 }
 
 /**
