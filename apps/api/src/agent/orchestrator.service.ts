@@ -271,7 +271,7 @@ export class OrchestratorService {
 
     // Tools record every story they surface; the retriever builds the source table from it.
     const sources: SourceRegistry = new Map();
-    const tools = createAgentTools(this.hn, this.chunker, sources);
+    const tools = createAgentTools(this.hn, this.chunker, sources, config.providerMap.retriever);
     // ReAct turns only emit tool calls (~350 tokens max observed); the cap bounds the
     // occasional closing monologue the model writes instead of "DONE".
     const reactModel = this.llm.getModel(config.providerMap.retriever, {
@@ -289,7 +289,9 @@ export class OrchestratorService {
           inputTokens: 0,
           outputTokens: 0,
         })
-      : createRetrieverNode(getModel('retriever'), tools, sources, reactModel);
+      : createRetrieverNode(getModel('retriever'), tools, sources, reactModel, (text) =>
+          this.llm.estimateTokens(text, config.providerMap.retriever),
+        );
 
     const graph = buildPipelineGraph({
       retriever,

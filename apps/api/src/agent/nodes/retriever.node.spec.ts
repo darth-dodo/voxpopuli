@@ -14,6 +14,8 @@ jest.mock('../../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.f
 jest.mock('../../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
 import { ChunkerService } from '../../chunker/chunker.service';
+import type { LlmService } from '../../llm/llm.service';
+import { DEFAULT_CHARS_PER_TOKEN, estimateTokensByChars } from '../../llm/token-estimator';
 import {
   summarizeToolOutput,
   createRetrieverNode,
@@ -613,6 +615,20 @@ describe('RetrieverNode', () => {
       expect(reactModel.invoke).not.toHaveBeenCalled();
       expect(mockModel.invoke).toHaveBeenCalledTimes(1);
     });
+
+    it("sizes the bundle with the provider's token estimator", async () => {
+      mockReactAgentStream.mockReturnValue(
+        mockStreamResult([{ content: RICH_RAW_DATA, role: 'assistant' }]),
+      );
+      mockModel.invoke.mockResolvedValue({ content: themesJson });
+
+      const estimate = jest.fn(() => 1234);
+      const node = createRetrieverNode(mockModel, mockTools, new Map(), mockModel, estimate);
+      const result = await node({ query: 'rust' });
+
+      expect(result.bundle.tokenCount).toBe(1234);
+      expect(estimate).toHaveBeenCalledWith(JSON.stringify(result.bundle.themes));
+    });
   });
 });
 
@@ -620,7 +636,10 @@ describe('summarizeToolOutput', () => {
   it('counts comments in the real get_comments output format', () => {
     // Generate the observation exactly as the get_comments tool does, so a format
     // change on either side breaks this test instead of silently showing "No comment content".
-    const chunker = new ChunkerService();
+    const llm = {
+      estimateTokens: (text: string) => estimateTokensByChars(text, DEFAULT_CHARS_PER_TOKEN),
+    } as unknown as LlmService;
+    const chunker = new ChunkerService(llm);
     const comments = chunker.chunkComments([
       { id: 1, type: 'comment', by: 'alice', time: 0, text: 'Great tool', parent: 9, depth: 0 },
       {

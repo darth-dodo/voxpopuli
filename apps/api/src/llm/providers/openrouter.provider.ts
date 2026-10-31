@@ -8,6 +8,7 @@ import {
   type ModelOptions,
 } from '../llm-provider.interface';
 import { OPENROUTER_BASE_URL, OPENROUTER_MODEL_ID } from '../model-ids';
+import { DEFAULT_CHARS_PER_TOKEN, estimateTokensByChars } from '../token-estimator';
 
 export { OPENROUTER_BASE_URL };
 
@@ -53,6 +54,7 @@ export const JSON_OBJECT_FORMAT = { type: 'json_object' } as const;
 export class OpenRouterProvider implements LlmProviderInterface {
   readonly name: string;
   readonly maxContextTokens: number;
+  readonly charsPerToken: number;
 
   private readonly apiKey: string;
   private readonly modelId: string;
@@ -60,7 +62,12 @@ export class OpenRouterProvider implements LlmProviderInterface {
 
   constructor(
     private readonly config: ConfigService,
-    options: { name?: string; model?: string; maxContextTokens?: number } = {},
+    options: {
+      name?: string;
+      model?: string;
+      maxContextTokens?: number;
+      charsPerToken?: number;
+    } = {},
   ) {
     const key = this.config.get<string>('OPENROUTER_API_KEY');
     if (!key) {
@@ -71,6 +78,13 @@ export class OpenRouterProvider implements LlmProviderInterface {
     this.modelId =
       options.model ?? this.config.get<string>('OPENROUTER_MODEL') ?? OPENROUTER_MODEL_ID;
     this.maxContextTokens = options.maxContextTokens ?? MAX_CONTEXT_TOKENS;
+    // Uncalibrated default; see DEFAULT_CHARS_PER_TOKEN.
+    this.charsPerToken = options.charsPerToken ?? DEFAULT_CHARS_PER_TOKEN;
+  }
+
+  /** Estimate the token cost of `text` using this provider's character ratio. */
+  estimateTokens(text: string): number {
+    return estimateTokensByChars(text, this.charsPerToken);
   }
 
   /** Return (or lazily create) the ChatOpenAI instance pointed at OpenRouter. */

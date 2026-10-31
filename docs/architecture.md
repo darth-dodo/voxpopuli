@@ -300,16 +300,16 @@ Two HTTP clients behind one service, all calls wrapped with CacheService.
 
 Transforms raw HN data into token-budgeted context for the LLM. Implemented in M2.
 
-| Method                                        | Input                          | Output                        |
-| --------------------------------------------- | ------------------------------ | ----------------------------- |
-| `chunkStories(hits[])`                        | Algolia `HnSearchHit[]`        | `StoryChunk[]`                |
-| `chunkComments(comments[])`                   | Firebase `HnComment[]`         | `CommentChunk[]`              |
-| `buildContext(stories[], comments[], budget)` | Story + comment chunks, budget | `ContextWindow` (fits budget) |
-| `formatForPrompt(context)`                    | `ContextWindow`                | String (ready for LLM)        |
-| `estimateTokens(text)`                        | Plain text                     | Token count estimate          |
-| `stripHtml(html)`                             | Raw HTML string                | Cleaned text                  |
+| Method                                                   | Input                          | Output                        |
+| -------------------------------------------------------- | ------------------------------ | ----------------------------- |
+| `chunkStories(hits[], provider?)`                        | Algolia `HnSearchHit[]`        | `StoryChunk[]`                |
+| `chunkComments(comments[], provider?)`                   | Firebase `HnComment[]`         | `CommentChunk[]`              |
+| `buildContext(stories[], comments[], budget, provider?)` | Story + comment chunks, budget | `ContextWindow` (fits budget) |
+| `formatForPrompt(context)`                               | `ContextWindow`                | String (ready for LLM)        |
+| `estimateTokens(text, provider?)`                        | Plain text                     | Token count estimate          |
+| `stripHtml(html)`                                        | Raw HTML string                | Cleaned text                  |
 
-**Token counting:** Character-based estimate (1 token ~ 4 characters). Simple and dependency-free; adequate for budgeting purposes without requiring tiktoken.
+**Token counting:** Delegated to the LLM provider's estimator through `LlmService.estimateTokens(text, provider?)`, so estimates follow the tokenizer that will read the prompt. Each provider uses a character ratio (`charsPerToken`, default 4 from `DEFAULT_CHARS_PER_TOKEN` in `llm/token-estimator.ts`). Simple and dependency-free; adequate for budgeting purposes without requiring tiktoken. The optional `provider` argument matches the per-request provider override; the agent tools and the Retriever pass the retriever's provider.
 
 **HTML stripping:** Preserves `<code>` and `<pre>` blocks by converting them to markdown fenced code blocks. Converts `<a>` tags to markdown links. Decodes common HTML entities.
 
@@ -334,7 +334,7 @@ All three providers wrap LangChain ChatModel classes rather than raw SDKs. LangC
 
 | Component              | Responsibility                                                                                                                           |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, getModel(options?: ModelOptions): BaseChatModel }`                                                  |
+| `LlmProviderInterface` | Contract: `{ name, maxContextTokens, charsPerToken, estimateTokens(text), getModel(options?: ModelOptions): BaseChatModel }`             |
 | `ModelOptions`         | Per-call-site tuning: `{ maxTokens?: number; json?: boolean }` (output-token cap; provider JSON mode, ignored by Claude)                 |
 | `ClaudeProvider`       | `ChatAnthropic` wrapping `claude-haiku-4-5-20251001` (200k context)                                                                      |
 | `MistralProvider`      | `FailFastChatMistralAI` (a `ChatMistralAI` subclass) wrapping `mistral-small-latest` (262k context)                                      |
@@ -724,7 +724,7 @@ Epic (milestone)
   - `chunkComments()` -- filter deleted/dead, strip HTML, preserve depth
   - `buildContext()` -- 4-phase priority assembly (metadata, text, top-level comments, nested)
   - `formatForPrompt()` -- render context as LLM-ready string with `=== STORIES ===` / `=== COMMENTS ===` sections
-  - `estimateTokens()` -- character-based estimate (1 token ~ 4 chars), no tiktoken dependency
+  - `estimateTokens()` -- character-based estimate via the provider's `charsPerToken` (default 4), no tiktoken dependency
   - `stripHtml()` -- preserves `<code>`/`<pre>` as markdown fenced code blocks, converts `<a>` to markdown links
 - **Story: Write ChunkerService unit tests** (AI-148) -- DONE (57 tests)
 
@@ -1276,7 +1276,7 @@ EVAL_API_URL=http://localhost:3000
 | Token budget (Claude)           | 80k of 200k                | Conservative headroom                            |
 | Token budget (Mistral)          | 100k of 262k               | Conservative headroom                            |
 | Token budget (OpenRouter)       | 50k of 128k                | Conservative headroom                            |
-| Token estimation                | 1 char / 4                 | Character-based, no tiktoken dependency          |
+| Token estimation                | per-provider chars/token   | Character-based, no tiktoken dependency          |
 | TTS max chars                   | 2500                       | Narration script cap (cost + latency)            |
 | Eval query count                | 27                         | 20 general + 7 trust-specific                    |
 | Eval default timeout            | 300s                       | Per-query timeout (configurable via CLI)         |

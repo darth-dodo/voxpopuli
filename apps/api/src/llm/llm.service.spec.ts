@@ -101,6 +101,17 @@ describe('OpenRouterProvider', () => {
     );
   });
 
+  it('estimates tokens with its configured chars-per-token ratio', () => {
+    const config = mockConfigService({ OPENROUTER_API_KEY: 'test-key' });
+    const defaultRatio = new OpenRouterProvider(config);
+    const denseRatio = new OpenRouterProvider(config, { charsPerToken: 2 });
+
+    expect(defaultRatio.charsPerToken).toBe(4);
+    expect(defaultRatio.estimateTokens('abcdefgh')).toBe(2);
+    expect(denseRatio.estimateTokens('abcdefgh')).toBe(4);
+    expect(denseRatio.estimateTokens('')).toBe(0);
+  });
+
   it('uses OPENROUTER_MODEL env override when no explicit model is passed', () => {
     const config = mockConfigService({
       OPENROUTER_API_KEY: 'test-key',
@@ -296,6 +307,21 @@ describe('LlmService', () => {
   it('getMaxContextTokens() respects provider override', async () => {
     const service = await buildService({ LLM_PROVIDER: 'openrouter' });
     expect(service.getMaxContextTokens('mistral')).toBe(262_000);
+  });
+
+  // -------------------------------------------------------------------------
+  // estimateTokens()
+  // -------------------------------------------------------------------------
+
+  it('estimateTokens() delegates to the active provider', async () => {
+    const service = await buildService({ LLM_PROVIDER: 'claude' });
+    expect(service.estimateTokens('abcde')).toBe(2);
+    expect(service.estimateTokens('')).toBe(0);
+  });
+
+  it('estimateTokens() respects provider override', async () => {
+    const service = await buildService({ LLM_PROVIDER: 'openrouter' });
+    expect(service.estimateTokens('a'.repeat(100), 'mistral')).toBe(25);
   });
 
   // -------------------------------------------------------------------------

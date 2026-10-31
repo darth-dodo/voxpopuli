@@ -25,7 +25,8 @@ export function modelCacheKey(options: ModelOptions = {}): string {
  * Contract that every LLM provider must implement.
  *
  * Each provider wraps a specific LangChain ChatModel and exposes
- * its context-window budget so the chunker can size prompts correctly.
+ * its context-window budget and token estimator so the chunker can size
+ * prompts correctly.
  */
 export interface LlmProviderInterface {
   /** Provider identifier, e.g. "openrouter", "claude", "mistral". */
@@ -33,6 +34,16 @@ export interface LlmProviderInterface {
 
   /** Total context window size in tokens for this provider's model. */
   readonly maxContextTokens: number;
+
+  /**
+   * Average characters per token for this provider's tokenizer, used by
+   * {@link LlmProviderInterface.estimateTokens}. See `DEFAULT_CHARS_PER_TOKEN`
+   * in `token-estimator.ts` for how to calibrate it.
+   */
+  readonly charsPerToken: number;
+
+  /** Estimate the token cost of `text` for this provider's tokenizer. */
+  estimateTokens(text: string): number;
 
   /** Return the LangChain ChatModel instance for this provider (cached per options). */
   getModel(options?: ModelOptions): BaseChatModel;

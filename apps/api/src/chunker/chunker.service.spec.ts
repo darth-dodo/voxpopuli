@@ -1,10 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import type { ConfigService } from '@nestjs/config';
 import { ChunkerService } from './chunker.service';
+import { LlmService } from '../llm/llm.service';
+import { OpenRouterProvider } from '../llm/providers/openrouter.provider';
+import type { LlmProviderInterface } from '../llm/llm-provider.interface';
 import type { HnSearchHit, HnComment, StoryChunk, CommentChunk } from '@voxpopuli/shared-types';
+
+// Keep the real provider classes but stub the LangChain SDKs they would load.
+jest.mock('@langchain/openai', () => ({ ChatOpenAI: jest.fn() }));
+jest.mock('@langchain/anthropic', () => ({ ChatAnthropic: jest.fn() }));
+jest.mock('@langchain/mistralai', () => ({ ChatMistralAI: jest.fn() }));
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const config = { get: () => 'test-key' } as unknown as ConfigService;
+
+/**
+ * Two real providers with different tokenizer ratios. "default" uses the
+ * uncalibrated 4 chars/token; "dense" models a tokenizer at 2 chars/token.
+ */
+const PROVIDERS: Record<string, LlmProviderInterface> = {
+  default: new OpenRouterProvider(config, { name: 'default' }),
+  dense: new OpenRouterProvider(config, { name: 'dense', charsPerToken: 2 }),
+};
+
+/** LlmService stand-in that routes estimates to the named provider ("default" if none). */
+const mockLlmService = {
+  estimateTokens: jest.fn((text: string, provider?: string) =>
+    PROVIDERS[provider ?? 'default'].estimateTokens(text),
+  ),
+};
 
 /** Factory for a fake Algolia search hit. */
 function fakeHit(overrides: Partial<HnSearchHit> = {}): HnSearchHit {
@@ -47,7 +74,7 @@ describe('ChunkerService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ChunkerService],
+      providers: [ChunkerService, { provide: LlmService, useValue: mockLlmService }],
     }).compile();
 
     service = module.get<ChunkerService>(ChunkerService);
@@ -76,6 +103,11 @@ describe('ChunkerService', () => {
     it('handles longer text correctly', () => {
       const text = 'a'.repeat(100);
       expect(service.estimateTokens(text)).toBe(25); // 100 / 4 = 25
+    });
+
+    it("uses the requested provider's estimator", () => {
+      expect(service.estimateTokens('abcd', 'dense')).toBe(2); // 4 / 2 = 2
+      expect(mockLlmService.estimateTokens).toHaveBeenLastCalledWith('abcd', 'dense');
     });
   });
 
@@ -289,6 +321,38 @@ describe('ChunkerService', () => {
   // =========================================================================
 
   describe('buildContext()', () => {
+    it('produces different context sizes for providers with different token ratios', () => {
+      const hits = [
+        fakeHit({ objectID: '1', title: 'First story' }),
+        fakeHit({ objectID: '2', title: 'Second story' }),
+      ];
+      const comments = [
+        fakeComment({ id: 10, parent: 1, text: 'x'.repeat(200) }),
+        fakeComment({ id: 11, parent: 2, text: 'y'.repeat(200) }),
+      ];
+      const budget = 150;
+
+      const build = (provider: string) =>
+        service.buildContext(
+          service.chunkStories(hits, provider),
+          service.chunkComments(comments, provider),
+          budget,
+          provider,
+        );
+      const roomy = build('default');
+      const dense = build('dense');
+
+      // Same input and budget: the 4 chars/token provider fits everything,
+      // the 2 chars/token provider counts twice the tokens and must truncate.
+      expect(roomy.comments).toHaveLength(2);
+      expect(roomy.truncated).toBe(false);
+      expect(dense.comments.length).toBeLessThan(roomy.comments.length);
+      expect(dense.truncated).toBe(true);
+      // "commenter: " + 200 chars = 211 chars -> 53 tokens at 4/token, 106 at 2/token.
+      expect(roomy.totalTokens).toBe(9 + 9 + 53 + 53);
+      expect(dense.totalTokens).toBe(18 + 18 + 106);
+    });
+
     const smallStory: StoryChunk = {
       storyId: 1,
       title: 'Test Story',
