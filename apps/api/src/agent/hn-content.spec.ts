@@ -15,6 +15,8 @@ jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn
 import { HN_CONTENT_CLOSE, HN_CONTENT_OPEN, truncateHnContent, wrapHnContent } from './hn-content';
 import { createGetCommentsTool, createGetStoryTool, createSearchHnTool } from './tools';
 import { ChunkerService } from '../chunker/chunker.service';
+import type { LlmService } from '../llm/llm.service';
+import { DEFAULT_CHARS_PER_TOKEN, estimateTokensByChars } from '../llm/token-estimator';
 import { formatBundleForSynthesizer } from './nodes/synthesizer.node';
 import { createWriterNode } from './nodes/writer.node';
 import { summarizeToolOutput } from './nodes/retriever.node';
@@ -145,7 +147,10 @@ describe('truncateHnContent', () => {
 });
 
 describe('HN text reaching the model is delimited', () => {
-  const chunker = new ChunkerService();
+  const llm = {
+    estimateTokens: (text: string) => estimateTokensByChars(text, DEFAULT_CHARS_PER_TOKEN),
+  } as unknown as LlmService;
+  const chunker = new ChunkerService(llm);
 
   it('get_comments wraps an injection comment (escaped close tag included) in one block', async () => {
     const comment: HnComment = {
