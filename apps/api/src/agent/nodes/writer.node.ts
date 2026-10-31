@@ -1,5 +1,5 @@
 import { AIMessage, SystemMessage, HumanMessage } from '@langchain/core/messages';
-import type { AIMessageChunk, BaseMessage } from '@langchain/core/messages';
+import type { AIMessageChunk, BaseMessage, UsageMetadata } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { LangGraphRunnableConfig } from '@langchain/langgraph';
@@ -39,8 +39,10 @@ type WriterOutput = z.infer<typeof WriterOutputSchema>;
  * Single-pass: AnalysisResult + citation table → AgentResponseV2.
  */
 /** Extract token counts from a LangChain AI message response. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTokens(msg: any): { input: number; output: number } {
+function extractTokens(msg: { usage_metadata?: UsageMetadata } | undefined): {
+  input: number;
+  output: number;
+} {
   const usage = msg?.usage_metadata;
   return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }

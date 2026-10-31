@@ -1,7 +1,7 @@
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { GraphRecursionError, type LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
-import type { BaseMessage } from '@langchain/core/messages';
+import type { BaseMessage, UsageMetadata } from '@langchain/core/messages';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { type EvidenceBundle, type AgentStep, type ThemeGroup } from '@voxpopuli/shared-types';
@@ -165,8 +165,7 @@ export function createRetrieverNode(
     let outputTokens = 0;
 
     // Phase 1: ReAct collection — accumulate steps
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allMessages: any[] = [];
+    const allMessages: BaseMessage[] = [];
 
     const stream = await reactAgent.stream(
       { messages: [new HumanMessage(state.query)] },
@@ -186,8 +185,7 @@ export function createRetrieverNode(
         // Accumulate steps for newly added messages
         if (messages.length > prevMessageCount) {
           for (let i = prevMessageCount; i < messages.length; i++) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const msg = messages[i] as any;
+            const msg: StreamedMessage = messages[i];
             const type = typeof msg._getType === 'function' ? msg._getType() : undefined;
             const content = typeof msg.content === 'string' ? msg.content : '';
 
@@ -198,8 +196,8 @@ export function createRetrieverNode(
                 outputTokens += msg.usage_metadata.output_tokens;
             }
 
-            if (type === 'ai' && msg.tool_calls?.length > 0) {
-              for (const tc of msg.tool_calls) {
+            if (type === 'ai' && (msg.tool_calls?.length ?? 0) > 0) {
+              for (const tc of msg.tool_calls ?? []) {
                 const step: AgentStep = {
                   type: 'action',
                   content: `${tc.name}(${JSON.stringify(tc.args)})`,
@@ -290,11 +288,19 @@ export function createRetrieverNode(
   };
 }
 
+/**
+ * A streamed agent message viewed loosely: any message type, with the AI-only fields
+ * (tool calls, token usage) present only when the message is an AIMessage.
+ */
+type StreamedMessage = BaseMessage & Partial<Pick<AIMessage, 'tool_calls' | 'usage_metadata'>>;
+
 type CompactResult = { themes: ThemeGroup[]; inputTokens: number; outputTokens: number };
 
 /** Extract token counts from a LangChain AI message response. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTokens(msg: any): { input: number; output: number } {
+function extractTokens(msg: { usage_metadata?: UsageMetadata } | undefined): {
+  input: number;
+  output: number;
+} {
   const usage = msg?.usage_metadata;
   return { input: usage?.input_tokens ?? 0, output: usage?.output_tokens ?? 0 };
 }
