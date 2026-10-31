@@ -37,38 +37,48 @@ export function wrapHnContent(text: string): string {
   return `${HN_CONTENT_OPEN}\n${neutralized}\n${HN_CONTENT_CLOSE}`;
 }
 
+/** Cut `text` to `length` chars, dropping a delimiter tag split by the cut. */
+function sliceOutsideTags(text: string, length: number): string {
+  const cut = text.slice(0, Math.max(0, length));
+  const lastAngle = cut.lastIndexOf('<');
+  if (lastAngle === -1) return cut;
+  const tail = cut.slice(lastAngle);
+  return HN_CONTENT_OPEN.startsWith(tail) || HN_CONTENT_CLOSE.startsWith(tail)
+    ? cut.slice(0, lastAngle)
+    : cut;
+}
+
+/** True when the last delimiter tag in `text` opens a block. */
+function endsInsideBlock(text: string): boolean {
+  return text.lastIndexOf(HN_CONTENT_OPEN) > text.lastIndexOf(HN_CONTENT_CLOSE);
+}
+
 /**
  * Cut text that may hold `<hn_content>` blocks to at most `maxChars` without
  * breaking a block.
  *
  * A plain `slice()` can drop a closing tag, leaving the rest of the prompt
- * (or a partial tag) inside an unterminated block. This trims any delimiter
- * tag split by the cut, then closes a block the cut left open. Room for the
- * closing tag is reserved, so the result never exceeds `maxChars`.
+ * (or half a tag) inside an unterminated block. This drops any delimiter tag
+ * split by the cut and, when the cut lands inside a block, cuts a little
+ * earlier to make room for the closing tag. Text without tags is cut exactly
+ * like `slice(0, maxChars)`.
  *
  * Only exact `HN_CONTENT_OPEN` / `HN_CONTENT_CLOSE` strings count as tags:
- * {@link wrapHnContent} has already rewritten every other form inside the text.
+ * {@link wrapHnContent} has already rewritten every other form inside a block.
  *
- * @param text - Text built from {@link wrapHnContent} blocks
+ * @param text - Text built from {@link wrapHnContent} blocks (or plain text)
  * @param maxChars - Maximum length of the result
  * @returns `text` unchanged when it fits, otherwise a well-formed prefix
  */
 export function truncateHnContent(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
 
+  const cut = sliceOutsideTags(text, maxChars);
+  if (!endsInsideBlock(cut)) return cut;
+
   const closing = `\n${HN_CONTENT_CLOSE}`;
-  let cut = text.slice(0, Math.max(0, maxChars - closing.length));
-
-  // Drop a delimiter tag the cut split in two (for example "</hn_con").
-  const lastAngle = cut.lastIndexOf('<');
-  if (lastAngle !== -1) {
-    const tail = cut.slice(lastAngle);
-    if (HN_CONTENT_OPEN.startsWith(tail) || HN_CONTENT_CLOSE.startsWith(tail)) {
-      cut = cut.slice(0, lastAngle);
-    }
-  }
-
-  return cut.lastIndexOf(HN_CONTENT_OPEN) > cut.lastIndexOf(HN_CONTENT_CLOSE) ? cut + closing : cut;
+  const room = sliceOutsideTags(text, maxChars - closing.length);
+  return endsInsideBlock(room) ? room + closing : room;
 }
 
 /**

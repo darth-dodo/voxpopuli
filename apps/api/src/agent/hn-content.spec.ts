@@ -101,6 +101,11 @@ describe('truncateHnContent', () => {
     expect(truncateHnContent(text, 50_000)).toBe(text);
   });
 
+  it('cuts text without delimiter tags exactly like slice', () => {
+    const text = `plain ${'x'.repeat(100)} a < b`;
+    expect(truncateHnContent(text, 50)).toBe(text.slice(0, 50));
+  });
+
   it('closes a block cut mid-way, with the injection payload just past the opening tag', () => {
     const text = rawData(1_000);
     // Mid-payload, past the room reserved for the closing tag.
@@ -122,7 +127,7 @@ describe('truncateHnContent', () => {
       const secondOpen = text.lastIndexOf(HN_CONTENT_OPEN);
       const firstClose = text.indexOf(HN_CONTENT_CLOSE);
       for (const tagStart of [secondOpen, firstClose]) {
-        const out = truncateHnContent(text, tagStart + kept + HN_CONTENT_CLOSE.length + 1);
+        const out = truncateHnContent(text, tagStart + kept);
         expectBalanced(out);
         expect(out).not.toMatch(/<\/?h?n?_?c?o?n?t?e?n?t?$/);
       }
