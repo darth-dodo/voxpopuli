@@ -38,6 +38,40 @@ export function wrapHnContent(text: string): string {
 }
 
 /**
+ * Cut text that may hold `<hn_content>` blocks to at most `maxChars` without
+ * breaking a block.
+ *
+ * A plain `slice()` can drop a closing tag, leaving the rest of the prompt
+ * (or a partial tag) inside an unterminated block. This trims any delimiter
+ * tag split by the cut, then closes a block the cut left open. Room for the
+ * closing tag is reserved, so the result never exceeds `maxChars`.
+ *
+ * Only exact `HN_CONTENT_OPEN` / `HN_CONTENT_CLOSE` strings count as tags:
+ * {@link wrapHnContent} has already rewritten every other form inside the text.
+ *
+ * @param text - Text built from {@link wrapHnContent} blocks
+ * @param maxChars - Maximum length of the result
+ * @returns `text` unchanged when it fits, otherwise a well-formed prefix
+ */
+export function truncateHnContent(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+
+  const closing = `\n${HN_CONTENT_CLOSE}`;
+  let cut = text.slice(0, Math.max(0, maxChars - closing.length));
+
+  // Drop a delimiter tag the cut split in two (for example "</hn_con").
+  const lastAngle = cut.lastIndexOf('<');
+  if (lastAngle !== -1) {
+    const tail = cut.slice(lastAngle);
+    if (HN_CONTENT_OPEN.startsWith(tail) || HN_CONTENT_CLOSE.startsWith(tail)) {
+      cut = cut.slice(0, lastAngle);
+    }
+  }
+
+  return cut.lastIndexOf(HN_CONTENT_OPEN) > cut.lastIndexOf(HN_CONTENT_CLOSE) ? cut + closing : cut;
+}
+
+/**
  * The rule added to each system prompt that receives HN content.
  * Kept here so the wording matches the delimiters exactly.
  */

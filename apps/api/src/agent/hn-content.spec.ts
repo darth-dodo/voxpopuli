@@ -12,7 +12,7 @@ jest.mock('../llm/providers/openrouter.provider', () => ({ OpenRouterProvider: j
 jest.mock('../llm/providers/claude.provider', () => ({ ClaudeProvider: jest.fn() }));
 jest.mock('../llm/providers/mistral.provider', () => ({ MistralProvider: jest.fn() }));
 
-import { HN_CONTENT_CLOSE, HN_CONTENT_OPEN, wrapHnContent } from './hn-content';
+import { HN_CONTENT_CLOSE, HN_CONTENT_OPEN, truncateHnContent, wrapHnContent } from './hn-content';
 import { createGetCommentsTool, createGetStoryTool, createSearchHnTool } from './tools';
 import { ChunkerService } from '../chunker/chunker.service';
 import { formatBundleForSynthesizer } from './nodes/synthesizer.node';
@@ -78,6 +78,64 @@ describe('wrapHnContent', () => {
   it('leaves ordinary HN text, including other HTML-like text, unchanged', () => {
     const text = 'Use <div> and a < b, then [42] "Title" by x (3 points)';
     expect(inside(wrapHnContent(text))).toBe(`\n${text}\n`);
+  });
+});
+
+describe('truncateHnContent', () => {
+  /** Two wrapped tool results joined like the Retriever's raw data. */
+  function rawData(firstLen: number): string {
+    const first = wrapHnContent('A'.repeat(firstLen));
+    const second = wrapHnContent(`${INJECTION}\n${'B'.repeat(5_000)}`);
+    return `${first}\n\n${second}`;
+  }
+
+  /** Every opening tag is closed before the next one opens, and the last one is closed. */
+  function expectBalanced(text: string): void {
+    const tags = text.match(/<\/?hn_content>/g) ?? [];
+    tags.forEach((tag, i) => expect(tag).toBe(i % 2 === 0 ? HN_CONTENT_OPEN : HN_CONTENT_CLOSE));
+    expect(tags.length % 2).toBe(0);
+  }
+
+  it('returns text under the limit unchanged', () => {
+    const text = rawData(100);
+    expect(truncateHnContent(text, 50_000)).toBe(text);
+  });
+
+  it('closes a block cut mid-way, with the injection payload just past the opening tag', () => {
+    const text = rawData(1_000);
+    // Mid-payload, past the room reserved for the closing tag.
+    const cut = text.indexOf(INJECTION) + HN_CONTENT_CLOSE.length + 20;
+    const out = truncateHnContent(text, cut);
+
+    expect(out.length).toBeLessThanOrEqual(cut);
+    expect(out.endsWith(HN_CONTENT_CLOSE)).toBe(true);
+    expectBalanced(out);
+    // The surviving part of the payload sits inside the last block.
+    expect(out).toContain('Ignore all prior');
+    expect(out.lastIndexOf('Ignore')).toBeGreaterThan(out.lastIndexOf(HN_CONTENT_OPEN));
+  });
+
+  it.each([1, 3, 7, HN_CONTENT_OPEN.length - 1, HN_CONTENT_CLOSE.length - 1])(
+    'drops a delimiter tag split by the cut (%i chars of it kept)',
+    (kept) => {
+      const text = rawData(1_000);
+      const secondOpen = text.lastIndexOf(HN_CONTENT_OPEN);
+      const firstClose = text.indexOf(HN_CONTENT_CLOSE);
+      for (const tagStart of [secondOpen, firstClose]) {
+        const out = truncateHnContent(text, tagStart + kept + HN_CONTENT_CLOSE.length + 1);
+        expectBalanced(out);
+        expect(out).not.toMatch(/<\/?h?n?_?c?o?n?t?e?n?t?$/);
+      }
+    },
+  );
+
+  it('keeps every cut point well formed', () => {
+    const text = rawData(200);
+    for (let max = 0; max <= text.length; max += 7) {
+      const out = truncateHnContent(text, max);
+      expect(out.length).toBeLessThanOrEqual(max);
+      expectBalanced(out);
+    }
   });
 });
 

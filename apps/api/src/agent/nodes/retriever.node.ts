@@ -8,6 +8,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import { type EvidenceBundle, type AgentStep, type ThemeGroup } from '@voxpopuli/shared-types';
 import type { SourceRegistry } from '../tools';
 import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
+import { truncateHnContent } from '../hn-content';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { parseCompactedThemes } from './compaction-parse';
 import { invokeWithRetry, isTpmError } from '../../llm/invoke-with-retry';
@@ -338,7 +339,8 @@ async function compactWithRetry(
 
   const messages: BaseMessage[] = [
     new SystemMessage(COMPACTOR_SYSTEM_PROMPT),
-    new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${rawData.slice(0, 50_000)}`),
+    // Tool results are already wrapped, so cut without leaving a block open.
+    new HumanMessage(`Query: ${query}\n\nRaw HN data:\n${truncateHnContent(rawData, 50_000)}`),
   ];
 
   const callOptions = {
