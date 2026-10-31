@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Annotation, StateGraph, START, END } from '@langchain/langgraph';
+import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import type {
   EvidenceBundle,
   AnalysisResult,
@@ -42,8 +43,16 @@ export const PipelineAnnotation = Annotation.Root({
 
 export type PipelineGraphState = typeof PipelineAnnotation.State;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyNodeFn = (state: any, config?: any) => Promise<Record<string, unknown>>;
+/**
+ * A pipeline node of any state shape. Each node declares only the slice of state it
+ * reads (for example `{ bundle: EvidenceBundle }`), so `state` is `never`: every such
+ * function is assignable here, and LangGraph passes the full PipelineGraphState at
+ * runtime.
+ */
+type AnyNodeFn = (
+  state: never,
+  config?: LangGraphRunnableConfig,
+) => Promise<Record<string, unknown>>;
 
 export type PipelineNodeFn = (state: PipelineGraphState) => Promise<Partial<PipelineGraphState>>;
 
@@ -70,8 +79,8 @@ const firstLine = (err: unknown) =>
   (err instanceof Error ? err.message : String(err)).split('\n')[0].slice(0, 300);
 
 /** True once the run's abort signal (pipeline timeout or client disconnect) fired. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const isAborted = (config: any): boolean => Boolean(config?.signal?.aborted);
+const isAborted = (config: LangGraphRunnableConfig | undefined): boolean =>
+  Boolean(config?.signal?.aborted);
 
 export function withRetry(fn: AnyNodeFn): AnyNodeFn {
   return async (state, config) => {

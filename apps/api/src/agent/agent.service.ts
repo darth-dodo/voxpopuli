@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createAgent } from 'langchain';
+import type { AIMessage, BaseMessage } from '@langchain/core/messages';
 import type { AgentResponse, AgentStep, AgentSource } from '@voxpopuli/shared-types';
 import { LlmService } from '../llm/llm.service';
 import { HnService } from '../hn/hn.service';
@@ -31,6 +32,12 @@ const RECURSION_LIMIT = MAX_STEPS * 2 + 1;
 
 /** Global timeout per agent run in milliseconds. */
 const TIMEOUT_MS = 180_000;
+
+/**
+ * A streamed agent message viewed loosely: any message type, with the AI-only fields
+ * (tool calls, token usage) present only when the message is an AIMessage.
+ */
+type StreamedMessage = BaseMessage & Partial<Pick<AIMessage, 'tool_calls' | 'usage_metadata'>>;
 
 /**
  * Core service orchestrating the VoxPopuli ReAct agent loop.
@@ -171,8 +178,7 @@ export class AgentService {
           }
 
           const messages = event.messages ?? [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const lastMsg = messages[messages.length - 1] as any;
+          const lastMsg: StreamedMessage | undefined = messages[messages.length - 1];
           if (!lastMsg) continue;
 
           // Track token usage from LangChain's usage_metadata on AI messages
