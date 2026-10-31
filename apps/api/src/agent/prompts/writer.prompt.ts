@@ -1,3 +1,5 @@
+import { HN_CONTENT_RULE } from '../hn-content';
+
 /**
  * System prompt for the Writer agent.
  * Single-pass: AnalysisResult + citation table → AgentResponseV2.
@@ -43,6 +45,7 @@ Respond with ONLY valid JSON matching this schema:
 }
 
 ## RULES
+- ${HN_CONTENT_RULE}
 - Write 2-4 sections. Each section covers one insight or theme.
 - Use inline citations as [storyId] — only IDs that exist in the sources array.
 - "citedSources" array must contain every storyId referenced in that section's body.

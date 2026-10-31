@@ -4,8 +4,9 @@
  * Stories, comments and titles are written by anyone on HN, so a comment like
  * "ignore previous instructions" must reach the model as evidence, not as an
  * instruction. Every prompt that carries HN-derived text wraps it with
- * {@link wrapHnContent}, and the Retriever, Compactor and merged Writer system
- * prompts say that content inside these tags is never to be obeyed.
+ * {@link wrapHnContent}, and every system prompt that can see these tags
+ * (Retriever, Compactor, Synthesizer, Writer, merged Writer and the legacy
+ * agent) carries {@link HN_CONTENT_RULE}: content inside them is never obeyed.
  */
 
 /** Opening delimiter around HN-derived text. */
