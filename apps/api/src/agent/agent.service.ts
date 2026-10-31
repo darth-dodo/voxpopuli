@@ -128,7 +128,7 @@ export class AgentService {
           : baseModel;
       // Structured story metadata (url, postedDate, ...) recorded by the tools.
       const registry: SourceRegistry = new Map();
-      const tools = createAgentTools(this.hn, this.chunker, registry);
+      const tools = createAgentTools(this.hn, this.chunker, registry, options?.provider);
 
       const currentDate = new Date().toISOString().split('T')[0];
       const systemPrompt = AGENT_SYSTEM_PROMPT.replace(

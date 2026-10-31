@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { GraphRecursionError, type LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
@@ -10,6 +11,13 @@ import { RETRIEVER_SYSTEM_PROMPT } from '../prompts/retriever.prompt';
 import { COMPACTOR_SYSTEM_PROMPT } from '../prompts/compactor.prompt';
 import { parseCompactedThemes } from './compaction-parse';
 import { invokeWithRetry, isTpmError } from '../../llm/invoke-with-retry';
+import {
+  DEFAULT_CHARS_PER_TOKEN,
+  estimateTokensByChars,
+  type TokenEstimator,
+} from '../../llm/token-estimator';
+
+const logger = new Logger('RetrieverNode');
 
 const MAX_REACT_ITERATIONS = 8;
 
@@ -121,6 +129,10 @@ export function buildDryWellBundle(query: string): EvidenceBundle {
  * Returns the compacted EvidenceBundle and all AgentSteps accumulated
  * during the ReAct loop. The caller (pipeline graph) is responsible for
  * forwarding steps to the SSE stream.
+ *
+ * `estimateTokens` should be the retriever provider's estimator (see
+ * `LlmService.estimateTokens()`); it sizes `EvidenceBundle.tokenCount`. The
+ * default is the uncalibrated character heuristic, kept for tests.
  */
 export type RetrieverResult = {
   bundle: EvidenceBundle;
@@ -134,6 +146,7 @@ export function createRetrieverNode(
   tools: StructuredToolInterface[],
   sources: SourceRegistry = new Map(),
   reactModel: BaseChatModel = model,
+  estimateTokens: TokenEstimator = (text) => estimateTokensByChars(text, DEFAULT_CHARS_PER_TOKEN),
 ) {
   // Wrap with retry for TPM rate-limits — waits 15s then retries.
   const retryModel =
@@ -278,8 +291,14 @@ export function createRetrieverNode(
       themes,
       allSources: [...sources.values()],
       totalSourcesScanned: sources.size,
-      tokenCount: Math.ceil(JSON.stringify(themes).length / 4),
+      tokenCount: estimateTokens(JSON.stringify(themes)),
     };
+
+    // Calibration aid: the estimate sits next to the provider's reported usage for the
+    // compaction call, whose output is the themes JSON.
+    logger.debug(
+      `Evidence bundle tokens: estimated=${bundle.tokenCount} reportedCompactionOutput=${compactOut}`,
+    );
 
     return {
       bundle,

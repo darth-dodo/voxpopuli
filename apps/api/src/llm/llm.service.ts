@@ -90,6 +90,22 @@ export class LlmService {
   }
 
   /**
+   * Estimate the token cost of `text` with the active provider's estimator,
+   * or with an explicit override's.
+   *
+   * @param text - Text to estimate
+   * @param providerOverride - Optional provider name to use instead of the default
+   * @returns Estimated token count for the resolved provider's tokenizer
+   * @throws Error if the provider name is unknown or the required API key is missing
+   */
+  estimateTokens(text: string, providerOverride?: string): number {
+    const name = providerOverride
+      ? this.normalizeProviderName(providerOverride)
+      : this.activeProvider;
+    return this.resolveProvider(name).estimateTokens(text);
+  }
+
+  /**
    * Return the name of the currently active LLM provider.
    *
    * @returns The active provider identifier (e.g. "openrouter", "claude", "mistral")

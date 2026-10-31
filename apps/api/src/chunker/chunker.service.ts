@@ -6,24 +6,32 @@ import type {
   CommentChunk,
   ContextWindow,
 } from '@voxpopuli/shared-types';
+import { LlmService } from '../llm/llm.service';
 
 /**
  * Service responsible for chunking Hacker News stories and comments into
  * token-counted segments, assembling them into a context window that fits
  * within an LLM provider's token budget, and rendering the final prompt.
+ *
+ * Token counts come from the LLM provider's own estimator (via
+ * {@link LlmService.estimateTokens}), so budgets and estimates match the
+ * tokenizer that will consume the prompt. Every token-counting method takes
+ * an optional `provider` override; without it the active provider is used.
  */
 @Injectable()
 export class ChunkerService {
+  constructor(private readonly llm: LlmService) {}
+
   /**
-   * Estimate token count for a text string.
-   * Uses the common heuristic of 1 token per 4 characters for v1.
+   * Estimate token count for a text string using the provider's estimator.
    *
    * @param text - The text to estimate tokens for
+   * @param provider - Optional provider override (defaults to the active provider)
    * @returns Estimated token count (minimum 0)
    */
-  estimateTokens(text: string): number {
+  estimateTokens(text: string, provider?: string): number {
     if (!text) return 0;
-    return Math.ceil(text.length / 4);
+    return this.llm.estimateTokens(text, provider);
   }
 
   /**
@@ -85,9 +93,10 @@ export class ChunkerService {
    * Chunk an array of Algolia search hits into token-counted story chunks.
    *
    * @param hits - Array of {@link HnSearchHit} from Algolia search
+   * @param provider - Optional provider override for token estimation
    * @returns Array of {@link StoryChunk} with metadata, stripped text, and token counts
    */
-  chunkStories(hits: HnSearchHit[]): StoryChunk[] {
+  chunkStories(hits: HnSearchHit[], provider?: string): StoryChunk[] {
     return hits.map((hit) => {
       const text = this.stripHtml(hit.story_text);
       const postedDate = hit.created_at
@@ -104,7 +113,7 @@ export class ChunkerService {
         url: hit.url,
         text,
         postedDate,
-        tokenCount: this.estimateTokens(fullText),
+        tokenCount: this.estimateTokens(fullText, provider),
       };
     });
   }
@@ -115,9 +124,10 @@ export class ChunkerService {
    * with depth already assigned by {@link HnService.getCommentTree}.
    *
    * @param comments - Array of {@link HnComment} from the comment tree
+   * @param provider - Optional provider override for token estimation
    * @returns Array of {@link CommentChunk} with depth, stripped text, and token counts
    */
-  chunkComments(comments: HnComment[]): CommentChunk[] {
+  chunkComments(comments: HnComment[], provider?: string): CommentChunk[] {
     return comments
       .filter((c) => !c.deleted && !c.dead)
       .map((comment) => {
@@ -130,7 +140,7 @@ export class ChunkerService {
           author: comment.by,
           text,
           depth: comment.depth,
-          tokenCount: this.estimateTokens(fullText),
+          tokenCount: this.estimateTokens(fullText, provider),
         };
       });
   }
@@ -151,9 +161,16 @@ export class ChunkerService {
    * @param stories  - Token-counted story chunks
    * @param comments - Token-counted comment chunks
    * @param budget   - Available token budget (already adjusted for overhead)
+   * @param provider - Optional provider override for token estimation; use the
+   *                   same provider whose budget was passed and that chunked the input
    * @returns {@link ContextWindow} with fitted chunks and truncation flag
    */
-  buildContext(stories: StoryChunk[], comments: CommentChunk[], budget: number): ContextWindow {
+  buildContext(
+    stories: StoryChunk[],
+    comments: CommentChunk[],
+    budget: number,
+    provider?: string,
+  ): ContextWindow {
     let remaining = budget;
     let truncated = false;
     const includedStories: StoryChunk[] = [];
@@ -163,7 +180,7 @@ export class ChunkerService {
     // Metadata-only token cost is calculated without the story text.
     for (const story of stories) {
       const metadataText = `${story.title} by ${story.author} (${story.points} points)`;
-      const metadataTokens = this.estimateTokens(metadataText);
+      const metadataTokens = this.estimateTokens(metadataText, provider);
 
       if (metadataTokens <= remaining) {
         includedStories.push({
@@ -182,7 +199,7 @@ export class ChunkerService {
       const originalStory = stories[i];
       if (!originalStory.text) continue;
 
-      const textTokens = this.estimateTokens(originalStory.text);
+      const textTokens = this.estimateTokens(originalStory.text, provider);
       if (textTokens <= remaining) {
         includedStories[i] = {
           ...includedStories[i],

@@ -29,11 +29,14 @@ export function hnItemUrl(storyId: number): string {
  *
  * Searches HN stories via Algolia, chunks the results through
  * {@link ChunkerService}, and returns a formatted string.
+ *
+ * @param provider - Optional LLM provider whose token estimator sizes the chunks
  */
 export function createSearchHnTool(
   hn: HnService,
   chunker: ChunkerService,
   sources?: SourceRegistry,
+  provider?: string,
 ): StructuredToolInterface {
   return tool(
     async (input: {
@@ -78,8 +81,8 @@ export function createSearchHnTool(
         });
       }
 
-      const chunks = chunker.chunkStories(result.hits);
-      const context = chunker.buildContext(chunks, [], Infinity);
+      const chunks = chunker.chunkStories(result.hits, provider);
+      const context = chunker.buildContext(chunks, [], Infinity, provider);
       return note + chunker.formatForPrompt(context);
     },
     {
@@ -161,10 +164,13 @@ export function createGetStoryTool(
  *
  * Fetches the comment tree for a given story, chunks and formats
  * the comments for LLM consumption. Capped at 30 comments.
+ *
+ * @param provider - Optional LLM provider whose token estimator sizes the chunks
  */
 export function createGetCommentsTool(
   hn: HnService,
   chunker: ChunkerService,
+  provider?: string,
 ): StructuredToolInterface {
   return tool(
     async (input: { story_id: number; max_depth?: number }): Promise<string> => {
@@ -174,8 +180,8 @@ export function createGetCommentsTool(
         return `No comments found for story ${input.story_id}.`;
       }
 
-      const chunks = chunker.chunkComments(comments);
-      const context = chunker.buildContext([], chunks, Infinity);
+      const chunks = chunker.chunkComments(comments, provider);
+      const context = chunker.buildContext([], chunks, Infinity, provider);
       return chunker.formatForPrompt(context);
     },
     {
@@ -201,16 +207,19 @@ export function createGetCommentsTool(
  * @param hn      - HnService instance for HN API calls
  * @param chunker - ChunkerService instance for token-aware formatting
  * @param sources - Optional registry that collects every story the tools surface
+ * @param provider - Optional LLM provider whose token estimator sizes the chunks
+ *                   (defaults to the active provider)
  * @returns Array of LangChain tool instances
  */
 export function createAgentTools(
   hn: HnService,
   chunker: ChunkerService,
   sources?: SourceRegistry,
+  provider?: string,
 ): StructuredToolInterface[] {
   return [
-    createSearchHnTool(hn, chunker, sources),
+    createSearchHnTool(hn, chunker, sources, provider),
     createGetStoryTool(hn, chunker, sources),
-    createGetCommentsTool(hn, chunker),
+    createGetCommentsTool(hn, chunker, provider),
   ];
 }

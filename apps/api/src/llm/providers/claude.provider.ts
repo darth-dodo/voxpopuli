@@ -8,6 +8,7 @@ import {
   type ModelOptions,
 } from '../llm-provider.interface';
 import { CLAUDE_MODEL_ID } from '../model-ids';
+import { DEFAULT_CHARS_PER_TOKEN, estimateTokensByChars } from '../token-estimator';
 
 /** Claude context window size in tokens. */
 const MAX_CONTEXT_TOKENS = 200_000;
@@ -22,6 +23,8 @@ const MAX_CONTEXT_TOKENS = 200_000;
 export class ClaudeProvider implements LlmProviderInterface {
   readonly name = 'claude';
   readonly maxContextTokens = MAX_CONTEXT_TOKENS;
+  /** Uncalibrated default; see DEFAULT_CHARS_PER_TOKEN. */
+  readonly charsPerToken = DEFAULT_CHARS_PER_TOKEN;
 
   private readonly apiKey: string;
   private readonly models = new Map<string, BaseChatModel>();
@@ -32,6 +35,11 @@ export class ClaudeProvider implements LlmProviderInterface {
       throw new Error('ANTHROPIC_API_KEY is required when using the Claude provider');
     }
     this.apiKey = key;
+  }
+
+  /** Estimate the token cost of `text` using this provider's character ratio. */
+  estimateTokens(text: string): number {
+    return estimateTokensByChars(text, this.charsPerToken);
   }
 
   /**

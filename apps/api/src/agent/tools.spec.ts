@@ -124,7 +124,7 @@ describe('createSearchHnTool', () => {
         minPoints: undefined,
         hitsPerPage: undefined,
       });
-      expect(chunker.chunkStories).toHaveBeenCalledWith(hits(6));
+      expect(chunker.chunkStories).toHaveBeenCalledWith(hits(6), undefined);
       expect(out).toMatch(/^Note: only 1 story had 100\+ points/);
     });
 
@@ -184,9 +184,20 @@ describe('createSearchHnTool', () => {
 
     await searchTool.invoke({ query: 'test' });
 
-    expect(chunker.chunkStories).toHaveBeenCalledWith(hits);
-    expect(chunker.buildContext).toHaveBeenCalledWith(hits, [], Infinity);
+    expect(chunker.chunkStories).toHaveBeenCalledWith(hits, undefined);
+    expect(chunker.buildContext).toHaveBeenCalledWith(hits, [], Infinity, undefined);
     expect(chunker.formatForPrompt).toHaveBeenCalled();
+  });
+
+  it("sizes chunks with the given provider's token estimator", async () => {
+    const hits = [{ id: 1 }];
+    hn.search.mockResolvedValue({ hits });
+    const tool: any = createSearchHnTool(hn as any, chunker as any, undefined, 'claude');
+
+    await tool.invoke({ query: 'test' });
+
+    expect(chunker.chunkStories).toHaveBeenCalledWith(hits, 'claude');
+    expect(chunker.buildContext).toHaveBeenCalledWith(hits, [], Infinity, 'claude');
   });
 });
 
@@ -344,9 +355,20 @@ describe('createGetCommentsTool', () => {
     const result = await commentsTool.invoke({ story_id: 123 });
 
     expect(hn.getCommentTree).toHaveBeenCalledWith(123, undefined);
-    expect(chunker.chunkComments).toHaveBeenCalledWith(comments);
-    expect(chunker.buildContext).toHaveBeenCalledWith([], comments, Infinity);
+    expect(chunker.chunkComments).toHaveBeenCalledWith(comments, undefined);
+    expect(chunker.buildContext).toHaveBeenCalledWith([], comments, Infinity, undefined);
     expect(result).toBe('formatted output');
+  });
+
+  it("sizes chunks with the given provider's token estimator", async () => {
+    const comments = [{ id: 1, text: 'Great post', by: 'user1' }];
+    hn.getCommentTree.mockResolvedValue(comments);
+    const tool: any = createGetCommentsTool(hn as any, chunker as any, 'mistral');
+
+    await tool.invoke({ story_id: 123 });
+
+    expect(chunker.chunkComments).toHaveBeenCalledWith(comments, 'mistral');
+    expect(chunker.buildContext).toHaveBeenCalledWith([], comments, Infinity, 'mistral');
   });
 
   it('should pass max_depth to getCommentTree', async () => {
