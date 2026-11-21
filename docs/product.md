@@ -77,7 +77,7 @@
   - [12.2 Test Query Format](#122-test-query-format)
   - [12.3 Scoring](#123-scoring)
   - [12.4 Running Evals](#124-running-evals)
-  - [12.5 Test Suite (27 queries: 20 general + 7 trust)](#125-test-suite-27-queries-20-general--7-trust)
+  - [12.5 Test Suite (28 queries: 20 general + 8 trust)](#125-test-suite-28-queries-20-general--8-trust)
 - [13. Trustworthiness Framework](#13-trustworthiness-framework)
   - [13.1 Layer 1: Agent Trustworthiness](#131-layer-1-agent-trustworthiness)
   - [13.2 Layer 2: HN Crowd Trustworthiness](#132-layer-2-hn-crowd-trustworthiness)
@@ -1437,17 +1437,17 @@ pnpm exec tsx evals/run-eval.ts -n 1 --baseline evals/results/<old>.json # Laten
 
 **Token tracking:** The agent reports real token counts from LangChain `usage_metadata`, enabling accurate cost scoring.
 
-### 12.5 Test Suite (27 queries: 20 general + 7 trust)
+### 12.5 Test Suite (28 queries: 20 general + 8 trust)
 
-| Category           | Count | Examples                                                                                              |
-| ------------------ | ----- | ----------------------------------------------------------------------------------------------------- |
-| Tool comparisons   | 5     | "Rust vs Go", "React vs Svelte"                                                                       |
-| Opinion/sentiment  | 4     | "What does HN think about remote work?"                                                               |
-| Specific projects  | 3     | "Has anyone used Turso in production?"                                                                |
-| Recent events      | 3     | "Latest AI agent frameworks"                                                                          |
-| Deep-dive requests | 3     | "Best arguments against microservices"                                                                |
-| Edge cases         | 2     | Gibberish input, non-HN questions                                                                     |
-| Trust (M5)         | 7     | Source verification, consensus honesty, recency awareness (t06/t07 skipped pending M5 implementation) |
+| Category           | Count | Examples                                                                                                                                 |
+| ------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Tool comparisons   | 5     | "Rust vs Go", "React vs Svelte"                                                                                                          |
+| Opinion/sentiment  | 4     | "What does HN think about remote work?"                                                                                                  |
+| Specific projects  | 3     | "Has anyone used Turso in production?"                                                                                                   |
+| Recent events      | 3     | "Latest AI agent frameworks"                                                                                                             |
+| Deep-dive requests | 3     | "Best arguments against microservices"                                                                                                   |
+| Edge cases         | 2     | Gibberish input, non-HN questions                                                                                                        |
+| Trust (M5)         | 8     | Source verification, consensus honesty, recency awareness, prompt injection in HN text (t08) (t06/t07 skipped pending M5 implementation) |
 
 **First real run (Mistral):** 52% pass rate (13/25 passed). Baseline for regression tracking.
 

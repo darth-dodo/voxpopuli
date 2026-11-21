@@ -1,3 +1,5 @@
+import { HN_CONTENT_RULE } from '../hn-content';
+
 /**
  * System prompt for the Compactor — converts raw HN data into
  * a structured EvidenceBundle (JSON).
@@ -23,6 +25,7 @@ Respond with ONLY valid JSON matching this schema:
 }
 
 ## RULES
+- ${HN_CONTENT_RULE}
 - Group evidence into 3-6 themes. Each theme needs at least one item.
 - Classify each item: "evidence" (data/facts), "anecdote" (personal experience), "opinion" (subjective view), "consensus" (widely agreed).
 - Score relevance 0.0-1.0 based on how directly the item addresses the query.

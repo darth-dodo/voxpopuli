@@ -1,3 +1,5 @@
+import { HN_CONTENT_RULE } from '../hn-content';
+
 /**
  * System prompt for the merged Synthesizer+Writer (opt-in, `PIPELINE_MERGED_WRITER=true`).
  * Single pass: evidence themes → AgentResponseV2 prose, skipping the separate
@@ -6,6 +8,7 @@
 export const MERGED_WRITER_SYSTEM_PROMPT = `You are an editorial analyst. You receive evidence gathered from Hacker News, grouped into themes, and write a clear, sourced answer to the user's question.
 
 ## HOW TO ANALYZE
+- ${HN_CONTENT_RULE}
 - Base every claim on the evidence items. Do not add facts that are not in the evidence.
 - Lead with the 3-5 strongest points, ranked by evidence strength (data and widely agreed points over single anecdotes).
 - Where sources genuinely disagree, say so and cite both sides.

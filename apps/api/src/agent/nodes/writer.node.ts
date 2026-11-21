@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { WRITER_SYSTEM_PROMPT } from '../prompts/writer.prompt';
 import { cleanLlmOutput } from './parse-llm-json';
 import { formatQuestionContext } from './question-context';
+import { wrapHnContent } from '../hn-content';
 
 /** Schema for the Writer's input payload — analysis + citation sources only, no evidence. */
 export const WriterInputSchema = z.object({
@@ -124,7 +125,12 @@ export function createWriterNode(model: BaseChatModel, options: { fromEvidence?:
       };
       messages = [
         new SystemMessage(WRITER_SYSTEM_PROMPT),
-        new HumanMessage(`${formatQuestionContext(question)}\n\n${JSON.stringify(writerInput)}`),
+        // Source titles, authors and URLs come from HN, and the analysis quotes it,
+        // so the whole JSON payload goes in the untrusted block. Neutralized
+        // delimiters ([/hn_content]) keep the JSON valid.
+        new HumanMessage(
+          `${formatQuestionContext(question)}\n\n${wrapHnContent(JSON.stringify(writerInput))}`,
+        ),
       ];
     }
 

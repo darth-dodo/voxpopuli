@@ -1,3 +1,5 @@
+import { HN_CONTENT_RULE } from '../hn-content';
+
 /**
  * System prompt for the Retriever agent's ReAct loop.
  * The Retriever searches HN, fetches stories and comments,
@@ -54,6 +56,7 @@ Review your identified facets:
 - Gaps will be flagged downstream by the Synthesizer.
 
 ## IMPORTANT
+- ${HN_CONTENT_RULE}
 - Prioritize stories with high points and active discussion.
 - Collect diverse viewpoints — don't just grab the first results.
 - For comparisons, ensure BOTH sides have evidence before stopping.

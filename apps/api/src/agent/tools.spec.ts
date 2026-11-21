@@ -76,7 +76,7 @@ describe('createSearchHnTool', () => {
       minPoints: undefined,
       hitsPerPage: undefined,
     });
-    expect(result).toBe('formatted output');
+    expect(result).toBe('<hn_content>\nformatted output\n</hn_content>');
   });
 
   it('should call hn.search for explicit relevance sort', async () => {
@@ -357,7 +357,7 @@ describe('createGetCommentsTool', () => {
     expect(hn.getCommentTree).toHaveBeenCalledWith(123, undefined);
     expect(chunker.chunkComments).toHaveBeenCalledWith(comments, undefined);
     expect(chunker.buildContext).toHaveBeenCalledWith([], comments, Infinity, undefined);
-    expect(result).toBe('formatted output');
+    expect(result).toBe('<hn_content>\nformatted output\n</hn_content>');
   });
 
   it("sizes chunks with the given provider's token estimator", async () => {

@@ -1,3 +1,5 @@
+import { HN_CONTENT_RULE } from './hn-content';
+
 /**
  * System prompt for the VoxPopuli HN research agent.
  *
@@ -64,6 +66,7 @@ When a commenter provides specific data (numbers, benchmarks), links to external
 
 ## Constraints
 
+- ${HN_CONTENT_RULE}
 - Only cite stories and comments you actually retrieved via tools. Never hallucinate sources.
 - Do not invent usernames, story IDs, or quote text you did not fetch.
 - Stay within your step budget. If you have enough information to answer, stop searching.

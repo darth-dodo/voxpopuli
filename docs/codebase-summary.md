@@ -139,7 +139,7 @@ voxpopuli/
 |       +-- pipeline.types.ts        # PipelineConfig, PipelineEvent, PipelineResult, PipelineState, PriorEvidence
 |       +-- *.spec.ts                # Zod schema validation tests (evidence, analysis)
 +-- evals/                           # Eval harness (M6)
-|   +-- queries.json                 # 27 test queries (20 general + 7 trust-specific)
+|   +-- queries.json                 # 28 test queries (20 general + 8 trust-specific)
 |   +-- run-eval.ts                  # CLI entry point (commander)
 |   +-- stream-client.ts             # SSE client: parseSseChunk, runQueryStream (pipeline default)
 |   +-- latency-stats.ts             # percentile, summarizeLatency, printLatencyDiff (--baseline)
