@@ -130,15 +130,15 @@ docs/             Product spec, architecture, ADRs, screenshots
 
 ### Key design decisions
 
-| Decision            | Approach                                                      | Why                                                                                         |
-| ------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Streaming primitive | `AsyncGenerator` yielding discriminated unions                | `run()` wraps `runStream()`, so the blocking and streaming paths share one implementation   |
-| Result delivery     | Query store decoupled from the SSE connection                 | Mobile browsers kill background SSE; stored results avoid lost runs and duplicate LLM spend |
-| LLM abstraction     | Provider facade behind `LlmProviderInterface`                 | Swap providers per request without touching agent or pipeline code                          |
-| Provider routing    | OpenRouter for open-weight models                             | One key for many models; routing prefers the highest-throughput host                        |
-| Pipeline fallback   | Track completed stages in the generator consumer              | A fallback keeps valid Retriever output instead of failing the whole run                    |
-| Token budgeting     | Character-based estimate (≈4 chars/token) with priority tiers | Good enough for context management without shipping a tokenizer                             |
-| Trust computation   | Pure function, run after the loop, no framework dependencies  | Unit-testable and applies to any execution path                                             |
+| Decision            | Approach                                                                           | Why                                                                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Streaming primitive | `AsyncGenerator` yielding discriminated unions                                     | `run()` wraps `runStream()`, so the blocking and streaming paths share one implementation                                   |
+| Result delivery     | Query store decoupled from the SSE connection                                      | Mobile browsers kill background SSE; stored results avoid lost runs and duplicate LLM spend                                 |
+| LLM abstraction     | Provider facade behind `LlmProviderInterface`                                      | Swap providers per request without touching agent or pipeline code                                                          |
+| Provider routing    | OpenRouter for open-weight models                                                  | One key for many models; routing prefers the highest-throughput host                                                        |
+| Pipeline fallback   | Track completed stages in the generator consumer                                   | A fallback keeps valid Retriever output instead of failing the whole run                                                    |
+| Token budgeting     | Per-provider character-ratio estimate (4 chars/token default), with priority tiers | Good enough for context management without shipping a tokenizer; each provider can be calibrated against its reported usage |
+| Trust computation   | Pure function, run after the loop, no framework dependencies                       | Unit-testable and applies to any execution path                                                                             |
 
 The full blueprint is in [docs/architecture.md](docs/architecture.md) and the product spec in [docs/product.md](docs/product.md).
 
@@ -206,7 +206,7 @@ pnpm exec prettier --check .               # format check
 
 | Area        | Details                                                                                    |
 | ----------- | ------------------------------------------------------------------------------------------ |
-| Unit tests  | 695 (431 API, 251 web, 13 shared types); external APIs and LLM providers are always mocked |
+| Unit tests  | 703 (439 API, 251 web, 13 shared types); external APIs and LLM providers are always mocked |
 | CI          | GitHub Actions on affected projects: lint, test with coverage, format check, build         |
 | Type safety | Strict TypeScript, shared contract types, `satisfies` on API responses                     |
 | Git hooks   | lint-staged on commit; lint, test, and format checks on push                               |
@@ -236,6 +236,8 @@ VoxPopuli ships as a [Render Blueprint](render.yaml):
 
 ## Project Status
 
+Version 1.0.0 (see [CHANGELOG.md](CHANGELOG.md)). All eight milestones are complete; next steps are on the roadmap in [docs/product.md](docs/product.md).
+
 | Milestone                    | Status | Highlights                                           |
 | ---------------------------- | ------ | ---------------------------------------------------- |
 | M1: Scaffold and data layer  | Done   | Nx monorepo, shared types, HN clients, caching       |
@@ -249,14 +251,14 @@ VoxPopuli ships as a [Render Blueprint](render.yaml):
 
 ## Documentation
 
-| Document                                             | Contents                                                                                                                                       |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| [docs/product.md](docs/product.md)                   | Product specification: features, API contracts, roadmap                                                                                        |
-| [docs/architecture.md](docs/architecture.md)         | Technical blueprint, module specs, milestones                                                                                                  |
-| [docs/codebase-summary.md](docs/codebase-summary.md) | Module inventory and environment reference                                                                                                     |
-| [docs/design-system.md](docs/design-system.md)       | "Data Noir Editorial" design system                                                                                                            |
-| [docs/adr/](docs/adr/)                               | Architecture Decision Records: chunking, providers, ReAct, SSE, query decomposition, query-ID resilience, TTS, pipeline latency, merged writer |
-| [CHANGELOG.md](CHANGELOG.md)                         | Release notes                                                                                                                                  |
+| Document                                             | Contents                                                                                                                                                                          |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [docs/product.md](docs/product.md)                   | Product specification: features, API contracts, roadmap                                                                                                                           |
+| [docs/architecture.md](docs/architecture.md)         | Technical blueprint, module specs, milestones                                                                                                                                     |
+| [docs/codebase-summary.md](docs/codebase-summary.md) | Module inventory and environment reference                                                                                                                                        |
+| [docs/design-system.md](docs/design-system.md)       | "Data Noir Editorial" design system                                                                                                                                               |
+| [docs/adr/](docs/adr/)                               | Architecture Decision Records (001 to 010): CI and quality gates, chunking, providers, ReAct, SSE, query decomposition, query-ID resilience, TTS, pipeline latency, merged writer |
+| [CHANGELOG.md](CHANGELOG.md)                         | Release notes                                                                                                                                                                     |
 
 ## Contributing
 
