@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://voxpopuli-web-embx.onrender.com/">
-    <img src="docs/assets/hero.svg" alt="VoxPopuli: what Hacker News actually thinks, with every claim linked to its thread. A brass microphone sends amber threads into a folded newspaper." width="100%">
+    <img src="docs/assets/hero.svg" alt="VoxPopuli: what Hacker News actually thinks, with every claim linked to its thread. Beside the title, the app shows the Retriever, Synthesizer and Writer steps complete for a question." width="100%">
   </a>
 </p>
 
