@@ -4,6 +4,16 @@ All notable changes to VoxPopuli are documented in this file.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-22
+
+### Security
+
+- **No critical or high production advisories, again** - `follow-redirects` 1.16.0 to 1.16.1 (through `axios`) picked up a high-severity advisory after 1.0.0 shipped ([GHSA-mrwp-f3q8-3g9p](https://github.com/advisories/GHSA-mrwp-f3q8-3g9p): custom credentials could follow a redirect to another host). A `pnpm.overrides` pin moves it to 1.16.3. `pnpm audit --prod` reports 0 critical and 0 high.
+
+### Changed
+
+- **README** - Rewritten in the shape of the sibling projects: a product-shot hero, current homepage screenshots, a decisions and trade-offs table, and a release badge.
+
 ## [1.0.0] — 2026-10-24
 
 General availability. All eight milestones are complete (M7 deploy and observability closed out; monitoring dashboards and alert rules move to the v1.1 roadmap), and the app runs in production on Render. Entries below cover everything since 0.5.0.
