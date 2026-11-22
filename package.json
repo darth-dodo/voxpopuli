@@ -1,6 +1,6 @@
 {
   "name": "@voxpopuli/source",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "scripts": {
     "prepare": "husky",
@@ -96,7 +96,8 @@
       "path-to-regexp@>=8 <8.4.0": "^8.4.0",
       "proxy-addr@<2.0.8": "^2.0.8",
       "ws@>=8 <8.21.0": "^8.21.0",
-      "multer@<2.5.0": "^2.5.0"
+      "multer@<2.5.0": "^2.5.0",
+      "follow-redirects@<1.16.2": "^1.16.2"
     }
   },
   "dependencies": {

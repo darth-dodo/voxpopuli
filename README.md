@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/darth-dodo/voxpopuli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/darth-dodo/voxpopuli/ci.yml?branch=main&style=flat-square&label=CI" alt="CI status"></a>
+  <a href="https://github.com/darth-dodo/voxpopuli/releases/latest"><img src="https://img.shields.io/github/v/release/darth-dodo/voxpopuli?style=flat-square&label=release" alt="Latest release"></a>
   <a href="https://codecov.io/gh/darth-dodo/voxpopuli"><img src="https://img.shields.io/codecov/c/github/darth-dodo/voxpopuli?style=flat-square&label=coverage" alt="Coverage"></a>
   <a href="https://voxpopuli-web-embx.onrender.com/"><img src="https://img.shields.io/website?url=https%3A%2F%2Fvoxpopuli-web-embx.onrender.com%2F&style=flat-square&label=demo&up_message=online&down_message=waking%20up" alt="Live demo status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/darth-dodo/voxpopuli?style=flat-square" alt="MIT license"></a>
