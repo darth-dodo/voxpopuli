@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://voxpopuli-web-embx.onrender.com/">
-    <img src="docs/assets/hero.svg" alt="VoxPopuli: what Hacker News actually thinks, with every claim linked to its thread. A brass microphone sends amber threads into a folded newspaper." width="100%">
+    <img src="docs/assets/hero.svg" alt="VoxPopuli: what Hacker News actually thinks, with every claim linked to its thread. Beside the title, the app shows the Retriever, Synthesizer and Writer steps complete for a question." width="100%">
   </a>
 </p>
 
@@ -26,9 +26,9 @@
 The best engineering opinions on Hacker News sit three levels deep in 400 comment threads, and Algolia only matches keywords. I built VoxPopuli to ask a question in plain English and get back what HN actually thinks, with every claim linked to its thread, a note on how strong the evidence is, and a narrated version if you would rather listen.
 
 <p align="center">
-  <img src="docs/screenshots/flow-02-streaming-steps.png" alt="Three agents working through a question live" width="400"/>
+  <img src="docs/screenshots/landing-dark-desktop.png" alt="VoxPopuli homepage with the question box, provider chips and example questions" width="400"/>
   &nbsp;
-  <img src="docs/screenshots/landing-dark-mobile.png" alt="Landing page on a phone" width="140"/>
+  <img src="docs/screenshots/landing-dark-mobile.png" alt="VoxPopuli homepage on a phone" width="140"/>
   &nbsp;
   <img src="docs/screenshots/flow-08-sources.png" alt="Source cards for an answer" width="400"/>
 </p>
